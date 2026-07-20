@@ -221,6 +221,37 @@ back to. Default `ggn-nmfs-aa-dev-1-data` in project `ggn-nmfs-aa-dev-1`.
   storage client (delimiter folding, prefix arithmetic, placeholder filtering, truncation,
   error translation); "do these credentials work" is the only untested part.
 
+## NCEI actions — two workflows, both handed to the TERMINAL
+`ncei/NceiActions.tsx` + `ncei/combineOptions.ts` + `state/terminal.ts`.
+
+**The constraint that shapes this whole feature:** `aa-get` and `aa-fetch` are
+*interactive* console UIs. They prompt and expect a human. They CANNOT be driven from a
+background job runner the way `aa-setup` can — a runner would hang on the first question
+with nobody to answer it. So the Workbench does not try. The panel composes the exact
+command, shows it, and types it into the PTY terminal where the user stays in the
+conversation. **Do not "improve" this into a headless runner.**
+- `state/terminal.ts` is the seam: `sendToTerminal(command)` sets a request with a
+  monotonic id; `TerminalPanel` starts a session if none is running, queues the command,
+  and writes it on `onopen`. Requests supersede rather than queue — two commands racing
+  into one shell would interleave their prompts.
+- Two peer workflows in one toggle: **Download files** (`aa-fetch`) and **Combine dataset**
+  (`aa-combine`), with an output-format toggle for **.nc vs .zarr**. Changing format
+  rewrites the output extension and swaps in the zarr-only options (chunking,
+  consolidated metadata).
+- Options are declared in `combineOptions.ts` and the form is generated, so adding a flag
+  never touches a component.
+- **The panel's job is to explain the operation, not to encode flags.** Two things carry
+  that: a **format explainer** at the point of choice (single .nc file vs chunked .zarr
+  store — what each is good for and what to watch out for, in problem terms rather than
+  format terms), and a **step strip** showing the real chain, because "combine" quietly
+  implies fetch → convert → combine → upload and that isn't visible from a command line.
+  The upload step dims when no destination is set, so the UI never implies work it won't do.
+- **FLAG ACCURACY**: only options with `verified: true` came from the existing tool
+  catalogue. The rest are grouped into one dashed "Proposed controls" block saying the
+  names are unconfirmed — one honest statement beats six warning icons. Run
+  `aa-fetch --help` / `aa-combine --help` and fix the `flag` strings in that one file. An
+  "Additional flags" field is appended verbatim so an incomplete schema is never a blocker.
+
 ## NCEI panel — what it does
 Graphical front-end to aa-find + aa-fetch + aa-combine, scoped to NCEI.
 Fuzzy drill-down vessel → survey → sonar (searchable dropdowns) → raw file list.

@@ -20,6 +20,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+import { clearTerminalRequest, useTerminalRequest } from '../../state/terminal';
 import { terminalApi, terminalSocketUrl } from '../../services/terminalApi';
 import type { TerminalInfo } from '../../services/terminalApi';
 import { tokens } from '../../theme';
@@ -49,6 +50,9 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const [venv, setVenv] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
+  // A command another panel wants run here. Held until the PTY is ready.
+  const pendingRef = useRef<string | null>(null);
+  const incoming = useTerminalRequest();
 
   const loadInfo = useCallback(async () => {
     try {
@@ -129,7 +133,18 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
     socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
 
-    socket.onopen = () => setStatus('connected');
+    const flushPending = () => {
+      const queued = pendingRef.current;
+      if (queued === null || socket.readyState !== WebSocket.OPEN) return;
+      pendingRef.current = null;
+      socket.send(new TextEncoder().encode(queued));
+      term.focus();
+    };
+
+    socket.onopen = () => {
+      setStatus('connected');
+      flushPending();
+    };
     socket.onmessage = (event) => {
       term.write(
         typeof event.data === 'string'
@@ -162,6 +177,21 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
     // A terminal you have to hunt for focus in is a broken terminal.
     term.focus();
   }, [venv]);
+
+  useEffect(() => {
+    if (!incoming) return;
+    const text = incoming.execute ? `${incoming.command}\n` : incoming.command;
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(new TextEncoder().encode(text));
+      termRef.current?.focus();
+    } else {
+      // No session yet — queue it and start one. onopen flushes the queue.
+      pendingRef.current = text;
+      connect();
+    }
+    clearTerminalRequest(incoming.id);
+  }, [incoming, connect]);
 
   const disconnect = useCallback(() => {
     socketRef.current?.close();
