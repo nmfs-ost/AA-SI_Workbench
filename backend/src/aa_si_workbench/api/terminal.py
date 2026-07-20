@@ -305,14 +305,23 @@ async def terminal_ws(websocket: WebSocket) -> None:
             if (payload := message.get("bytes")) is not None:
                 os.write(fd, payload)
             elif (text := message.get("text")) is not None:
-                # Control channel. Malformed messages are ignored rather than
-                # killing a session the user is in the middle of using.
+                # Control channel. A text frame that is not valid control JSON
+                # is treated as keystrokes rather than dropped: silently
+                # discarding it once cost an afternoon of "the keyboard does
+                # nothing". Clients should send input as binary, but being
+                # forgiving here costs nothing and fails visibly instead.
                 import json
 
-                with contextlib.suppress(ValueError, KeyError, TypeError):
+                try:
                     msg = json.loads(text)
-                    if msg.get("type") == "resize":
+                except ValueError:
+                    os.write(fd, text.encode())
+                    continue
+                if isinstance(msg, dict) and msg.get("type") == "resize":
+                    with contextlib.suppress(KeyError, TypeError, ValueError):
                         _set_winsize(fd, int(msg["rows"]), int(msg["cols"]))
+                else:
+                    os.write(fd, text.encode())
 
     out_task = asyncio.create_task(pump_out())
     in_task = asyncio.create_task(pump_in())

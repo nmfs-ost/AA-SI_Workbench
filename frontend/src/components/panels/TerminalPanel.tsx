@@ -148,10 +148,19 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
       term.write('\r\n\x1b[2m[session ended]\x1b[0m\r\n');
     };
 
+    // Keystrokes MUST go as binary frames. xterm hands back a string, and
+    // socket.send(string) sends a text frame — which the backend routes to the
+    // JSON control channel, where it fails to parse and is silently dropped.
+    // Encoding here keeps the protocol honest: binary = PTY bytes, text =
+    // control messages.
+    const encoder = new TextEncoder();
     const typed = term.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(data);
+      if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
     });
     socket.addEventListener('close', () => typed.dispose());
+
+    // A terminal you have to hunt for focus in is a broken terminal.
+    term.focus();
   }, [venv]);
 
   const disconnect = useCallback(() => {
@@ -280,10 +289,12 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
 
       <Box
         ref={hostRef}
+        onMouseDown={() => termRef.current?.focus()}
         sx={{
           flex: 1,
           minHeight: 0,
           p: 0.5,
+          cursor: 'text',
           '& .xterm': { height: '100%' },
           '& .xterm-viewport': { backgroundColor: 'transparent !important' },
         }}

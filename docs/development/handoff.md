@@ -171,11 +171,20 @@ avoids escaping keystrokes that look like JSON.
   `activate` does: prepend `bin/`, export `VIRTUAL_ENV`, drop `PYTHONHOME`.
 - Session dies with the socket (SIGHUP to the child). `ResizeObserver` drives resize
   because Dockview resizes the panel, not the window.
+- **Frame types are load-bearing.** `term.onData` yields a *string*, and `socket.send(str)`
+  sends a TEXT frame — which the control channel JSON-parses and (originally) dropped
+  silently, so every keystroke vanished and the terminal looked like a dead keyboard. The
+  panel now encodes input with `TextEncoder`; the backend additionally treats any text
+  frame that isn't valid control JSON as keystrokes. Belt and braces, because the silent
+  version was expensive to diagnose.
 
-## Files panel — WIRED (left dock, new tab)
-`api/files.py` + `components/panels/FilesPanel.tsx`. Read-only by design: browsing and
-handing a path to a pipeline is the job; create/delete belongs in the terminal where the
-user can see what they're doing.
+## Files panel — WIRED (left dock, new tab) — IDE-style tree
+`api/files.py` + `components/panels/FilesPanel.tsx`. An explorer tree, not a navigator:
+folders expand **in place** so context is never lost, children are fetched lazily on first
+expand and cached (a home dir with a season of survey data is far too big to walk eagerly),
+and a filter keeps a folder visible when any loaded descendant matches. Read-only by
+design: browsing and handing a path to a pipeline is the job; create/delete belongs in the
+terminal where the user can see what they're doing.
 - Roots are *discovered*: home, cwd, Downloads, aa-docs, and any `*_NCEI` folder aa-raw
   left in `$HOME`.
 - Every path is resolved then confined to `AASI_FS_ROOT` (default `$HOME`) — `..` and
