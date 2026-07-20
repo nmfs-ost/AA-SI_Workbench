@@ -35,6 +35,10 @@ dev = [
 ]
 # Fast NCEI listing via the BigQuery metadata.ncei_cache table
 # (set AASI_NCEI_SOURCE=cache). Requires GCP application-default credentials.
+# Browsing the derived-assets bucket (the Derived panel).
+derived = [
+  "google-cloud-storage>=2.14",
+]
 ncei-cache = [
   "google-cloud-bigquery>=3.0",
   "pandas>=2.0",

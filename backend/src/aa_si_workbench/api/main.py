@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import _paths
+from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
 from .ncei import router as ncei_router
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
 
     app.include_router(ncei_router)
     app.include_router(environment_router)
+    app.include_router(derived_router)
     app.include_router(files_router)
     app.include_router(terminal_router)
 

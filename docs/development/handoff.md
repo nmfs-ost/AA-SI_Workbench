@@ -196,6 +196,31 @@ terminal where the user can see what they're doing.
   and `s3Path` is NCEI-shaped. Widening both is the follow-up that makes a local file
   selectable into Metadata/Echogram.
 
+## Derived assets — WIRED (GCS bucket browser)
+`api/derived.py` + `components/panels/DerivedPanel.tsx`. The output side of the workflow:
+where NCEI is the read-only source archive, this is the bucket pipelines write products
+back to. Default `ggn-nmfs-aa-dev-1-data` in project `ggn-nmfs-aa-dev-1`.
+- **Delimiter listing is the whole trick.** GCS has a flat namespace; listing with
+  `delimiter="/"` folds it into folders (`iterator.prefixes`) plus objects at that level,
+  so each expand is one request and nothing is enumerated until opened. `prefixes` is only
+  populated *after* the iterator is consumed — that ordering is load-bearing.
+- Zero-byte "directory placeholder" objects (created by the console) are filtered out;
+  they'd otherwise appear as a duplicate empty row beside the real folder.
+- `AASI_DERIVED_PREFIX` lets a sub-path act as the root. It's stripped from displayed
+  paths but kept in the `gs://` URI, because the URI is what a pipeline consumes.
+- **`GET /api/derived` never raises.** The panel needs to render a reason, and a 502 would
+  leave it with nothing to show. `_explain()` maps the usual GCP failures to something a
+  scientist can act on: missing library → the pip command; missing ADC → the gcloud
+  command; 403 → which permission; quota → `set-quota-project`.
+- Optional dependency: `google-cloud-storage` (declared as the `derived` extra, and
+  installed by init.sh). Without it every other panel still works.
+- Read-only. No upload or delete — producing derived assets is the pipelines' job, and a
+  destructive action one misclick from a listing is a poor trade.
+- **NOT verified against the real bucket**: this sandbox has no GCP credentials and no
+  network path to Google. The provider logic is covered by 16 unit tests against a stubbed
+  storage client (delimiter folding, prefix arithmetic, placeholder filtering, truncation,
+  error translation); "do these credentials work" is the only untested part.
+
 ## NCEI panel — what it does
 Graphical front-end to aa-find + aa-fetch + aa-combine, scoped to NCEI.
 Fuzzy drill-down vessel → survey → sonar (searchable dropdowns) → raw file list.
@@ -245,6 +270,8 @@ PREVIEW-ONLY (stage a job; honest "backend not connected" note). Files: ncei/
   paths, os.pathsep-separated), `AASI_ALLOW_REMOTE_TERMINAL`.
 - Files: `AASI_FS_ROOT` (default `$HOME`; set `/` to browse the whole machine),
   `AASI_ALLOW_REMOTE_FS`.
+- Derived: `AASI_DERIVED_BUCKET` (default `ggn-nmfs-aa-dev-1-data`), `AASI_DERIVED_PREFIX`,
+  `AALIBRARY_GCP_PROJECT_ID`.
 - Frontend also: `VITE_AASI_GITHUB_ORG` / `VITE_AASI_GITHUB_REPO` (fork overrides).
 
 ## Verification status
