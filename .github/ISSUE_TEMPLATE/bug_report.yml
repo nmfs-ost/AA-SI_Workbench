@@ -1,0 +1,40 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a report. Please do not include sensitive or embargoed data.
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the Workbench is affected?
+      placeholder: frontend / backend / docs / other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser (frontend), Node/Python versions, and commit or version.
+    validations:
+      required: false
