@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: AA-SI Workbench
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+type: software
+authors:
+  - name: "NOAA Fisheries — Active Acoustics Strategic Initiative"
+    # TODO: add individual authors, e.g.:
+    # - family-names: Doe
+    #   given-names: Jane
+    #   orcid: "https://orcid.org/0000-0000-0000-0000"
+    #   affiliation: "NOAA Fisheries"
+repository-code: "https://github.com/nmfs-ost/AA-SI_Workbench"
+abstract: >-
+  An open-source scientific workbench for browsing, processing, and analyzing
+  active-acoustics (water-column sonar) data, comprising a browser-based
+  IDE-style user interface and a Python processing engine.
+keywords:
+  - active acoustics
+  - fisheries acoustics
+  - water-column sonar
+  - echosounder
+  - NOAA Fisheries
+  - scientific workbench
+license: "See LICENSE.md (17 U.S.C. §105 — U.S. Government work)"
+version: 0.1.0
+date-released: "2026-07-17"

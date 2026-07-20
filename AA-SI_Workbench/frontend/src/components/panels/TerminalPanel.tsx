@@ -1,0 +1,293 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FunctionComponent } from 'react';
+import type { IDockviewPanelProps } from 'dockview';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  MenuItem,
+  Select,
+  Tooltip,
+  Typography,
+  useTheme,
+} from '@mui/material';
+import {
+  PlayArrowOutlined,
+  RefreshOutlined,
+  TerminalOutlined,
+} from '@mui/icons-material';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+
+import { terminalApi, terminalSocketUrl } from '../../services/terminalApi';
+import type { TerminalInfo } from '../../services/terminalApi';
+import { tokens } from '../../theme';
+
+type Status = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
+
+/**
+ * An interactive shell on the workstation.
+ *
+ * The session is a PTY on the backend; this component is a viewport onto it.
+ * Bytes go both ways untouched — no command parsing, no client-side filtering —
+ * because anything less than a real terminal is a worse terminal. The security
+ * boundary is the backend's loopback check, not this component.
+ *
+ * The virtualenv selector exists because the Workbench drives `aa-*` tools that
+ * live in a specific environment (venv313 on a workstation). A shell started
+ * outside it silently cannot see them, so the environment is chosen up front
+ * and activated by the server when the session starts.
+ */
+export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
+  const theme = useTheme();
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const [info, setInfo] = useState<TerminalInfo | null>(null);
+  const [venv, setVenv] = useState('');
+  const [status, setStatus] = useState<Status>('idle');
+  const [error, setError] = useState('');
+
+  const loadInfo = useCallback(async () => {
+    try {
+      const next = await terminalApi.getInfo();
+      setInfo(next);
+      setError(next.available ? '' : next.disabledReason);
+      setVenv((current) => {
+        if (current) return current;
+        // Prefer the environment holding the aa-* tools, then whatever the
+        // server itself is running in.
+        const withTools = next.venvs.find((v) => v.hasAaTools);
+        return withTools?.path ?? next.currentVenv ?? '';
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reach the API.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadInfo();
+  }, [loadInfo]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || termRef.current) return;
+
+    const term = new Terminal({
+      fontFamily: tokens.font.mono,
+      fontSize: 12.5,
+      cursorBlink: true,
+      scrollback: 5000,
+      theme: {
+        background: tokens.color.bg.panel,
+        foreground: tokens.color.text.primary,
+        cursor: tokens.color.accent.main,
+      },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(host);
+    termRef.current = term;
+
+    // Dockview resizes the panel, not the window, so observe the element.
+    const observer = new ResizeObserver(() => {
+      try {
+        fit.fit();
+        const socket = socketRef.current;
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({ type: 'resize', rows: term.rows, cols: term.cols }),
+          );
+        }
+      } catch {
+        // fit() throws while the panel is hidden (zero height) — harmless.
+      }
+    });
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+      socketRef.current?.close();
+      term.dispose();
+      termRef.current = null;
+    };
+  }, []);
+
+  const connect = useCallback(() => {
+    const term = termRef.current;
+    if (!term || socketRef.current) return;
+
+    setStatus('connecting');
+    setError('');
+    term.clear();
+
+    const socket = new WebSocket(
+      terminalSocketUrl({ venv, rows: term.rows, cols: term.cols }),
+    );
+    socket.binaryType = 'arraybuffer';
+    socketRef.current = socket;
+
+    socket.onopen = () => setStatus('connected');
+    socket.onmessage = (event) => {
+      term.write(
+        typeof event.data === 'string'
+          ? event.data
+          : new Uint8Array(event.data as ArrayBuffer),
+      );
+    };
+    socket.onerror = () => {
+      setStatus('error');
+      setError('The terminal connection failed.');
+    };
+    socket.onclose = (event) => {
+      socketRef.current = null;
+      setStatus((s) => (s === 'error' ? s : 'closed'));
+      if (event.reason) setError(event.reason);
+      term.write('\r\n\x1b[2m[session ended]\x1b[0m\r\n');
+    };
+
+    const typed = term.onData((data) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(data);
+    });
+    socket.addEventListener('close', () => typed.dispose());
+  }, [venv]);
+
+  const disconnect = useCallback(() => {
+    socketRef.current?.close();
+    socketRef.current = null;
+  }, []);
+
+  const running = status === 'connected' || status === 'connecting';
+  const disabled = info !== null && !info.available;
+
+  const statusColor =
+    status === 'connected'
+      ? theme.aa.color.status.success
+      : status === 'error'
+        ? theme.aa.color.status.error
+        : theme.aa.color.text.muted;
+
+  return (
+    <Box
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: theme.aa.color.bg.panel,
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 1,
+          py: 0.5,
+          flexShrink: 0,
+          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
+        }}
+      >
+        <TerminalOutlined sx={{ fontSize: 15, color: theme.aa.color.text.muted }} />
+        <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
+          Environment
+        </Typography>
+        <Select
+          size="small"
+          value={venv}
+          disabled={running || disabled}
+          onChange={(e) => setVenv(e.target.value)}
+          displayEmpty
+          sx={{ minWidth: 190, fontSize: 12, '& .MuiSelect-select': { py: 0.35 } }}
+        >
+          <MenuItem value="" sx={{ fontSize: 12 }}>
+            System (no virtualenv)
+          </MenuItem>
+          {(info?.venvs ?? []).map((v) => (
+            <MenuItem key={v.path} value={v.path} sx={{ fontSize: 12 }}>
+              {v.name}
+              {v.pythonVersion ? ` \u00b7 ${v.pythonVersion}` : ''}
+              {v.hasAaTools ? ' \u00b7 aa-tools' : ''}
+            </MenuItem>
+          ))}
+        </Select>
+
+        <Tooltip title="Re-scan for virtual environments">
+          <span>
+            <Button
+              size="small"
+              disabled={running}
+              onClick={() => void loadInfo()}
+              startIcon={<RefreshOutlined sx={{ fontSize: 15 }} />}
+              sx={{ fontSize: 11.5, textTransform: 'none' }}
+            >
+              Rescan
+            </Button>
+          </span>
+        </Tooltip>
+
+        <Box sx={{ flex: 1 }} />
+
+        <Typography sx={{ fontSize: 11, color: statusColor }}>
+          {status === 'connected'
+            ? 'connected'
+            : status === 'connecting'
+              ? 'connecting…'
+              : status === 'error'
+                ? 'error'
+                : 'not running'}
+        </Typography>
+
+        {running ? (
+          <Button
+            size="small"
+            color="inherit"
+            onClick={disconnect}
+            sx={{ fontSize: 11.5, textTransform: 'none' }}
+          >
+            {status === 'connecting' ? <CircularProgress size={13} /> : 'End session'}
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            variant="contained"
+            disabled={disabled}
+            onClick={connect}
+            startIcon={<PlayArrowOutlined sx={{ fontSize: 15 }} />}
+            sx={{ fontSize: 11.5, textTransform: 'none' }}
+          >
+            {status === 'closed' ? 'Restart' : 'Start session'}
+          </Button>
+        )}
+      </Box>
+
+      {error && (
+        <Typography
+          sx={{
+            fontSize: 11.5,
+            px: 1.25,
+            py: 0.75,
+            color: disabled
+              ? theme.aa.color.status.warning
+              : theme.aa.color.status.error,
+            borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
+          }}
+        >
+          {error}
+        </Typography>
+      )}
+
+      <Box
+        ref={hostRef}
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          p: 0.5,
+          '& .xterm': { height: '100%' },
+          '& .xterm-viewport': { backgroundColor: 'transparent !important' },
+        }}
+      />
+    </Box>
+  );
+};

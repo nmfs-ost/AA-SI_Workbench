@@ -1,0 +1,12 @@
+# Code ownership for review routing.
+# The org is nmfs-ost. Confirm these team handles exist there (or replace them
+# with individual maintainer handles) — GitHub ignores owners it cannot resolve.
+
+# Default owners for everything in the repo
+*                 @nmfs-ost/aa-si-maintainers
+
+# Component owners
+/frontend/        @nmfs-ost/aa-si-frontend
+/backend/         @nmfs-ost/aa-si-backend
+/docs/            @nmfs-ost/aa-si-maintainers
+/.github/         @nmfs-ost/aa-si-maintainers

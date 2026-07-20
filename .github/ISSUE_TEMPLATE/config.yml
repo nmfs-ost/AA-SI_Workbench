@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Question or discussion
-    url: https://github.com/<org>/AA-SI_Workbench/discussions
-    about: Ask questions and discuss ideas here (update <org> once homed).
-  - name: Security vulnerability
-    url: https://github.com/<org>/AA-SI_Workbench/security/policy
-    about: Please report security issues privately — do not open a public issue.
