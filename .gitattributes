@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Keep generated lockfiles out of diffs / language stats
+package-lock.json linguist-generated=true
+
+# Notebooks: treat as data for language stats
+*.ipynb linguist-language=Jupyter

@@ -1,0 +1,15 @@
+{
+  "name": "aa-si-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AA-SI Workbench — an open-source scientific workbench for active-acoustics data (browser UI + Python backend).",
+  "scripts": {
+    "setup": "cd frontend && npm install",
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "preview": "cd frontend && npm run preview",
+    "typecheck": "cd frontend && npm run typecheck",
+    "lint": "cd frontend && npm run lint",
+    "postinstall": "cd frontend && npm install"
+  }
+}

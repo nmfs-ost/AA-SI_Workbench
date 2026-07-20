@@ -1,0 +1,201 @@
+import { useRef, useState } from 'react';
+import {
+  Box,
+  Button,
+  Menu,
+  MenuItem,
+  Divider,
+  Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  useTheme,
+} from '@mui/material';
+
+import type { MenuItemDefinition } from '../../types';
+import { useLayout } from '../../context/LayoutContext';
+import { menus } from './menuConfig';
+
+/**
+ * Desktop-style menu bar. Clicking a top-level label opens its menu; while any
+ * menu is open, hovering a sibling label switches to it (classic menu-bar feel).
+ * The bar sits above the menu's click-away backdrop so hovering keeps working.
+ *
+ * Menu commands dispatch through the layout controller. Actions with no shell
+ * behaviour yet are inert placeholders.
+ */
+export function MenuBar() {
+  const theme = useTheme();
+  const { resetLayout, closeAllPanels, openPanel } = useLayout();
+
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const close = () => setOpenId(null);
+
+  const toggle = (id: string) =>
+    setOpenId((prev) => (prev === id ? null : id));
+
+  const handleEnter = (id: string) =>
+    setOpenId((prev) => (prev !== null && prev !== id ? id : prev));
+
+  const dispatch = (item: MenuItemDefinition) => {
+    switch (item.action) {
+      case 'reset-layout':
+        resetLayout();
+        break;
+      case 'close-all-panels':
+        closeAllPanels();
+        break;
+      case 'open-panel':
+        if (item.panelId) openPanel(item.panelId);
+        break;
+      case 'about':
+        setAboutOpen(true);
+        break;
+      default:
+        // 'noop' / unimplemented placeholder.
+        break;
+    }
+    close();
+  };
+
+  return (
+    <Box
+      component="nav"
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        height: theme.aa.size.menuBar,
+        flexShrink: 0,
+        px: 1,
+        gap: 0.25,
+        backgroundColor: theme.aa.color.bg.chrome,
+        borderBottom: `1px solid ${theme.aa.color.border.strong}`,
+        // Sit above the menu backdrop so hover-to-switch works.
+        position: 'relative',
+        zIndex: (t) => t.zIndex.modal + 1,
+        userSelect: 'none',
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: 12.5,
+          fontWeight: 700,
+          letterSpacing: 0.6,
+          color: theme.aa.color.text.secondary,
+          px: 1,
+          mr: 0.5,
+        }}
+      >
+        AA-SI
+      </Typography>
+
+      {menus.map((menu) => {
+        const isOpen = openId === menu.id;
+        return (
+          <Box key={menu.id}>
+            <Button
+              ref={(el) => {
+                buttonRefs.current[menu.id] = el;
+              }}
+              onClick={() => toggle(menu.id)}
+              onMouseEnter={() => handleEnter(menu.id)}
+              disableRipple
+              sx={{
+                minWidth: 0,
+                px: 1,
+                height: 24,
+                fontSize: 13,
+                fontWeight: 400,
+                lineHeight: 1,
+                color: theme.aa.color.text.primary,
+                backgroundColor: isOpen
+                  ? theme.aa.color.bg.hover
+                  : 'transparent',
+                '&:hover': { backgroundColor: theme.aa.color.bg.hover },
+              }}
+            >
+              {menu.label}
+            </Button>
+
+            <Menu
+              open={isOpen}
+              anchorEl={buttonRefs.current[menu.id] ?? undefined}
+              onClose={close}
+              disableScrollLock
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              MenuListProps={{ dense: true }}
+            >
+              {menu.items.map((item) =>
+                item.divider ? (
+                  <Divider key={item.id} sx={{ my: 0.5 }} />
+                ) : (
+                  <MenuItem
+                    key={item.id}
+                    disabled={item.disabled}
+                    onClick={() => dispatch(item)}
+                    title={item.panelId ? undefined : item.label}
+                  >
+                    <Box
+                      component="span"
+                      sx={{ flex: 1, whiteSpace: 'nowrap', pr: 3 }}
+                    >
+                      {item.label}
+                    </Box>
+                    {item.shortcut && (
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize: 11.5,
+                          color: theme.aa.color.text.muted,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {item.shortcut}
+                      </Typography>
+                    )}
+                  </MenuItem>
+                ),
+              )}
+            </Menu>
+          </Box>
+        );
+      })}
+
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+    </Box>
+  );
+}
+
+function AboutDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="xs">
+      <DialogTitle sx={{ fontSize: 15, fontWeight: 600 }}>
+        About AA-SI
+      </DialogTitle>
+      <DialogContent>
+        <DialogContentText sx={{ fontSize: 13 }}>
+          AA-SI — Active Acoustics Strategic Initiative.
+          <br />
+          Application shell (windowing framework preview).
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} variant="text" size="small">
+          Close
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
