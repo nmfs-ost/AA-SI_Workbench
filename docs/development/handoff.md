@@ -811,6 +811,23 @@ the next session doesn't relitigate them by accident.
   a hotel wifi. The two obvious wins are `React.lazy` on the terminal (~300 kB of xterm) and
   route-splitting the editor. Neither has been done because neither has been needed yet.
 
+## Files deleted so far (orphans to remove when upgrading in place)
+Unzipping a release over an existing checkout leaves deleted files behind, and
+`tsconfig.app.json` includes all of `src`, so an orphan that references a removed token fails
+the build even though nothing imports it. This has already bitten once — a stale
+`AppToolbar.tsx` referencing `size.toolBar` after the token was deleted.
+
+```
+frontend/src/components/layout/AppToolbar.tsx
+frontend/src/components/layout/toolbarConfig.tsx
+frontend/src/components/panels/WorkspacePanel.tsx
+frontend/src/components/panels/EchogramPanel.tsx
+frontend/src/components/panels/ViewerScaffold.tsx
+```
+
+**Add to this list whenever you delete a source file**, and see
+`docs/development/setup.md` → "Upgrading an existing checkout".
+
 ## Deliverable
 `/mnt/user-data/outputs/AA-SI_Workbench.zip` (whole monorepo; node_modules/dist stripped).
 Rebuild flow: `cd frontend && npm install` before any build; clean node_modules/dist/
