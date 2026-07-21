@@ -6,41 +6,45 @@
  * variables declared here cascade to every Dockview-rendered element so the
  * docking surface matches the MUI chrome exactly.
  *
- * Values are copied from src/theme/tokens.ts — keep the two in sync.
+ * Values are `var(--aa-*)`, written onto the document element from the active
+ * palette (theme/cssVariables.ts), so Dockview's own variables are declared in
+ * terms of ours and a theme switch repaints the docking surface with no
+ * JavaScript touching Dockview at all. This also retires the "keep the two in
+ * sync" rule that used to sit here: there is only one copy of each colour now.
  */
 
 .aa-dockview {
   height: 100%;
 
   /* Surfaces */
-  --dv-background-color: #1e2127;
-  --dv-group-view-background-color: #1e2127;
-  --dv-tabs-and-actions-container-background-color: #1c1f26;
+  --dv-background-color: var(--aa-bg-editor);
+  --dv-group-view-background-color: var(--aa-bg-editor);
+  --dv-tabs-and-actions-container-background-color: var(--aa-bg-tab-inactive);
 
   /* Tabs */
-  --dv-activegroup-visiblepanel-tab-background-color: #2b303a;
-  --dv-activegroup-visiblepanel-tab-color: #d5dae2;
-  --dv-activegroup-hiddenpanel-tab-background-color: #1c1f26;
-  --dv-activegroup-hiddenpanel-tab-color: #9aa3b1;
-  --dv-inactivegroup-visiblepanel-tab-background-color: #23272f;
-  --dv-inactivegroup-visiblepanel-tab-color: #c2c8d2;
-  --dv-inactivegroup-hiddenpanel-tab-background-color: #1c1f26;
-  --dv-inactivegroup-hiddenpanel-tab-color: #7f8795;
-  --dv-tab-divider-color: #14171c;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--aa-bg-tab-active);
+  --dv-activegroup-visiblepanel-tab-color: var(--aa-text-primary);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--aa-bg-tab-inactive);
+  --dv-activegroup-hiddenpanel-tab-color: var(--aa-text-secondary);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--aa-bg-tab-active-unfocused);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--aa-text-secondary);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--aa-bg-tab-inactive);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--aa-text-muted);
+  --dv-tab-divider-color: var(--aa-border-strong);
 
   /* Sashes / separators between panels */
-  --dv-separator-border: #14171c;
+  --dv-separator-border: var(--aa-border-strong);
   --dv-separator-handle-background-color: transparent;
-  --dv-separator-handle-hover-background-color: #4d8df0;
-  --dv-active-sash-color: #4d8df0;
+  --dv-separator-handle-hover-background-color: var(--aa-accent-main);
+  --dv-active-sash-color: var(--aa-accent-main);
 
   /* Drag + drop affordances */
-  --dv-drag-over-background-color: rgba(77, 141, 240, 0.18);
-  --dv-drag-over-border-color: #4d8df0;
+  --dv-drag-over-background-color: var(--aa-accent-soft);
+  --dv-drag-over-border-color: var(--aa-accent-main);
 
   /* Header action icons (close, etc.) */
-  --dv-icon-hover-background-color: #2e343e;
-  --dv-paneview-active-outline-color: #4d8df0;
+  --dv-icon-hover-background-color: var(--aa-bg-hover);
+  --dv-paneview-active-outline-color: var(--aa-accent-main);
 
   /* Density */
   --dv-tabs-and-actions-container-height: 34px;
@@ -62,7 +66,7 @@
    are rendered by PanelTab.tsx, which sizes itself — an icon tab is a fixed
    square and would be thrown off by inherited horizontal padding. */
 .aa-dockview .tab {
-  font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--aa-font-ui);
   font-weight: 500;
 }
 
@@ -71,14 +75,14 @@
    accent and the icon's own colour are the only things saying which panel the
    dock is showing, and clicking into a file shouldn't erase that. */
 .aa-dockview .groupview.active-group .tab.active-tab {
-  box-shadow: inset 0 2px 0 0 #4d8df0;
+  box-shadow: inset 0 2px 0 0 var(--aa-accent-main);
 }
 
 .aa-dockview .groupview.inactive-group .tab.active-tab {
-  box-shadow: inset 0 2px 0 0 rgba(77, 141, 240, 0.45);
+  box-shadow: inset 0 2px 0 0 var(--aa-accent-muted);
 }
 
 /* A subtle seam under the tab strip. */
 .aa-dockview .tabs-and-actions-container {
-  border-bottom: 1px solid #14171c;
+  border-bottom: 1px solid var(--aa-border-strong);
 }

@@ -99,7 +99,13 @@ export const menus: MenuDefinition[] = [
       { id: 'view-reset', label: 'Reset Layout', action: 'reset-layout' },
       { id: 'view-close-all', label: 'Close All Panels', action: 'close-all-panels' },
       { id: 'view-div-2', divider: true },
-      { id: 'view-appearance', label: 'Appearance', disabled: true },
+      { id: 'view-theme-dark', label: 'Dark Theme', action: 'set-theme', themeMode: 'dark' },
+      {
+        id: 'view-theme-light',
+        label: 'Light Theme',
+        action: 'set-theme',
+        themeMode: 'light',
+      },
     ],
   },
   {

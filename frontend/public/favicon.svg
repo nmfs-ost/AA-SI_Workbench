@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!--
+    The same mark as src/components/branding/NoaaMark.tsx; a static favicon
+    can't import a component, so the geometry is repeated here. Change one and
+    change the other.
+
+    The browser paints this outside the page, so it can't read the in-app theme
+    toggle. It follows the browser's own colour scheme instead, which is the
+    closest honest approximation: a dark tab strip gets the light mark.
+  -->
+  <style>
+    svg { --ink: #d5dae2; }
+    @media (prefers-color-scheme: light) { svg { --ink: #1b1f27; } }
+    .mark {
+      fill: none;
+      stroke: var(--ink);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+  <circle class="mark" cx="12" cy="12" r="9" />
+  <path class="mark" d="M6.6 11.6 Q9.3 8 12 10.9 Q14.7 8 17.4 11.6" />
+  <path class="mark" d="M7.2 15.3 Q9.6 13.7 12 15.3 T16.8 15.3" />
+</svg>

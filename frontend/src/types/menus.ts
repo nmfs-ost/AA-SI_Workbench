@@ -1,6 +1,7 @@
 import type { DialogId } from './dialogs';
 import type { LayoutVariant } from './layout';
 import type { PanelId } from './panels';
+import type { ThemeMode } from './theme';
 
 /**
  * Shell-level action identifiers. These are window-management actions only —
@@ -15,7 +16,8 @@ export type ShellActionId =
   | 'open-dialog'
   | 'open-external'
   | 'save-active-file'
-  | 'apply-layout';
+  | 'apply-layout'
+  | 'set-theme';
 
 /** A menu row. A row is either a command, a divider, or a submenu. */
 export interface MenuItemDefinition {
@@ -39,6 +41,8 @@ export interface MenuItemDefinition {
    * computed at render rather than stored here.
    */
   layoutVariant?: LayoutVariant;
+  /** For 'set-theme', which palette to switch to. Ticked the same way. */
+  themeMode?: ThemeMode;
   disabled?: boolean;
   /** Render a separator line instead of a command. */
   divider?: boolean;

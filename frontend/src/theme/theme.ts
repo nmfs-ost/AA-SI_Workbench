@@ -1,5 +1,6 @@
 import { createTheme } from '@mui/material/styles';
-import { tokens, type AaTokens } from './tokens';
+import { tokensFor, type AaTokens } from './tokens';
+import type { ThemeMode } from '../types';
 
 /**
  * Expose the raw AA-SI tokens on the MUI theme as `theme.aa` so any component
@@ -15,205 +16,218 @@ declare module '@mui/material/styles' {
   }
 }
 
-const { color, font, radius } = tokens;
+/**
+ * Build the MUI theme for a palette.
+ *
+ * Everything below is written against `color` / `font` / `radius`, so the two
+ * themes differ only in which token object those names are bound to — there is
+ * no second theme definition to keep in step, and no component override that
+ * knows which mode it is in.
+ */
+export function createAppTheme(mode: ThemeMode) {
+  const { color, font, radius } = tokensFor(mode);
 
-export const theme = createTheme({
-  aa: tokens,
+  return createTheme({
+    aa: tokensFor(mode),
 
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: color.accent.main,
-      dark: color.accent.main,
-      light: color.accent.hover,
-      contrastText: '#ffffff',
+    palette: {
+      mode,
+      primary: {
+        main: color.accent.main,
+        dark: color.accent.main,
+        light: color.accent.hover,
+        contrastText: '#ffffff',
+      },
+      error: { main: color.status.error },
+      warning: { main: color.status.warning },
+      success: { main: color.status.success },
+      info: { main: color.status.info },
+      background: {
+        default: color.bg.editor,
+        paper: color.bg.elevated,
+      },
+      text: {
+        primary: color.text.primary,
+        secondary: color.text.secondary,
+        disabled: color.text.disabled,
+      },
+      divider: color.border.subtle,
     },
-    error: { main: color.status.error },
-    warning: { main: color.status.warning },
-    success: { main: color.status.success },
-    info: { main: color.status.info },
-    background: {
-      default: color.bg.editor,
-      paper: color.bg.elevated,
-    },
-    text: {
-      primary: color.text.primary,
-      secondary: color.text.secondary,
-      disabled: color.text.disabled,
-    },
-    divider: color.border.subtle,
-  },
 
-  shape: {
-    borderRadius: radius.sm,
-  },
+    shape: {
+      borderRadius: radius.sm,
+    },
 
-  typography: {
-    fontFamily: font.ui,
-    // IDE density: a 13px base with tight line heights.
-    fontSize: 13,
-    htmlFontSize: 16,
-    button: {
-      textTransform: 'none',
-      fontWeight: 500,
+    typography: {
+      fontFamily: font.ui,
+      // IDE density: a 13px base with tight line heights.
       fontSize: 13,
+      htmlFontSize: 16,
+      button: {
+        textTransform: 'none',
+        fontWeight: 500,
+        fontSize: 13,
+      },
+      body2: {
+        fontSize: 13,
+        lineHeight: 1.5,
+      },
+      caption: {
+        fontSize: 12,
+        color: color.text.secondary,
+      },
     },
-    body2: {
-      fontSize: 13,
-      lineHeight: 1.5,
-    },
-    caption: {
-      fontSize: 12,
-      color: color.text.secondary,
-    },
-  },
 
-  components: {
-    // Menus / popovers — square-ish, subtle border, no heavy elevation shadow.
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-        },
-      },
-    },
-    MuiMenu: {
-      defaultProps: {
-        transitionDuration: 90,
-      },
-      styleOverrides: {
-        paper: {
-          backgroundColor: color.bg.elevated,
-          border: `1px solid ${color.border.subtle}`,
-          borderRadius: radius.md,
-          marginTop: 2,
-          minWidth: 200,
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
-        },
-        list: {
-          paddingTop: 4,
-          paddingBottom: 4,
-        },
-      },
-    },
-    MuiMenuItem: {
-      styleOverrides: {
-        root: {
-          fontSize: 13,
-          minHeight: 30,
-          paddingTop: 4,
-          paddingBottom: 4,
-          gap: 10,
-          '&:hover': {
-            backgroundColor: color.bg.hover,
-          },
-          '&.Mui-selected': {
-            backgroundColor: color.bg.selected,
-          },
-          '&.Mui-disabled': {
-            opacity: 1,
-            color: color.text.disabled,
+    components: {
+      // Menus / popovers — square-ish, subtle border, no heavy elevation shadow.
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            backgroundImage: 'none',
           },
         },
       },
-    },
-    MuiListItemIcon: {
-      styleOverrides: {
-        root: {
-          minWidth: 0,
-          color: 'inherit',
+      MuiMenu: {
+        defaultProps: {
+          transitionDuration: 90,
+        },
+        styleOverrides: {
+          paper: {
+            backgroundColor: color.bg.elevated,
+            border: `1px solid ${color.border.subtle}`,
+            borderRadius: radius.md,
+            marginTop: 2,
+            minWidth: 200,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
+          },
+          list: {
+            paddingTop: 4,
+            paddingBottom: 4,
+          },
         },
       },
-    },
-    MuiDivider: {
-      styleOverrides: {
-        root: {
-          borderColor: color.border.subtle,
+      MuiMenuItem: {
+        styleOverrides: {
+          root: {
+            fontSize: 13,
+            minHeight: 30,
+            paddingTop: 4,
+            paddingBottom: 4,
+            gap: 10,
+            '&:hover': {
+              backgroundColor: color.bg.hover,
+            },
+            '&.Mui-selected': {
+              backgroundColor: color.bg.selected,
+            },
+            '&.Mui-disabled': {
+              opacity: 1,
+              color: color.text.disabled,
+            },
+          },
         },
       },
-    },
-    MuiIconButton: {
-      defaultProps: {
-        size: 'small',
-        disableRipple: false,
+      MuiListItemIcon: {
+        styleOverrides: {
+          root: {
+            minWidth: 0,
+            color: 'inherit',
+          },
+        },
       },
-      styleOverrides: {
-        root: {
-          color: color.text.secondary,
-          borderRadius: radius.sm,
-          '&:hover': {
-            backgroundColor: color.bg.hover,
+      MuiDivider: {
+        styleOverrides: {
+          root: {
+            borderColor: color.border.subtle,
+          },
+        },
+      },
+      MuiIconButton: {
+        defaultProps: {
+          size: 'small',
+          disableRipple: false,
+        },
+        styleOverrides: {
+          root: {
+            color: color.text.secondary,
+            borderRadius: radius.sm,
+            '&:hover': {
+              backgroundColor: color.bg.hover,
+              color: color.text.primary,
+            },
+            '&.Mui-disabled': {
+              color: color.text.disabled,
+            },
+          },
+        },
+      },
+      MuiButton: {
+        defaultProps: {
+          disableElevation: true,
+        },
+        styleOverrides: {
+          root: {
+            borderRadius: radius.sm,
+            minWidth: 0,
+          },
+        },
+      },
+      MuiTooltip: {
+        defaultProps: {
+          enterDelay: 500,
+          enterNextDelay: 300,
+        },
+        styleOverrides: {
+          tooltip: {
+            backgroundColor: color.bg.base,
+            border: `1px solid ${color.border.subtle}`,
             color: color.text.primary,
+            fontSize: 12,
+            fontWeight: 400,
+            padding: '4px 8px',
+            borderRadius: radius.sm,
           },
-          '&.Mui-disabled': {
-            color: color.text.disabled,
+          arrow: {
+            color: color.bg.base,
+          },
+        },
+      },
+      MuiTabs: {
+        styleOverrides: {
+          root: {
+            minHeight: 32,
+          },
+          indicator: {
+            height: 2,
+            backgroundColor: color.accent.main,
+          },
+        },
+      },
+      MuiTab: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            minHeight: 32,
+            fontSize: 12.5,
+            fontWeight: 500,
+            padding: '0 12px',
+          },
+        },
+      },
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            backgroundColor: color.bg.elevated,
+            border: `1px solid ${color.border.subtle}`,
+            backgroundImage: 'none',
           },
         },
       },
     },
-    MuiButton: {
-      defaultProps: {
-        disableElevation: true,
-      },
-      styleOverrides: {
-        root: {
-          borderRadius: radius.sm,
-          minWidth: 0,
-        },
-      },
-    },
-    MuiTooltip: {
-      defaultProps: {
-        enterDelay: 500,
-        enterNextDelay: 300,
-      },
-      styleOverrides: {
-        tooltip: {
-          backgroundColor: color.bg.base,
-          border: `1px solid ${color.border.subtle}`,
-          color: color.text.primary,
-          fontSize: 12,
-          fontWeight: 400,
-          padding: '4px 8px',
-          borderRadius: radius.sm,
-        },
-        arrow: {
-          color: color.bg.base,
-        },
-      },
-    },
-    MuiTabs: {
-      styleOverrides: {
-        root: {
-          minHeight: 32,
-        },
-        indicator: {
-          height: 2,
-          backgroundColor: color.accent.main,
-        },
-      },
-    },
-    MuiTab: {
-      styleOverrides: {
-        root: {
-          textTransform: 'none',
-          minHeight: 32,
-          fontSize: 12.5,
-          fontWeight: 500,
-          padding: '0 12px',
-        },
-      },
-    },
-    MuiDialog: {
-      styleOverrides: {
-        paper: {
-          backgroundColor: color.bg.elevated,
-          border: `1px solid ${color.border.subtle}`,
-          backgroundImage: 'none',
-        },
-      },
-    },
-  },
-});
+  });
+}
 
-export type AppTheme = typeof theme;
+/** The default theme, and what anything reaching for a palette without a mode gets. */
+export const theme = createAppTheme('dark');
+
+export type AppTheme = ReturnType<typeof createAppTheme>;

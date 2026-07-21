@@ -5,6 +5,7 @@ import { Box } from '@mui/material';
 import { dockviewComponents } from '../panels/registry';
 import { PanelTab } from './PanelTab';
 import { useLayout } from '../../context/LayoutContext';
+import { useThemeMode } from '../../state/theme';
 import { getPipelinesState, subscribePipelines } from '../../state/pipelines';
 import { clearOpenRequest, useOpenRequest } from '../../state/editors';
 
@@ -29,6 +30,7 @@ export function DockLayout() {
   const { onReady, openPanel, openEditor } = useLayout();
   const lastActiveRef = useRef<string | null>(getPipelinesState().activePipelineId);
   const openRequest = useOpenRequest();
+  const mode = useThemeMode();
 
   useEffect(() => {
     return subscribePipelines(() => {
@@ -49,7 +51,7 @@ export function DockLayout() {
   return (
     <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
       <DockviewReact
-        className="dockview-theme-dark aa-dockview"
+        className={`dockview-theme-${mode} aa-dockview`}
         components={dockviewComponents}
         defaultTabComponent={PanelTab}
         onReady={onReady}

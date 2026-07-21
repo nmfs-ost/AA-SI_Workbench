@@ -1,3 +1,5 @@
+import type { ThemeMode } from '../types';
+
 /**
  * Design tokens for AA-SI.
  *
@@ -11,7 +13,7 @@
  * blue accent, no gradients, tight corner radii.
  */
 
-export const tokens = {
+const dark = {
   color: {
     /* Layered backgrounds, from deepest chrome to elevated surfaces. */
     bg: {
@@ -19,8 +21,9 @@ export const tokens = {
       chrome: '#1c1f26', // menu bar + toolbar
       editor: '#1e2127', // docking surface / central workspace
       panel: '#22262e', // panel body surfaces
-      tabActive: '#2b303a', // active tab
-      tabInactive: '#1c1f26', // inactive tab
+      tabActive: '#2b303a', // fronted tab in the focused group
+      tabActiveUnfocused: '#23272f', // fronted tab elsewhere
+      tabInactive: '#1c1f26', // tab behind another
       elevated: '#262b34', // menus, dialogs, popovers
       hover: '#2e343e', // hover feedback on interactive chrome
       selected: 'rgba(77, 141, 240, 0.16)', // selected row / active nav item
@@ -45,6 +48,9 @@ export const tokens = {
       main: '#4d8df0',
       hover: '#5f9bf5',
       soft: 'rgba(77, 141, 240, 0.16)',
+      /* The fronted tab of an *unfocused* group. Present enough to answer
+         "which panel is this dock showing" while the editor has focus. */
+      muted: 'rgba(77, 141, 240, 0.45)',
     },
 
     /* Syntax colours for the code editor.
@@ -61,6 +67,13 @@ export const tokens = {
       entity: '#c9b6ea',
       /* Names a file refers to: variables, keys, links. */
       reference: '#7cbdd0',
+    },
+
+    /* Scrollbar thumb. Lives here because global.css now reads every colour
+       from these tokens rather than repeating hex values it can't switch. */
+    scrollbar: {
+      thumb: '#3a4049',
+      thumbHover: '#4a515c',
     },
 
     /* Semantic colours. Defined for future log levels / status; used sparingly. */
@@ -91,4 +104,111 @@ export const tokens = {
   },
 } as const;
 
-export type AaTokens = typeof tokens;
+/**
+ * Widen the literal types `as const` produces.
+ *
+ * Without this `AaTokens` would be `{ base: '#16181d', ... }` — the dark
+ * palette's *values* as types — and the light palette would fail to typecheck
+ * on every single colour for the crime of being a different colour. `as const`
+ * is still worth keeping on the reference palette: it is what makes the shape
+ * exact, so a palette that forgets a token or invents one is a type error.
+ */
+type Widen<T> = T extends string
+  ? string
+  : T extends number
+    ? number
+    : { [K in keyof T]: Widen<T[K]> };
+
+/** The shape every palette must satisfy. Dark is the reference. */
+export type AaTokens = Widen<typeof dark>;
+
+/**
+ * The light palette.
+ *
+ * Not an inversion. Flipping a dark IDE's lightness gives you dark grey text on
+ * mid grey, and the layering reads backwards: in the dark theme the deepest
+ * chrome is *darkest* and panels lift towards the viewer, so lightening it
+ * naively makes the chrome the brightest thing on screen. Here the layers run
+ * the other way — chrome is the greyest surface and panel bodies go to white —
+ * which keeps the same rule underneath: the surface you read from has the most
+ * contrast with its neighbours.
+ *
+ * The accent is the same blue rôle at a different lightness. #4d8df0 carries
+ * about 2.4:1 against white, so on a light background it fails as text and as a
+ * 2px marker; #1d64cd is the same hue with the contrast the job needs. Syntax
+ * colours are darkened for the same reason and kept equally desaturated, so an
+ * open Python file still reads as part of the chrome rather than a rainbow.
+ */
+const light: AaTokens = {
+  color: {
+    bg: {
+      base: '#e6e9ee', // strips + status bar — the greyest layer
+      chrome: '#eff1f5', // menu bar
+      editor: '#f6f7f9', // docking surface
+      panel: '#ffffff', // panel body surfaces
+      tabActive: '#ffffff',
+      tabActiveUnfocused: '#f2f4f7',
+      tabInactive: '#e6e9ee',
+      elevated: '#ffffff', // menus, dialogs, popovers
+      hover: '#dde1e8',
+      selected: 'rgba(29, 100, 205, 0.13)',
+    },
+
+    border: {
+      subtle: '#d8dce3',
+      strong: '#bcc3cd',
+    },
+
+    text: {
+      primary: '#1b1f27',
+      secondary: '#4a5261',
+      muted: '#6d7583',
+      disabled: '#9aa2ae',
+    },
+
+    accent: {
+      main: '#1d64cd',
+      hover: '#1854ad',
+      soft: 'rgba(29, 100, 205, 0.13)',
+      muted: 'rgba(29, 100, 205, 0.42)',
+    },
+
+    syntax: {
+      comment: '#79828f',
+      string: '#3f6f33',
+      keyword: '#27508f',
+      number: '#8a5216',
+      entity: '#5c4491',
+      reference: '#1a6070',
+    },
+
+    scrollbar: {
+      thumb: '#c3c9d2',
+      thumbHover: '#adb4bf',
+    },
+
+    status: {
+      success: '#1a7f37',
+      warning: '#8a6100',
+      error: '#c0332b',
+      info: '#1d64cd',
+    },
+  },
+
+  font: dark.font,
+  radius: dark.radius,
+  size: dark.size,
+};
+
+export const palettes: Record<ThemeMode, AaTokens> = { dark, light };
+
+/** The tokens for a mode. */
+export function tokensFor(mode: ThemeMode): AaTokens {
+  return palettes[mode];
+}
+
+/**
+ * The dark tokens, for the handful of places that want a palette without
+ * caring which one is showing (type defaults, tests).
+ */
+export const tokens = dark;

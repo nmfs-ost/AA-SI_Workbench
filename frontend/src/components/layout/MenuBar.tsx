@@ -4,6 +4,7 @@ import {
   Button,
   Menu,
   MenuItem,
+  Tooltip,
   Divider,
   Typography,
   useTheme,
@@ -14,11 +15,18 @@ import type { MenuItemDefinition } from '../../types';
 import { useLayout } from '../../context/LayoutContext';
 import { openDialog } from '../../state/dialogs';
 import { saveActiveDoc } from '../../state/editors';
+import { setThemeMode, useThemeMode } from '../../state/theme';
+import { NoaaMark } from '../branding/NoaaMark';
 import { menus } from './menuConfig';
+
+/** A row that shows a tick: it names one of a set of mutually exclusive states. */
+function isCheckable(item: MenuItemDefinition): boolean {
+  return item.layoutVariant !== undefined || item.themeMode !== undefined;
+}
 
 /** True when any row in this menu carries a tick, so all its rows get the column. */
 function menuHasChecks(items: MenuItemDefinition[]): boolean {
-  return items.some((item) => item.layoutVariant !== undefined);
+  return items.some(isCheckable);
 }
 
 /**
@@ -34,6 +42,13 @@ export function MenuBar() {
   const theme = useTheme();
   const { resetLayout, closeAllPanels, openPanel, applyLayout, layoutVariant } =
     useLayout();
+  const themeMode = useThemeMode();
+
+  /* Which state a row names, and whether it is the one in force. Both facts are
+     runtime, so neither is stored in the menu definition. */
+  const isChecked = (item: MenuItemDefinition): boolean =>
+    (item.layoutVariant !== undefined && item.layoutVariant === layoutVariant) ||
+    (item.themeMode !== undefined && item.themeMode === themeMode);
 
   const [openId, setOpenId] = useState<string | null>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -69,6 +84,9 @@ export function MenuBar() {
       case 'apply-layout':
         if (item.layoutVariant) applyLayout(item.layoutVariant);
         break;
+      case 'set-theme':
+        if (item.themeMode) setThemeMode(item.themeMode);
+        break;
       default:
         // 'noop' / unimplemented placeholder.
         break;
@@ -94,18 +112,25 @@ export function MenuBar() {
         userSelect: 'none',
       }}
     >
-      <Typography
-        sx={{
-          fontSize: 12.5,
-          fontWeight: 700,
-          letterSpacing: 0.6,
-          color: theme.aa.color.text.secondary,
-          px: 1,
-          mr: 0.5,
-        }}
-      >
-        AA-SI
-      </Typography>
+      {/* The mark stands in for the wordmark that used to be here. It inherits
+          `color`, so it needs no per-theme variant; the name it replaces lives
+          on the tooltip and the accessible label rather than being lost. */}
+      <Tooltip title="AA-SI Workbench — NOAA Fisheries" placement="bottom-start">
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            px: 1,
+            mr: 0.5,
+            color: theme.aa.color.text.secondary,
+            transition: 'color .12s',
+            '&:hover': { color: theme.aa.color.accent.main },
+            '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+          }}
+        >
+          <NoaaMark size={19} />
+        </Box>
+      </Tooltip>
 
       {menus.map((menu) => {
         const isOpen = openId === menu.id;
@@ -153,11 +178,8 @@ export function MenuBar() {
                     disabled={item.disabled}
                     onClick={() => dispatch(item)}
                     title={item.panelId ? undefined : item.label}
-                    {...(item.layoutVariant
-                      ? {
-                          role: 'menuitemradio',
-                          'aria-checked': item.layoutVariant === layoutVariant,
-                        }
+                    {...(isCheckable(item)
+                      ? { role: 'menuitemradio', 'aria-checked': isChecked(item) }
                       : {})}
                   >
                     {/* A tick column, present on every row in a menu that has
@@ -174,9 +196,7 @@ export function MenuBar() {
                           color: theme.aa.color.accent.main,
                         }}
                       >
-                        {item.layoutVariant === layoutVariant && (
-                          <CheckOutlined sx={{ fontSize: 14 }} />
-                        )}
+                        {isChecked(item) && <CheckOutlined sx={{ fontSize: 14 }} />}
                       </Box>
                     )}
                     <Box

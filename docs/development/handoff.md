@@ -205,6 +205,46 @@ HORIZONTAL                              VERTICAL
 - The menu labels dropped the word "Monitor" when the portrait layout went: neither
   arrangement describes a monitor shape any more.
 
+## Light/Dark theme — WIRED (View ▸ Dark Theme / Light Theme)
+Dark is the default and the fallback. `state/theme.ts` (module store, localStorage-backed)
+holds the mode; `MenuBar` ticks it with the same machinery as the layout variants.
+
+- **Two palettes, one theme definition.** `theme/tokens.ts` exports `dark`, `light` and
+  `tokensFor(mode)`; `createAppTheme(mode)` binds `color`/`font`/`radius` to one of them and
+  every MUI component override is written against those names. There is no second theme to
+  keep in step and no component that knows which mode it is in.
+- **`AaTokens` is `Widen<typeof dark>`.** `as const` on the reference palette is what makes
+  the shape exact (a palette that forgets or invents a token is a type error); the `Widen`
+  mapped type is what stops it also demanding the dark palette's literal *values*.
+- **Light is not an inversion.** In dark, chrome is darkest and panels lift toward the viewer;
+  lightening that naively makes chrome the brightest thing on screen. Light runs the layers the
+  other way — chrome greyest, panel bodies white — keeping the rule underneath. The accent
+  changes hex for contrast (`#4d8df0` is ~2.4:1 on white, so `#1d64cd` at the same hue).
+- **The seam is CSS custom properties.** `global.css` and `dockview-overrides.css` can't import
+  TS, so they used to repeat hex values behind a "keep these in sync" comment — the same
+  duplication that let three dead Dockview selectors survive. They now name `var(--aa-*)`, and
+  `theme/cssVariables.ts` writes those onto `document.documentElement` on every mode change.
+  The flattening is generic (`color.bg.tabActive` → `--aa-bg-tab-active`), so a new token is
+  exposed to CSS with no second edit.
+- **Dockview is never told anything.** Its `--dv-*` variables are declared in terms of ours, so
+  the docking surface repaints without a rebuild and open panels, tab strips, sashes and
+  scroll positions all survive the switch. Only the base class swaps
+  (`dockview-theme-dark|light`), for the defaults we don't override.
+- `document.documentElement.style.colorScheme` is set too — without it a light theme still gets
+  dark native select dropdowns and a dark scrollbar gutter.
+- **Not seen in a browser.** The light palette's contrast was reasoned about, not measured, and
+  the syntax colours in particular have never been read against a white editor.
+
+## NOAA mark — WIRED (top-left + favicon)
+`components/branding/NoaaMark.tsx` replaced the "AA-SI" wordmark in the menu bar. Circle, gull,
+wave: original geometry at the same stroke weight as the outlined icon set, not a reproduction
+of the agency seal. It draws in `currentColor`, so it needs no per-theme variant and inherits
+hover/disabled states. The name it replaced lives on the tooltip and the `aria-label`.
+`public/favicon.svg` repeats the geometry — a static file can't import a component, so a change
+to the shape belongs in both — and follows `prefers-color-scheme`, since the browser paints the
+tab outside the page and cannot see the in-app toggle.
+
+
 ## File editor — WIRED (center tabs)
 Click a file in the Files panel and it opens as a tab in the center, beside Workspace and
 Pipelines. `components/panels/editor/` + `state/editors.ts` + backend read/write/create routes.
@@ -636,7 +676,7 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
 | Frontend tests | `npm test` | **84 passed** (6 files) |
-| Frontend build | `npm run build` | clean — **1,120.57 kB / 312.59 kB gzip** |
+| Frontend build | `npm run build` | clean — **1,123.23 kB / 313.57 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
