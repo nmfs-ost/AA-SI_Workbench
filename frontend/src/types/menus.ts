@@ -12,7 +12,8 @@ export type ShellActionId =
   | 'close-all-panels'
   | 'open-panel'
   | 'open-dialog'
-  | 'open-external';
+  | 'open-external'
+  | 'save-active-file';
 
 /** A menu row. A row is either a command, a divider, or a submenu. */
 export interface MenuItemDefinition {

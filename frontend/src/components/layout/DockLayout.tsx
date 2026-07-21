@@ -3,29 +3,31 @@ import { DockviewReact } from 'dockview';
 import { Box } from '@mui/material';
 
 import { dockviewComponents } from '../panels/registry';
-import { PanelTab } from './PanelTab';
 import { useLayout } from '../../context/LayoutContext';
 import { getPipelinesState, subscribePipelines } from '../../state/pipelines';
+import { clearOpenRequest, useOpenRequest } from '../../state/editors';
 
 /**
  * The docking surface. Thin wrapper around <DockviewReact />: it supplies the
  * component map from the registry and the `onReady` handler from the layout
  * controller, and fills the remaining shell height.
  *
- * It also fronts the Configuration tab whenever a pipeline becomes the focused
- * one, so selecting a pipeline card reveals its settings without the user having
- * to hunt for the tab. This lives here because DockLayout is guaranteed to sit
- * inside the layout provider and therefore has access to the Dockview API.
+ * It also translates two store signals into layout changes, because this is the
+ * one component guaranteed to sit inside the layout provider and therefore to
+ * hold the Dockview API:
  *
- * Tabs are rendered by `PanelTab` rather than Dockview's default, which is what
- * makes the left dock's tabs icon-only.
+ *   - a pipeline becoming the focused one fronts the Configuration tab, so
+ *     selecting a pipeline card reveals its settings without hunting for it;
+ *   - a request to open a file (from the Files panel, the New dialog, anywhere)
+ *     becomes an editor tab in the centre.
  *
  * The `aa-dockview dockview-theme-dark` classes theme Dockview via the CSS
  * variable overrides in src/theme/dockview-overrides.css.
  */
 export function DockLayout() {
-  const { onReady, openPanel } = useLayout();
+  const { onReady, openPanel, openEditor } = useLayout();
   const lastActiveRef = useRef<string | null>(getPipelinesState().activePipelineId);
+  const openRequest = useOpenRequest();
 
   useEffect(() => {
     return subscribePipelines(() => {
@@ -37,12 +39,17 @@ export function DockLayout() {
     });
   }, [openPanel]);
 
+  useEffect(() => {
+    if (!openRequest) return;
+    openEditor(openRequest.path, openRequest.name);
+    clearOpenRequest(openRequest.id);
+  }, [openEditor, openRequest]);
+
   return (
     <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
       <DockviewReact
         className="dockview-theme-dark aa-dockview"
         components={dockviewComponents}
-        defaultTabComponent={PanelTab}
         onReady={onReady}
       />
     </Box>

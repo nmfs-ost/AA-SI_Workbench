@@ -17,12 +17,13 @@ export type PanelRegion = 'left' | 'right' | 'bottom' | 'center';
 export type BuiltinPanelId =
   | 'workspace'
   | 'pipelines'
-  | 'echogram'
+  | 'editor'
   | 'metadata'
   | 'configuration'
   | 'calibration'
   | 'processingQueue'
   | 'ncei'
+  | 'files'
   | 'derived'
   | 'omao'
   | 'terminal'
@@ -59,4 +60,12 @@ export interface PanelDefinition {
    * Defaults to true.
    */
   closeable?: boolean;
+  /**
+   * A template rather than a panel: opened programmatically, many times, with
+   * different parameters (the file editor). Dynamic panels are registered as
+   * Dockview components but are left out of the Window menu, the default
+   * layout, and the activity bar, because "open an editor" is not a thing to
+   * pick from a list — you open a *file*.
+   */
+  dynamic?: boolean;
 }

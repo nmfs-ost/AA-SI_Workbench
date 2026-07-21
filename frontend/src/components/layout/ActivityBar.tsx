@@ -17,8 +17,12 @@ import { useLayout } from '../../context/LayoutContext';
  * new data source puts an icon here automatically. Clicking the source you're
  * already in collapses the dock and hands the width back to the editor.
  *
- * The icons don't replace the dock's tabs — those are still how a panel gets
- * dragged somewhere else. They replace *hunting* for them.
+ * These icons are now the *only* label the sidebar has — the tab strip that
+ * used to repeat them was removed (see `syncSidebarChrome` in
+ * useLayoutController). That raises the bar for the active state, so it carries
+ * three cues rather than one: the accent hairline against the edge, a tinted
+ * background, and full-strength icon colour against muted neighbours. The names
+ * live in the tooltips, which is also what the screen-reader label reads.
  */
 export function ActivityBar() {
   const theme = useTheme();
@@ -83,10 +87,15 @@ export function ActivityBar() {
                 color: selected
                   ? theme.aa.color.text.primary
                   : theme.aa.color.text.muted,
+                backgroundColor: selected
+                  ? theme.aa.color.bg.selected
+                  : 'transparent',
                 transition: 'color .12s, background-color .12s',
                 '&:hover': {
                   color: theme.aa.color.text.primary,
-                  backgroundColor: theme.aa.color.bg.hover,
+                  backgroundColor: selected
+                    ? theme.aa.color.bg.selected
+                    : theme.aa.color.bg.hover,
                 },
                 '&:focus-visible': {
                   outline: `1px solid ${theme.aa.color.accent.main}`,

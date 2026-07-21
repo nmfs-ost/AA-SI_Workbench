@@ -2,6 +2,7 @@ import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
 import { openDialog } from '../../state/dialogs';
 import { useUpdateJobState } from '../../state/environment';
+import { getEditorsState, isDirty, openFile, useUnsavedCount } from '../../state/editors';
 
 /**
  * A slim status strip along the bottom of the shell. Global chrome that frames
@@ -10,10 +11,15 @@ import { useUpdateJobState } from '../../state/environment';
  * The right-hand slot reflects the environment update job, so a run started
  * from the dialog stays visible after the dialog is closed; clicking it reopens
  * the dialog.
+ *
+ * It also carries an unsaved-files count. Closing an editor tab with unsaved
+ * edits keeps the buffer rather than discarding it, and without this the work
+ * would be invisible — clicking the count reopens the file it belongs to.
  */
 export function StatusBar() {
   const theme = useTheme();
   const jobState = useUpdateJobState();
+  const unsavedCount = useUnsavedCount();
 
   const labelSx = {
     fontSize: 11.5,
@@ -51,6 +57,28 @@ export function StatusBar() {
     >
       <Typography sx={labelSx}>Active Acoustics Strategic Initiative</Typography>
 
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      {unsavedCount > 0 && (
+        <Typography
+          component="button"
+          onClick={() => {
+            const pending = Object.values(getEditorsState().docs).find(isDirty);
+            if (pending) openFile(pending.path, pending.name);
+          }}
+          sx={{
+            ...labelSx,
+            color: theme.aa.color.status.warning,
+            background: 'none',
+            border: 'none',
+            p: 0,
+            cursor: 'pointer',
+            '&:hover': { textDecoration: 'underline' },
+          }}
+        >
+          {unsavedCount} unsaved
+        </Typography>
+      )}
+
       <Box
         onClick={interactive ? () => openDialog('environment') : undefined}
         sx={{
@@ -65,6 +93,7 @@ export function StatusBar() {
         <Typography sx={{ ...labelSx, color: current.color ?? labelSx.color }}>
           {current.text}
         </Typography>
+      </Box>
       </Box>
     </Box>
   );
