@@ -24,6 +24,7 @@ import SaveOutlined from '@mui/icons-material/SaveOutlined';
 import SaveAsOutlined from '@mui/icons-material/SaveAsOutlined';
 import RestartAltOutlined from '@mui/icons-material/RestartAltOutlined';
 import DeleteOutlineOutlined from '@mui/icons-material/DeleteOutlineOutlined';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 
 import { PanelPlaceholder } from '../PanelPlaceholder';
 import { useActiveAsset } from '../../../state/activeAsset';
@@ -40,7 +41,14 @@ import {
   usePipelines,
 } from '../../../state/pipelines';
 import { ParamControl } from './ParamControl';
-import { buildCommand, defaultValues } from './pipelineTypes';
+import type { PipelineValues, StageDef } from './pipelineTypes';
+import {
+  COMMAND_OVERRIDE,
+  INPUT_TOKEN,
+  buildCommand,
+  defaultValues,
+  templateFrom,
+} from './pipelineTypes';
 
 /**
  * Configuration panel — appears (and fronts itself) whenever a pipeline card is
@@ -52,6 +60,93 @@ import { buildCommand, defaultValues } from './pipelineTypes';
  * modified configuration can be saved over the current one or saved as a new
  * named configuration; built-in defaults are protected from overwriting.
  */
+/**
+ * Lets the user take over a stage's command line.
+ *
+ * The two requirements pull against each other: hand-written commands need
+ * total freedom (any tool, any pipe, any flag the catalogue never heard of),
+ * but the workspace must still be able to swap the input file underneath them.
+ *
+ * A template reconciles them. The command is stored with `{input}` standing in
+ * for the selected file, and the token is substituted every time the command is
+ * built — so clicking a different file in the workspace re-targets a
+ * hand-written command exactly as it re-targets a generated one. The editor
+ * seeds itself with the real generated command so the token is discovered by
+ * example rather than by reading help text.
+ */
+function StageCommandEditor({
+  stage,
+  values,
+  injectedInput,
+  onChange,
+}: {
+  stage: StageDef;
+  values: PipelineValues;
+  injectedInput: string | null;
+  onChange: (next: string) => void;
+}) {
+  const theme = useTheme();
+  const stored = values[stage.id]?.[COMMAND_OVERRIDE];
+  const override = typeof stored === 'string' ? stored : '';
+  const editing = stage.freeform || override.length > 0;
+
+  const start = () => onChange(templateFrom(stage, values, injectedInput));
+
+  if (!editing) {
+    return (
+      <Button
+        size="small"
+        startIcon={<EditOutlined sx={{ fontSize: 14 }} />}
+        onClick={start}
+        sx={{ mt: 1, alignSelf: 'flex-start', fontSize: 11, textTransform: 'none' }}
+      >
+        Edit command
+      </Button>
+    );
+  }
+
+  const missingToken = Boolean(injectedInput) && !override.includes(INPUT_TOKEN);
+
+  return (
+    <Box sx={{ mt: 1.25 }}>
+      <TextField
+        fullWidth
+        multiline
+        minRows={2}
+        size="small"
+        value={override}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={`aa-sv ${INPUT_TOKEN} | grep -v WARNING`}
+        InputProps={{
+          sx: { fontFamily: theme.aa.font.mono, fontSize: 11.5 },
+        }}
+      />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+        <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
+          {INPUT_TOKEN} is replaced by the selected file, so swapping files still
+          works. Pipes and any other tool are fine here.
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        {!stage.freeform && (
+          <Button
+            size="small"
+            onClick={() => onChange('')}
+            sx={{ fontSize: 10.5, textTransform: 'none', flexShrink: 0 }}
+          >
+            Use form
+          </Button>
+        )}
+      </Box>
+      {missingToken && (
+        <Typography sx={{ fontSize: 10.5, color: theme.aa.color.status.warning }}>
+          No {INPUT_TOKEN} in this command — it will ignore the selected file and
+          read from the previous stage instead.
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 export const ConfigurationPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
   const state = usePipelines();
@@ -212,6 +307,15 @@ export const ConfigurationPanel: FunctionComponent<IDockviewPanelProps> = () => 
                 />
               ))}
             </Box>
+
+            <StageCommandEditor
+              stage={stage}
+              values={values}
+              injectedInput={injectedInput}
+              onChange={(next) =>
+                setParam(pipelineId, stage.id, COMMAND_OVERRIDE, next)
+              }
+            />
 
             <Divider sx={{ mt: 1.75 }} />
           </Box>

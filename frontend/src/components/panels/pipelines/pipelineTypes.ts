@@ -61,6 +61,37 @@ export interface StageDef {
   label: string;
   description: string;
   params: readonly ParamDef[];
+  /**
+   * A free-form stage: the user writes the command line themselves. The form
+   * still renders, but the command comes from the template rather than the
+   * params. Used for shell filters and any tool the catalogue doesn't know.
+   */
+  freeform?: boolean;
+}
+
+/**
+ * Reserved param id holding a user-written command template for a stage.
+ *
+ * Stored alongside ordinary values so it persists in saved configurations
+ * without changing their shape, and so "reset to defaults" clears it too.
+ */
+export const COMMAND_OVERRIDE = '__command';
+
+/**
+ * Placeholder for the file currently selected in the workspace.
+ *
+ * This token is what keeps hand-written commands compatible with file
+ * swapping: the template is stored verbatim and the token is substituted on
+ * every render, so clicking a different file re-targets the command without
+ * the user editing anything. A template with no token is left alone — that's
+ * the correct behaviour for a pipe filter reading stdin.
+ */
+export const INPUT_TOKEN = '{input}';
+
+/** Substitute the input token in a hand-written command template. */
+export function applyTemplate(template: string, input: string | null): string {
+  const resolved = input ? shellQuote(input) : '';
+  return template.split(INPUT_TOKEN).join(resolved).replace(/\s+/g, ' ').trim();
 }
 
 export interface PipelineDefinition {
@@ -150,6 +181,27 @@ export function buildCommand(
   injectedInput: string | null,
 ): string[] {
   return pipeline.stages.map((stage) => {
+    const override = values[stage.id]?.[COMMAND_OVERRIDE];
+    if (typeof override === 'string' && override.trim()) {
+      return applyTemplate(override, injectedInput);
+    }
+    return generatedCommand(stage, values, injectedInput);
+  });
+}
+
+/**
+ * The command a stage produces from its schema, ignoring any override.
+ *
+ * Exported because the editor seeds its text box with this: the user starts
+ * from the real generated command rather than a blank line, with the input
+ * already marked by a token.
+ */
+export function generatedCommand(
+  stage: StageDef,
+  values: PipelineValues,
+  injectedInput: string | null,
+): string {
+  {
     const parts: string[] = [stage.tool];
     for (const param of stage.params) {
       const raw = values[stage.id]?.[param.id] ?? param.default;
@@ -180,5 +232,20 @@ export function buildCommand(
       parts.push(shellQuote(text));
     }
     return parts.join(' ');
-  });
+  }
+}
+
+/**
+ * The same command with the input replaced by its token — the starting point
+ * when someone opens the editor, so the placeholder is discoverable by example
+ * rather than by reading documentation.
+ */
+export function templateFrom(
+  stage: StageDef,
+  values: PipelineValues,
+  injectedInput: string | null,
+): string {
+  const command = generatedCommand(stage, values, injectedInput);
+  if (!injectedInput) return command;
+  return command.split(shellQuote(injectedInput)).join(INPUT_TOKEN);
 }

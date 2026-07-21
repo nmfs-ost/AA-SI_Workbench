@@ -221,6 +221,27 @@ back to. Default `ggn-nmfs-aa-dev-1-data` in project `ggn-nmfs-aa-dev-1`.
   storage client (delimiter folding, prefix arithmetic, placeholder filtering, truncation,
   error translation); "do these credentials work" is the only untested part.
 
+## Custom commands in pipelines — the `{input}` token
+Two requirements pull against each other: hand-written commands need total freedom (any
+tool, any pipe, flags the catalogue never heard of), but the workspace must still swap the
+input file underneath them. A **template** reconciles them.
+- `COMMAND_OVERRIDE` (`'__command'`) is a reserved param id holding a user-written command
+  for a stage. Stored alongside ordinary values, so it persists in saved configurations
+  without changing their shape and "reset to defaults" clears it too.
+- `INPUT_TOKEN` (`'{input}'`) stands in for the selected file. `buildCommand` substitutes
+  it on **every** build, so clicking a different file in the workspace re-targets a
+  hand-written command exactly as it re-targets a generated one. This is the property that
+  makes the feature safe — there's a test named for it.
+- A template with **no** token is left alone. That's correct for a pipe filter reading
+  stdin (`grep -v WARNING`), and the editor warns when a file is selected but unused.
+- `templateFrom()` seeds the editor with the real generated command, input already
+  tokenised, so the placeholder is discovered by example rather than from help text.
+  Seeding then building round-trips to the identical command (tested).
+- The catalogue offers ONE freeform stage (`tool: 'sh'`, `freeform: true`, no params)
+  rather than enumerating tools. There are more `aa-*` tools than the catalogue lists,
+  plus the whole Unix toolbox, and listing them would always be out of date.
+- Overrides are per stage: editing stage 1 leaves stage 2 generated.
+
 ## NCEI actions — two workflows, both handed to the TERMINAL
 `ncei/NceiActions.tsx` + `ncei/combineOptions.ts` + `state/terminal.ts`.
 

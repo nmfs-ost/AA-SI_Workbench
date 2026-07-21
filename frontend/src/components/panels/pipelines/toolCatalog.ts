@@ -13,12 +13,14 @@
 import type { ParamDef, StageDef } from './pipelineTypes';
 
 export interface ToolTemplate {
+  /** Free-form stage: the user writes the command line. */
+  freeform?: boolean;
   tool: string;
   label: string;
   description: string;
   /** What this tool takes in / puts out, shown as a hint when composing. */
-  consumes: 'raw' | 'nc' | 'sv' | 'none';
-  produces: 'raw' | 'nc' | 'sv' | 'image' | 'none';
+  consumes: 'raw' | 'nc' | 'sv' | 'none' | 'any';
+  produces: 'raw' | 'nc' | 'sv' | 'image' | 'none' | 'any';
   params: readonly ParamDef[];
 }
 
@@ -352,6 +354,27 @@ export const toolCatalog: readonly ToolTemplate[] = [
       },
     ],
   },
+  /*
+   * The escape hatch. There are far more console tools than this catalogue can
+   * usefully list — every aa-* tool that ships later, plus the whole Unix
+   * toolbox (grep, tee, head, sort, xargs...) which is genuinely useful in a
+   * pipe chain. Rather than enumerate them, this stage lets the user write the
+   * command line directly.
+   *
+   * It stays compatible with file swapping because the command is a *template*:
+   * `{input}` is substituted with whatever is selected in the workspace, so
+   * changing files re-targets the command without editing it.
+   */
+  {
+    tool: 'sh',
+    label: 'Custom command',
+    description:
+      'Write the command yourself. Use {input} where the selected file should go.',
+    consumes: 'any',
+    produces: 'any',
+    freeform: true,
+    params: [],
+  },
 ];
 
 export function findTool(tool: string): ToolTemplate | undefined {
@@ -375,6 +398,7 @@ export function makeStage(template: ToolTemplate, index: number): StageDef {
     tool: template.tool,
     label: template.label,
     description: template.description,
-    params,
+    params: template.freeform ? [] : params,
+    freeform: template.freeform,
   };
 }

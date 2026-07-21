@@ -121,8 +121,10 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
         <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
           Add tools, in order
         </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
-          {toolCatalog.map((template) => (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+          {toolCatalog
+            .filter((template) => !template.freeform)
+            .map((template) => (
             <Tooltip key={template.tool} title={template.description}>
               <Button
                 size="small"
@@ -140,6 +142,31 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
               </Button>
             </Tooltip>
           ))}
+        </Box>
+
+        {/* The catalogue can never be complete — there are more aa-* tools than
+            this lists, plus the entire Unix toolbox, which is genuinely useful
+            in a pipe chain. Rather than enumerate them, offer one stage the user
+            writes themselves. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          {toolCatalog
+            .filter((template) => template.freeform)
+            .map((template) => (
+              <Tooltip key={template.tool} title={template.description}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AddOutlined sx={{ fontSize: 14 }} />}
+                  onClick={() => setTools((prev) => [...prev, template])}
+                  sx={{ fontSize: 11, textTransform: 'none', py: 0.25 }}
+                >
+                  {template.label}
+                </Button>
+              </Tooltip>
+            ))}
+          <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
+            For any other tool, a pipe, or a shell filter — you write the command.
+          </Typography>
         </Box>
 
         <Divider sx={{ mb: 1.5 }} />
