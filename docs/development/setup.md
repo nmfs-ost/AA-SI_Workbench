@@ -33,14 +33,35 @@ rm -f src/components/layout/AppToolbar.tsx \
       src/components/layout/toolbarConfig.tsx \
       src/components/panels/WorkspacePanel.tsx \
       src/components/panels/EchogramPanel.tsx \
-      src/components/panels/ViewerScaffold.tsx
+      src/components/panels/ViewerScaffold.tsx \
+      src/components/layout/ActivityBar.tsx
 rm -f tsconfig*.tsbuildinfo
 npm run build
 ```
 
-That list is the set of files deleted so far; it will grow. If you're tracking this in git,
-`git status` shows orphans as untracked files and the problem doesn't arise in the first
-place.
+That list is the set of files deleted so far; it will grow.
+
+### Applying a release zip to a git checkout
+
+If the checkout is a git clone, let git do the bookkeeping. This drops every **tracked** file,
+lays the release down on top, and stages the difference — so deletions register instead of
+lingering. Files git ignores (`node_modules/`, `dist/`, `.env`) are untouched, so there's no
+reinstall afterwards.
+
+```bash
+cd AA-SI_Workbench
+git status                       # commit or stash first — this discards uncommitted edits
+git ls-files -z | xargs -0 rm -f
+unzip -q ~/Downloads/AA-SI_Workbench.zip -d /tmp/wb
+cp -r /tmp/wb/AA-SI_Workbench/. .
+git add -A && git status         # deleted files now show as D
+aa-workbench build
+```
+
+The zip carries no `.git`, so extracting it can't touch your history.
+
+Better still, push the release into the repo and `git pull` on the workstation: git applies
+deletions natively and none of this is necessary.
 
 ## Run
 

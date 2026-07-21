@@ -12,7 +12,12 @@ import {
   panelDefinitions,
 } from '../components/panels/registry';
 import { buildLayout } from '../components/layout/defaultLayout';
-import { isSourceGroup } from '../components/layout/sidebarChrome';
+import {
+  DOCK_SIDES,
+  dockSideOfGroup,
+  isDockSide,
+  type DockSide,
+} from '../components/layout/sidebarChrome';
 import {
   editorPanelId,
   editorPathFromPanelId,
@@ -72,7 +77,7 @@ const REGION_DIRECTION: Record<
 };
 
 /**
- * Repeat clicks on the same activity-bar icon inside this window count as one
+ * Repeat clicks on the same side-bar icon inside this window count as one
  * intent. Long enough to swallow an OS double-click, short enough that nobody
  * notices it when deliberately toggling twice.
  */
@@ -95,25 +100,26 @@ export interface LayoutController {
   closeAllPanels: () => void;
   /** Open a file as a centre tab, or focus it if it's already open. */
   openEditor: (path: string, name: string) => void;
-  /** Which left-region panel is fronted — what the activity bar highlights. */
-  activeLeftPanelId: PanelId | null;
-  /** True when the left dock is collapsed to nothing. */
-  leftCollapsed: boolean;
+  /** Which panel is fronted in each dock — what the icon strips highlight. */
+  activeDockPanel: Record<DockSide, PanelId | null>;
+  /** True when a dock is collapsed to nothing. */
+  dockCollapsed: Record<DockSide, boolean>;
   /**
-   * Activity-bar click: front the panel, or collapse the dock if it's already
-   * fronted. The same gesture JupyterLab and VS Code use.
+   * Icon-strip click: front the panel, or collapse its dock if it's already
+   * fronted. The same gesture JupyterLab and VS Code use. Works for either
+   * edge; the side is read from the panel's registered region.
    */
-  toggleLeftPanel: (id: PanelId) => void;
+  toggleDockPanel: (id: PanelId) => void;
 }
 
 /**
- * Strip the tab strip from the sources sidebar.
+ * Strip the tab strip from both sidebars.
  *
- * The activity bar already names every source, marks the active one, and
- * switches between them, so a row of text tabs directly beside it says the same
- * thing twice and costs 35px of vertical space in the narrowest part of the
- * window. Removing it makes the left dock a *sidebar* rather than a dock group,
- * which is what it has always behaved like.
+ * The icon strip on the outside of each dock already names its panels, marks
+ * the active one, and switches between them, so a row of text tabs directly
+ * beside it says the same thing twice and costs 34px of vertical space in the
+ * narrowest part of the window. Removing it makes each dock a *sidebar* rather
+ * than a dock group, which is what they have always behaved like.
  *
  * Two consequences are handled here rather than left to surprise someone:
  *   - With no header there is nothing to drag, so the sidebar is also locked
@@ -128,7 +134,8 @@ export interface LayoutController {
  */
 function syncSidebarChrome(api: DockviewApi): void {
   for (const group of api.groups) {
-    const sidebar = isSourceGroup(group, (id) => getPanelDefinition(id)?.region);
+    const sidebar =
+      dockSideOfGroup(group, (id) => getPanelDefinition(id)?.region) !== null;
     if (group.header.hidden !== sidebar) group.header.hidden = sidebar;
     const locked = sidebar ? 'no-drop-target' : false;
     if (group.locked !== locked) group.locked = locked;
@@ -154,8 +161,13 @@ export function useLayoutController(): LayoutController {
   /* Autosave fires from Dockview callbacks that close over nothing; a ref keeps
      the variant reachable there without re-subscribing on every change. */
   const variantRef = useRef<LayoutVariant>('horizontal');
-  const [activeLeftPanelId, setActiveLeftPanelId] = useState<PanelId | null>(null);
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [activeDockPanel, setActiveDockPanel] = useState<
+    Record<DockSide, PanelId | null>
+  >({ left: null, right: null });
+  const [dockCollapsed, setDockCollapsed] = useState<Record<DockSide, boolean>>({
+    left: false,
+    right: false,
+  });
 
   const scheduleSave = useCallback(() => {
     const api = apiRef.current;
@@ -189,41 +201,50 @@ export function useLayoutController(): LayoutController {
         buildLayout(api, variant);
       }
 
-      /* Which data source is fronted, for the activity bar. Tracked from the
-         active-panel event rather than polled: a panel can be fronted by a tab
-         click, the Window menu, a drag, or a restored layout, and they all end
-         up here. */
-      const syncActiveLeft = () => {
+      /* Which panel is fronted in each dock, for the icon strips. Tracked from
+         the active-panel event rather than polled: a panel can be fronted by a
+         tab click, the Window menu, a drag, or a restored layout, and they all
+         end up here. */
+      const syncActiveDock = () => {
         const active = api.activePanel;
-        if (active && getPanelDefinition(active.id)?.region === 'left') {
-          setActiveLeftPanelId(active.id);
+        const region = active && getPanelDefinition(active.id)?.region;
+        if (active && isDockSide(region)) {
+          setActiveDockPanel((current) => ({ ...current, [region]: active.id }));
         }
       };
-      const seedActiveLeft = () => {
-        const leftPanel = api.panels.find(
-          (panel) => getPanelDefinition(panel.id)?.region === 'left',
-        );
-        const fronted = leftPanel?.group?.activePanel ?? leftPanel;
-        if (fronted) setActiveLeftPanelId(fronted.id);
-        // Visibility is serialized with the layout, so a sidebar collapsed
-        // before a reload comes back collapsed. Believe the layout rather than
-        // the fresh component state.
-        if (leftPanel) setLeftCollapsed(!leftPanel.group.api.isVisible);
+      const seedActiveDock = () => {
+        for (const side of DOCK_SIDES) {
+          const panel = api.panels.find(
+            (candidate) => getPanelDefinition(candidate.id)?.region === side,
+          );
+          const fronted = panel?.group?.activePanel ?? panel;
+          if (fronted) {
+            setActiveDockPanel((current) => ({ ...current, [side]: fronted.id }));
+          }
+          // Visibility is serialized with the layout, so a dock collapsed before
+          // a reload comes back collapsed. Believe the layout rather than the
+          // fresh component state.
+          if (panel) {
+            const visible = panel.group.api.isVisible;
+            setDockCollapsed((current) => ({ ...current, [side]: !visible }));
+          }
+        }
       };
 
-      seedActiveLeft();
+      seedActiveDock();
       syncSidebarChrome(api);
 
       disposablesRef.current = [
         api.onDidLayoutChange(scheduleSave),
         api.onDidLayoutChange(() => syncSidebarChrome(api)),
-        api.onDidActivePanelChange(syncActiveLeft),
+        api.onDidActivePanelChange(syncActiveDock),
         api.onDidLayoutChange(() => {
-          // A left panel can disappear (closed, or dragged elsewhere); keep the
-          // activity bar's highlight pointing at something that exists.
-          setActiveLeftPanelId((current) =>
-            current && api.getPanel(current) ? current : null,
-          );
+          // A docked panel can disappear (closed, or dragged elsewhere); keep
+          // each strip's highlight pointing at something that exists.
+          setActiveDockPanel((current) => ({
+            left: current.left && api.getPanel(current.left) ? current.left : null,
+            right: current.right && api.getPanel(current.right) ? current.right : null,
+          }));
         }),
         /* Closing an editor tab drops its buffer — unless it has unsaved edits,
            which are kept so reopening the file restores them. Nothing here can
@@ -374,21 +395,24 @@ export function useLayoutController(): LayoutController {
         openEditor(path, getEditorsState().docs[path]?.name ?? basename(path));
       }
 
-      setLeftCollapsed(false);
+      setDockCollapsed({ left: false, right: false });
       saveLayout(api, variant);
     },
     [openEditor],
   );
 
-  const toggleLeftPanel = useCallback(
+  const toggleDockPanel = useCallback(
     (id: PanelId) => {
       const api = apiRef.current;
       if (!api) return;
 
+      const side = getPanelDefinition(id)?.region;
+      if (!isDockSide(side)) return;
+
       /* A double-click is two click events. Left alone, the second undoes the
-         first, so a user who double-clicks to close the sidebar sees it flash
-         and stay open. Repeats on the *same* icon collapse into one action;
-         clicking a different source is a different intent and stays instant. */
+         first, so a user who double-clicks to close a dock sees it flash and
+         stay open. Repeats on the *same* icon collapse into one action;
+         clicking a different panel is a different intent and stays instant. */
       const now = Date.now();
       const last = lastToggleRef.current;
       if (last.id === id && now - last.at < DOUBLE_CLICK_MS) return;
@@ -397,7 +421,7 @@ export function useLayoutController(): LayoutController {
       const panel = api.getPanel(id);
       if (!panel) {
         openPanel(id);
-        setLeftCollapsed(false);
+        setDockCollapsed((current) => ({ ...current, [side]: false }));
         return;
       }
 
@@ -406,23 +430,24 @@ export function useLayoutController(): LayoutController {
          hidden view from the grid, hands its space to the neighbours, and
          remembers its size for when it comes back. Driving the width to 0
          instead means fighting the grid's minimum-size clamps, which is what
-         used to leave the sidebar stuck narrow and half-drawn. Visibility is
-         also a boolean, so there is no threshold to be on the wrong side of. */
+         used to leave a dock stuck narrow and half-drawn. Visibility is also a
+         boolean, so there is no threshold to be on the wrong side of, and it
+         behaves the same in both monitor layouts with no axis detection. */
       const hidden = !group.api.isVisible;
       const fronted = group.activePanel?.id === id;
 
       if (hidden || !fronted) {
         if (hidden) group.api.setVisible(true);
         panel.api.setActive();
-        setActiveLeftPanelId(id);
-        setLeftCollapsed(false);
+        setActiveDockPanel((current) => ({ ...current, [side]: id }));
+        setDockCollapsed((current) => ({ ...current, [side]: false }));
         return;
       }
 
-      // Clicking the source you're already in collapses the dock, the way it
+      // Clicking the panel you're already in collapses its dock, the way it
       // does in JupyterLab — the fastest way to hand the space to the editor.
       group.api.setVisible(false);
-      setLeftCollapsed(true);
+      setDockCollapsed((current) => ({ ...current, [side]: true }));
     },
     [openPanel],
   );
@@ -456,8 +481,8 @@ export function useLayoutController(): LayoutController {
     openEditor,
     applyLayout,
     layoutVariant,
-    activeLeftPanelId,
-    leftCollapsed,
-    toggleLeftPanel,
+    activeDockPanel,
+    dockCollapsed,
+    toggleDockPanel,
   };
 }

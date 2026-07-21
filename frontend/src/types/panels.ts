@@ -66,7 +66,7 @@ export interface PanelDefinition {
    * A template rather than a panel: opened programmatically, many times, with
    * different parameters (the file editor). Dynamic panels are registered as
    * Dockview components but are left out of the Window menu, the default
-   * layout, and the activity bar, because "open an editor" is not a thing to
+   * layout, and the side bars, because "open an editor" is not a thing to
    * pick from a list — you open a *file*.
    */
   dynamic?: boolean;

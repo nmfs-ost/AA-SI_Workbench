@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 
 import { DialogHost } from '../dialogs';
 import { MenuBar } from './MenuBar';
-import { ActivityBar } from './ActivityBar';
+import { SideBar } from './SideBar';
 import { DockLayout } from './DockLayout';
 import { StatusBar } from './StatusBar';
 import {
@@ -20,13 +20,14 @@ import {
  *
  * There used to be a toolbar strip between the menu bar and the dock. Its six
  * placeholder buttons were removed when they turned out to do nothing, and its
- * remaining two moved into the activity bar, at which point a 34px empty band
- * was all that was left of it. Deleting it also lets the activity bar's first
+ * remaining two moved into the left icon strip, at which point a 34px empty
+ * band was all that was left of it. Deleting it also lets each strip's first
  * icon sit flush with the top of the dock beside it.
  *
- * The middle band is a row: the activity bar is shell chrome pinned to the left
- * edge, outside Dockview, so it can never be dragged away or docked somewhere
- * unexpected. It is the one piece of navigation that always stays put.
+ * The middle band is a row: an icon strip pinned to each outer edge, outside
+ * Dockview, so neither can be dragged away or docked somewhere unexpected.
+ * Between them sits everything that moves. The strips are the one piece of
+ * navigation that always stays put.
  *
  * `DialogHost` is mounted once here so shell dialogs (About, environment
  * update, feedback, New file) can be opened from the menu bar, the toolbar, or
@@ -72,8 +73,9 @@ export function AppShell() {
     >
       <MenuBar />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        <ActivityBar />
+        <SideBar side="left" />
         <DockLayout />
+        <SideBar side="right" />
       </Box>
       <StatusBar />
       <DialogHost />

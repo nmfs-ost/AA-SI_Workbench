@@ -5,17 +5,17 @@ import type { LayoutVariant } from '../../types';
 /**
  * The landscape arrangement — the default, and what most workstations get.
  *
- *   ┌──┬──────────┬───────────────────────┬──────────┐
- *   │A │  LEFT    │  CENTER: Pipelines and│  RIGHT   │
- *   │C │          │  any open files, as   │ (tabs)   │
- *   │T │          │  tabs                 │          │
- *   │  │          ├───────────────────────┤          │
- *   │  │          │   BOTTOM  (tabs)      │          │
- *   └──┴──────────┴───────────────────────┴──────────┘
+ *   ┌──┬──────────┬───────────────────────┬──────────┬──┐
+ *   │A │  LEFT    │  CENTER: Pipelines and│  RIGHT   │I │
+ *   │  │          │  any open files, as   │          │  │
+ *   │  │          │  tabs                 │          │  │
+ *   │  │          ├───────────────────────┤          │  │
+ *   │  │          │   BOTTOM  (tabs)      │          │  │
+ *   └──┴──────────┴───────────────────────┴──────────┴──┘
  *
- * The activity bar (A) on the far left is shell chrome rather than a Dockview
- * region — see ActivityBar.tsx. The LEFT dock has no visible tabs; the activity
- * bar is its tab strip.
+ * The icon strips (A, I) on the outer edges are shell chrome rather than
+ * Dockview regions — see SideBar.tsx. Neither side dock has visible tabs; the
+ * strips are their tab strips.
  *
  * Panels added with `direction: 'within'` join the referenced panel's group and
  * therefore render as tabs. Pipelines is added first and every other region is
@@ -38,7 +38,7 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   // Left sidebar — data sources. These four are added as one group, but that
   // group renders without a tab strip: `syncSidebarChrome` in
   // useLayoutController hides the header and locks it against drops, because
-  // the activity bar beside it already names and switches between them.
+  // the icon strip beside it already names and switches between them.
   api.addPanel({
     id: 'ncei',
     component: 'ncei',
@@ -134,20 +134,20 @@ export function buildHorizontalLayout(api: DockviewApi): void {
 /**
  * The portrait arrangement: four full-width bands, stacked.
  *
- *   ┌──┬─────────────────────────┐
- *   │A │  SOURCES                │  NCEI · Files · Derived · OMAO
- *   │C ├─────────────────────────┤
- *   │T │  CENTER                 │  Pipelines · open files
- *   │  │                         │
- *   │  ├─────────────────────────┤
- *   │  │  INSPECTOR              │  Metadata · Configuration · Calibration
- *   │  ├─────────────────────────┤
- *   │  │  TOOLS                  │  Terminal · Log · Progress · Console · Map
- *   └──┴─────────────────────────┘
+ *   ┌──┬─────────────────────────┬──┐
+ *   │A │  SOURCES                │I │  NCEI · Files · Derived · OMAO
+ *   │  ├─────────────────────────┤  │
+ *   │  │  CENTER                 │  │  Pipelines · open files
+ *   │  │                         │  │
+ *   │  ├─────────────────────────┤  │
+ *   │  │  INSPECTOR              │  │  Metadata · Configuration · Calibration
+ *   │  ├─────────────────────────┤  │
+ *   │  │  TOOLS                  │  │  Terminal · Log · Progress · Console · Map
+ *   └──┴─────────────────────────┴──┘
  *
  * **Nothing is ever split side by side.** That is the whole idea. A portrait
  * monitor is typically 1080–1200px wide, and the horizontal layout spends ~700
- * of them on the activity bar plus two sidebars before the centre gets any —
+ * of them on two icon strips plus two sidebars before the centre gets any —
  * which leaves an echogram path, a command preview, and a file tree all fighting
  * over what's left. Height is the abundant resource here, so every region takes
  * the full width and pays in height instead.
@@ -156,8 +156,8 @@ export function buildHorizontalLayout(api: DockviewApi): void {
  * run. That is the same left-to-right order the horizontal layout reads in, so
  * switching between monitors doesn't mean relearning where anything lives.
  *
- * The activity bar stays a vertical strip on the far left in both layouts. It is
- * shell chrome outside Dockview, it still drives the sources band, and moving it
+ * The icon strips stay vertical, on the outer edges, in both layouts. They are
+ * shell chrome outside Dockview, they still drive their bands, and moving them
  * per-layout would cost the one piece of navigation that never moves.
  */
 export function buildVerticalLayout(api: DockviewApi): void {

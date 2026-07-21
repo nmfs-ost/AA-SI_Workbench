@@ -94,21 +94,20 @@ cd backend  && ruff check . && pytest
 
 ## Current layout (defaultLayout.ts, LAYOUT_VERSION = 12)
 ```
-┌──┬──────────┬───────────────────────┬──────────┐
-│A │  LEFT    │  CENTER: Workspace,   │  RIGHT   │
-│C │ (tabs)   │  Pipelines, and any   │ (tabs)   │
-│T │          │  open files as tabs   │          │
-│  │          ├───────────────────────┤          │
-│  │          │   BOTTOM  (tabs)      │          │
-└──┴──────────┴───────────────────────┴──────────┘
+┌──┬──────────┬───────────────────────┬──────────┬──┐
+│A │  LEFT    │  CENTER: Pipelines +  │  RIGHT   │I │
+│  │          │  open files as tabs   │          │  │
+│  │          ├───────────────────────┤          │  │
+│  │          │   BOTTOM  (tabs)      │          │  │
+└──┴──────────┴───────────────────────┴──────────┴──┘
 ```
-- **Activity bar (far left, shell chrome — NOT a Dockview region).**
-  `components/layout/ActivityBar.tsx`, mounted in AppShell beside `<DockLayout/>`.
-  See its own section below.
+- **Icon strips on both outer edges (shell chrome — NOT Dockview regions).**
+  `components/layout/SideBar.tsx`, rendered twice in AppShell either side of
+  `<DockLayout/>`. See their own section below.
 - **Left window (data sources):** NCEI (real content, fronts on load) · Files ·
   Derived · OMAO. Recipes REMOVED. FileBrowser + WorkflowExplorer previously REMOVED.
-  **The tab strip is hidden** — see the sidebar section below. The activity bar is its
-  tab strip; the four panels are still one Dockview group, just chrome-less.
+  **The tab strip is hidden** — the left icon strip is its tab strip. The four
+  panels are still one Dockview group, just chrome-less.
 - **Center (ONE group):** Pipelines, plus one tab per open file. The center is not split —
   Echogram used to own the right half. Sv panel REMOVED earlier (the aa-sv *pipeline stage*
   remains in pipelineDefinitions — different thing).
@@ -125,7 +124,8 @@ cd backend  && ruff check . && pytest
   *pipeline stage* name in `toolCatalog.ts`/`pipelineDefinitions.ts`; that is a
   different thing and was left alone.
 - **Right window:** Metadata (auto-populates from NCEI file click) · Configuration ·
-  Calibration · Processing Queue. Properties REMOVED. Configuration auto-fronts when a pipeline card is focused
+  Calibration · Processing Queue. Properties REMOVED. **Its tab strip is hidden too** — the
+  right icon strip replaces it, same mechanism as the left. Configuration auto-fronts when a pipeline card is focused
   (DockLayout subscribes to the pipelines store and calls layout `openPanel('configuration')`).
 - **Bottom:** Terminal · Log · Progress · Console · Map. Map (MapPanel.tsx) plots the in-view
   NCEI file positions as dots + a chronological track line, highlighting the identified file;
@@ -211,134 +211,73 @@ All three route to `saveActiveDoc()`, which uses `state.focusedPath` — publish
 - `AASI_FS_READONLY=true` removes the write half entirely (405 on write/create).
 - The existing loopback guard (`AASI_ALLOW_REMOTE_FS`) covers every new route — tested.
 
-## Activity bar — WIRED (JupyterLab-style source switcher)
-`components/layout/ActivityBar.tsx`, 44 px, mounted in AppShell **beside** DockLayout so it is
-shell chrome and can never be dragged away or docked somewhere surprising.
-- **Generated from the panel registry** (`region: 'left'`, `!dynamic`). Register a new data
-  source and its icon appears; there is no second list to update.
-- The problem it solves: four unrelated storage systems (public S3 archive, the workstation's
-  own disk, a GCS bucket of derived products, the OMAO fleet) behind small text tabs, with no
-  standing answer to "which one am I in".
-- Clicking the source you are already in **collapses the dock** (JupyterLab's gesture, fastest
-  way to hand the width to the editor). Collapse is `group.api.setConstraints({minimumWidth:0})`
-  then `setSize({width:0})` — the constraint has to be lifted first or Dockview clamps it, and
-  restored before the width is restored. A layout saved while collapsed is detected on ready
-  (`width < COLLAPSED_THRESHOLD`) so the bar doesn't lie after a reload.
-- Active source tracked from `api.onDidActivePanelChange`, not polled — a panel can be fronted
-  by a tab click, the Window menu, a drag, or a restored layout, and they all arrive there.
-- **These icons are the sidebar's only label** now that the tab strip is gone, so the active
-  state carries three cues rather than one: accent hairline against the edge, tinted
-  background (`bg.selected`), and full-strength icon colour against muted neighbours. Names
-  live in the tooltip, which is also the `aria-label`.
-- **Below a divider sit the shell's two standing actions**, environment update and feedback,
-  which used to be a separate toolbar. Same width, same height, same left edge as the sources
-  — the divider is the only thing saying "these do something rather than show something". The
-  environment button still doubles as the background-job indicator (spinner in place of icon).
-- **`pt: 0`.** The first icon is flush with the top of the dock beside it. This is only
-  possible because the toolbar strip is gone.
+## Icon strips on both edges — WIRED (JupyterLab-style, mirrored)
+`components/layout/SideBar.tsx`, one component rendered twice:
+`<SideBar side="left" />` and `<SideBar side="right" />`, mounted in AppShell **beside**
+DockLayout so they are shell chrome and can never be dragged away or docked somewhere
+surprising. `components/layout/sidebarChrome.ts` decides which dock groups they replace.
+
+- **Both side docks render without a tab strip.** `dockSideOfGroup` finds a group whose panels
+  are *all* in one docked region; `syncSidebarChrome` then hides its header
+  (`group.header.hidden = true`) and locks it against drops. Dockview serializes both flags
+  (`hideHeader`, `locked`), so it survives save/restore, and it is re-applied on every
+  `onDidLayoutChange` because re-opening a closed panel can build a brand-new group.
+- **The "every, not any" rule is the whole safety property.** A group is chrome-less only if
+  *all* its panels share one docked region. Flip it to "any" and the centre group loses its
+  tabs — which is where every open file lives, so there would be no way to switch between
+  them. Tested in `sidebar.test.ts`; a mixed group keeps its tabs so a dragged-in panel stays
+  reachable, and a group that stops being pure gets its header back.
+- **Locking is a consequence, not a preference.** With no header there is nothing to drag
+  *out*, so a panel dragged *in* would become invisible with no tab to show it and no close
+  button to undo it. Locking removes the trap rather than documenting it.
+- **Everything is generated from the panel registry by `region`.** Registering a panel on
+  either edge puts an icon on that strip with no further wiring. Left: NCEI · Files · Derived
+  · OMAO. Right: Metadata · Configuration · Calibration · Processing Queue. (The user named
+  three of the four right-hand panels; Calibration was included because hiding the tab strip
+  without giving it an icon would have left it reachable only from the Window menu.)
+- **These icons are each dock's only label**, so the active state carries three cues: accent
+  hairline against the *outer* edge (the two strips mirror rather than both pointing left),
+  tinted background (`bg.selected`), and full-strength icon colour against muted neighbours.
+  Names live in the tooltip, which is also the `aria-label`. Tooltips open outward.
+- **`pt: 0`.** The first icon is flush with the top of the dock beside it — possible only
+  because the toolbar strip is gone.
 - **Collapse is `group.api.setVisible(false)`, not a resize to zero.** Dockview removes a
   hidden view from the grid, gives its space to the neighbours, and remembers its size for the
   return trip. The old implementation drove the width to 0 while lifting the minimum-width
-  constraint, which meant fighting the grid's own clamps — the sidebar could end up stuck
-  narrow and half-drawn, and because "collapsed" was then *inferred from geometry*, the state
-  machine couldn't tell that had happened and refused to expand again. Visibility is a
-  boolean; there is no threshold to land on the wrong side of, and it works identically in
-  both monitor layouts with no axis detection.
+  constraint, which meant fighting the grid's own clamps — a dock could end up stuck narrow
+  and half-drawn, and because "collapsed" was then *inferred from geometry*, the state machine
+  couldn't tell that had happened and refused to expand again. Visibility is a boolean; there
+  is no threshold to land on the wrong side of, and it works identically in both monitor
+  layouts with no axis detection.
 - **Repeat clicks inside `DOUBLE_CLICK_MS` (350ms) on the same icon count once.** A
   double-click is two click events, and left alone the second undoes the first — so a user
-  double-clicking to close the sidebar saw it flash and stay open. Clicking a *different*
-  source is a different intent and stays instant.
-- Visibility is serialized with the layout, so a sidebar collapsed before a reload comes back
-  collapsed, and `seedActiveLeft` reads `isVisible` rather than measuring anything.
+  double-clicking to close a dock saw it flash and stay open. Clicking a *different* panel is
+  a different intent and stays instant.
+- Controller state is per side: `activeDockPanel: Record<DockSide, PanelId | null>`,
+  `dockCollapsed: Record<DockSide, boolean>`, and one `toggleDockPanel(id)` that reads the
+  side from the panel's registered region. There is no left-specific or right-specific code
+  path — that is what keeps the two strips behaving identically.
+- **LAYOUT_VERSION was not bumped for this.** No panel was added, removed, or moved; only
+  chrome changed, and `syncSidebarChrome` runs on load so saved layouts self-heal.
+- **Consequence to watch:** the icons are now the only label on *both* docks. If "which panel
+  am I in?" turns out too subtle, the fix is one line — delete the `header.hidden` assignment
+  in `syncSidebarChrome`. Nothing else depends on it.
 
-## Two monitor layouts — WIRED (View menu)
-`defaultLayout.ts` exports `buildHorizontalLayout` (the default), `buildVerticalLayout`, and
-`buildLayout(api, variant)`. **View ▸ Horizontal / Vertical Monitor Layout**, with a tick on
-whichever is in force.
-
-```
-HORIZONTAL (landscape)                    VERTICAL (portrait)
-┌──┬──────┬────────────┬──────┐          ┌──┬─────────────────────────┐
-│A │SOURCE│  CENTER    │INSPEC│          │A │  SOURCES                │
-│C │      │            │      │          │C ├─────────────────────────┤
-│T │      ├────────────┤      │          │T │  CENTER                 │
-│  │      │   TOOLS    │      │          │  ├─────────────────────────┤
-└──┴──────┴────────────┴──────┘          │  │  INSPECTOR              │
-                                          │  ├─────────────────────────┤
-                                          │  │  TOOLS                  │
-                                          └──┴─────────────────────────┘
-```
-- **The portrait rule is "never split sideways".** A portrait monitor is ~1080–1200px wide;
-  the landscape layout spends ~700 of them on the activity bar plus two sidebars before the
-  workspace gets any. Vertical makes every region a full-width band and pays in height, which
-  is the abundant resource. There is a test asserting no panel is ever placed `left` or
-  `right` in the vertical builder.
-- **Band order matches the horizontal layout's reading order** (sources → work → inspect →
-  watch), so switching monitors isn't relearning where things live.
-- **The activity bar stays a vertical strip in both.** It is chrome outside Dockview, it still
-  drives the sources band, and moving it per-layout would cost the one piece of navigation
-  that never moves.
-- **Switching is a full teardown** (`api.clear()` + rebuild) — Dockview has no re-flow, and
-  nudging regions through a grid that's already the wrong shape gives worse results. **Open
-  files are carried across**: paths are captured first, `rebuildingRef` suppresses the
-  panel-removal cleanup so no buffer is dropped, and the tabs are re-added after. Changing
-  monitors is not a reason to lose the file you were editing.
-- **The collapse gesture is orientation-aware**, read from geometry rather than from the
-  variant: a group as wide as the whole dock is a band with no horizontal neighbour to hand
-  space back to, so it folds by height instead of width. Geometry, not the stored variant, is
-  the only thing that stays true after the user drags something.
-- `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**
-  rather than snapping back to horizontal. Records written before this existed have no
-  `variant` and are read as `'horizontal'`.
-- **LAYOUT_VERSION was not bumped for this feature.** The horizontal default was unchanged and
-  the new field is optional and back-compatible. (It has since gone to 12 for the Workspace
-  removal, which is a real structural change.)
-
-## Sources sidebar has no tab strip
-`components/layout/sidebarChrome.ts` (the predicate) + `syncSidebarChrome()` in
-`useLayoutController.ts` (the application). User's words: *"the side tabs already do the
-work."* A row of text tabs immediately beside a column of labelled icons says the same thing
-twice and costs 34px of height in the narrowest part of the window.
-
-- **How.** `group.header.hidden = true`. Dockview sets `display:none` on
-  `.dv-tabs-and-actions-container` and serializes the flag as `hideHeader`, so it survives a
-  save/restore. It is re-applied on every `onDidLayoutChange` anyway, because re-opening a
-  closed source can build a brand-new group.
-- **`isSourceGroup` uses "every", not "any", and that is the whole safety property.** A group
-  is chrome-less only if *all* its panels are `region: 'left'`. Flip that to "any" and the
-  centre group loses its tabs — which is where every open file lives, so there would be no way
-  to switch between them. It is exported and has its own test file for exactly this reason.
-  A group that stops being all-sources gets its header back, so no state is unreachable.
-- **The sidebar is also `locked: 'no-drop-target'`.** This is a consequence, not a
-  preference: with no header there is nothing to drag *out*, so a panel dragged *in* would
-  become invisible with no tab to show it and no close button to undo it. Locking removes the
-  trap rather than documenting it.
-- **`isSourceGroup` takes the region lookup as a parameter** and types the group structurally.
-  That is not test-driven decoration — importing `registry.tsx` pulls in every panel
-  component including xterm, which crashes under Node (`self is not defined`) and adds ~13s of
-  transform. See TODO 21.
-- **LAYOUT_VERSION was deliberately NOT bumped** (still 11). No panel was added, removed, or
-  moved — only chrome changed — and `syncSidebarChrome` runs on load, so a saved v11 layout
-  self-heals. Bumping would have discarded users' own arrangements for a cosmetic change.
-- **Consequence to watch:** the icons are now the only label. If "which source am I in?"
-  turns out to be too subtle in practice, the fix is one line — delete the `header.hidden`
-  assignment. Nothing else depends on it.
-
-## No toolbar — the activity bar holds everything
+## No toolbar — the left icon strip holds everything
 There is no toolbar strip. It went in two steps, both at the user's request: first the six
 placeholder buttons (Open, Save, Refresh, Run, Stop, Settings) were deleted because they had
 no `action` and clicked to no effect — a control that does nothing teaches people not to
 trust the ones that do. Then the two that remained (environment update, report a problem)
-moved into the activity bar, at which point a 34px empty band was all that was left.
+moved into the left icon strip, at which point a 34px empty band was all that was left.
 
 `AppToolbar.tsx`, `toolbarConfig.tsx` and the `size.toolBar` token are all gone. Save and
 Open live in the File menu where they are wired; Run and Stop belong to the Pipelines panel
-if and when pipelines execute. **A future toolbar button goes in the activity bar's `ACTIONS`
+if and when pipelines execute. **A future toolbar button goes in `SideBar.tsx`'s `SHELL_ACTIONS`
 list, with its dialog id.**
 
-Removing the strip is also what lets the activity bar's first icon sit flush with the top of
-the dock beside it — the column and the panel now share one baseline, which they could not
-while a separate bar sat between them.
+Removing the strip is also what lets each icon column's first icon sit flush with the top of
+the dock beside it — column and panel now share one baseline, which they could not while a
+separate bar sat between them.
 
 ## Copy absolute path — WIRED (one control, every listing)
 `components/panels/CopyPathButton.tsx`. Props: `value`, `label`, `alwaysVisible`, `size`.
@@ -638,12 +577,12 @@ Everything below was run in this session, in this order, from a clean extract.
 | Check | Command | Result |
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
-| Frontend tests | `npm test` | **77 passed** (5 files) |
-| Frontend build | `npm run build` | clean — **1,121.30 kB / 312.10 kB gzip** |
+| Frontend tests | `npm test` | **79 passed** (5 files) |
+| Frontend build | `npm run build` | clean — **1,121.92 kB / 312.38 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
-- Bundle grew **1,088.95 → 1,121.30 kB** (+32 kB raw, +11 kB gzip), nearly all of it the
+- Bundle grew **1,088.95 → 1,121.92 kB** (+33 kB raw, +11 kB gzip), nearly all of it the
   editor; the toolbar's removal gave a little back.
   That number is the argument against Monaco; keep an eye on it.
 - The skip is `test_files.py:390` — a read-only-file test that cannot mean anything when the
@@ -658,8 +597,8 @@ Everything below was run in this session, in this order, from a clean extract.
     round-trip stability, nbformat validity when a cell's type changes, cell operations.
   - `language.test.ts` (21) — path helpers incl. dotfiles and root-level files, language
     lookup, and the open/don't-open routing for the acoustic binaries.
-  - `sidebar.test.ts` (6) — `isSourceGroup`: pure-source groups, the centre group, mixed
-    groups, empty groups, unknown ids, and an unresolvable region lookup.
+  - `sidebar.test.ts` (8) — `dockSideOfGroup`: pure left and right groups, the centre group,
+    the bottom dock, mixed groups, empty groups, unknown ids, and an unresolvable lookup.
   - `layouts.test.ts` (13) — both builders against a recording fake `DockviewApi`: the two
     arrangements hold the same panel set, every panel is added once and anchored to something
     already placed, the vertical builder never uses `left`/`right`, band order and sizing axis.
@@ -670,7 +609,9 @@ Everything below was run in this session, in this order, from a clean extract.
   halves instead of backend only.
 
 ### What is still NOT verified
-- **The sidebar collapse fix has not been seen in a browser.** `setVisible` is the documented
+- **Neither icon strip has been seen in a browser**, so the mirrored active marker, the
+  outward tooltips, and the right dock's width without its tab strip are all unverified.
+- **The dock collapse fix has not been seen in a browser.** `setVisible` is the documented
   primitive and the grid stores the size for the return trip, but the bug it replaces was
   precisely a grid-clamping behaviour that only shows up on screen.
 - **Neither monitor layout has been seen on a real screen**, portrait or otherwise. The
@@ -823,6 +764,7 @@ frontend/src/components/layout/toolbarConfig.tsx
 frontend/src/components/panels/WorkspacePanel.tsx
 frontend/src/components/panels/EchogramPanel.tsx
 frontend/src/components/panels/ViewerScaffold.tsx
+frontend/src/components/layout/ActivityBar.tsx
 ```
 
 **Add to this list whenever you delete a source file**, and see
