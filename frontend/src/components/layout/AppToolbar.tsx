@@ -13,9 +13,11 @@ import { toolbarItems, type ToolbarItem } from './toolbarConfig';
 
 /**
  * The application toolbar: a thin strip of icon buttons beneath the menu bar.
- * Items are declared in toolbarConfig; those carrying an `action` dispatch it,
- * the rest remain affordances with a tooltip and an accessible label. The
- * environment button doubles as the background-update indicator.
+ * Items are declared in toolbarConfig and every one of them is wired — the six
+ * placeholder buttons that used to sit on the left were removed rather than
+ * left to click to no effect. The environment button doubles as the
+ * background-update indicator, which is why it can render a spinner in place of
+ * its icon.
  */
 export function AppToolbar() {
   const theme = useTheme();
@@ -31,7 +33,8 @@ export function AppToolbar() {
         if (item.href) window.open(item.href, '_blank', 'noopener,noreferrer');
         break;
       default:
-        // Placeholder affordance — no behaviour wired yet.
+        // Unreachable while every configured item carries a known action; kept
+        // so an unwired item fails quietly rather than throwing at a click.
         break;
     }
   };

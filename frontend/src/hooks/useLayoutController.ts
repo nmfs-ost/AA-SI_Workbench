@@ -6,17 +6,18 @@ type Disposable = { dispose: () => void };
 
 import type { PanelId, PanelRegion } from '../types';
 import { LAYOUT_STORAGE_KEY, LAYOUT_VERSION } from '../types';
-import type { PersistedLayout } from '../types';
+import type { LayoutVariant, PersistedLayout } from '../types';
 import {
   getPanelDefinition,
   panelDefinitions,
 } from '../components/panels/registry';
-import { buildDefaultLayout } from '../components/layout/defaultLayout';
+import { buildLayout } from '../components/layout/defaultLayout';
 import { isSourceGroup } from '../components/layout/sidebarChrome';
 import {
   editorPanelId,
   editorPathFromPanelId,
 } from '../components/panels/editor/panelIds';
+import { basename } from '../components/panels/editor/paths';
 import { closeDoc, getEditorsState, isDirty } from '../state/editors';
 
 /* ------------------------------------------------------------------ */
@@ -36,11 +37,12 @@ function loadLayout(): PersistedLayout | null {
   }
 }
 
-function saveLayout(api: DockviewApi): void {
+function saveLayout(api: DockviewApi, variant: LayoutVariant): void {
   try {
     const payload: PersistedLayout = {
       version: LAYOUT_VERSION,
       layout: api.toJSON(),
+      variant,
     };
     window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(payload));
   } catch {
@@ -69,9 +71,10 @@ const REGION_DIRECTION: Record<
   bottom: 'below',
 };
 
-/** Width the left dock returns to when it hasn't been resized. */
+/** Size the sources dock returns to after a collapse, per axis. */
 const DEFAULT_LEFT_WIDTH = 360;
-/** Below this the left dock counts as collapsed rather than merely narrow. */
+const DEFAULT_LEFT_HEIGHT = 320;
+/** Below this the dock counts as collapsed rather than merely small. */
 const COLLAPSED_THRESHOLD = 8;
 
 export interface LayoutController {
@@ -79,8 +82,12 @@ export interface LayoutController {
   onReady: (event: DockviewReadyEvent) => void;
   /** True once the Dockview instance exists and the layout is applied. */
   ready: boolean;
-  /** Discard the saved layout and rebuild the default arrangement. */
+  /** Discard the saved layout and rebuild the current arrangement from scratch. */
   resetLayout: () => void;
+  /** Rebuild the dock for a landscape or portrait monitor. */
+  applyLayout: (variant: LayoutVariant) => void;
+  /** Which arrangement is in force — what the View menu ticks. */
+  layoutVariant: LayoutVariant;
   /** Focus a panel if open, otherwise open it in its default region. */
   openPanel: (id: PanelId) => void;
   /** Close every user-closeable panel (keeps the workspace). */
@@ -136,9 +143,17 @@ export function useLayoutController(): LayoutController {
   const apiRef = useRef<DockviewApi | null>(null);
   const disposablesRef = useRef<Disposable[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Width to restore the left dock to after a collapse. */
+  /** Size to restore the sources dock to after a collapse, one ref per axis. */
   const leftWidthRef = useRef(DEFAULT_LEFT_WIDTH);
+  const leftHeightRef = useRef(DEFAULT_LEFT_HEIGHT);
+  /* Set while a layout is being torn down and rebuilt, so the panel-removal
+     cleanup doesn't mistake a re-flow for the user closing their files. */
+  const rebuildingRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const [layoutVariant, setLayoutVariant] = useState<LayoutVariant>('horizontal');
+  /* Autosave fires from Dockview callbacks that close over nothing; a ref keeps
+     the variant reachable there without re-subscribing on every change. */
+  const variantRef = useRef<LayoutVariant>('horizontal');
   const [activeLeftPanelId, setActiveLeftPanelId] = useState<PanelId | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
 
@@ -147,7 +162,7 @@ export function useLayoutController(): LayoutController {
     if (!api) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     // Debounce: layout events can fire in bursts during a drag/resize.
-    saveTimerRef.current = setTimeout(() => saveLayout(api), 250);
+    saveTimerRef.current = setTimeout(() => saveLayout(api, variantRef.current), 250);
   }, []);
 
   const onReady = useCallback(
@@ -156,16 +171,22 @@ export function useLayoutController(): LayoutController {
       apiRef.current = api;
 
       const saved = loadLayout();
+      // Records written before the vertical layout existed carry no variant.
+      const variant: LayoutVariant = saved?.variant ?? 'horizontal';
+      variantRef.current = variant;
+      setLayoutVariant(variant);
+
       if (saved) {
         try {
           api.fromJSON(saved.layout);
         } catch {
           // A saved layout that no longer deserializes (e.g. a renamed panel)
-          // should never brick startup — rebuild from scratch.
-          buildDefaultLayout(api);
+          // should never brick startup — rebuild from scratch, in the shape the
+          // user last chose.
+          buildLayout(api, variant);
         }
       } else {
-        buildDefaultLayout(api);
+        buildLayout(api, variant);
       }
 
       /* Which data source is fronted, for the activity bar. Tracked from the
@@ -184,10 +205,16 @@ export function useLayoutController(): LayoutController {
         );
         const fronted = leftPanel?.group?.activePanel ?? leftPanel;
         if (fronted) setActiveLeftPanelId(fronted.id);
-        // A layout saved while collapsed restores at zero width; believe the
-        // layout rather than the fresh component state.
+        // A layout saved while collapsed restores at zero; believe the layout
+        // rather than the fresh component state. Either axis can be the folded
+        // one, so the smaller of the two decides.
         if (leftPanel) {
-          setLeftCollapsed(leftPanel.group.api.width < COLLAPSED_THRESHOLD);
+          const groupApi = leftPanel.group.api;
+          const extent =
+            groupApi.width >= api.width - COLLAPSED_THRESHOLD
+              ? groupApi.height
+              : groupApi.width;
+          setLeftCollapsed(extent < COLLAPSED_THRESHOLD);
         }
       };
 
@@ -210,6 +237,7 @@ export function useLayoutController(): LayoutController {
            veto the close (Dockview reports it after the fact), so preserving
            the work is the only honest option. */
         api.onDidRemovePanel((panel) => {
+          if (rebuildingRef.current) return;
           const path = editorPathFromPanelId(panel.id);
           if (path && !isDirty(getEditorsState().docs[path])) closeDoc(path);
         }),
@@ -223,7 +251,7 @@ export function useLayoutController(): LayoutController {
     const api = apiRef.current;
     if (!api) return;
     clearLayout();
-    buildDefaultLayout(api);
+    buildLayout(api, variantRef.current);
   }, []);
 
   const openPanel = useCallback((id: PanelId) => {
@@ -311,6 +339,47 @@ export function useLayoutController(): LayoutController {
     });
   }, []);
 
+  /**
+   * Rebuild the dock for a monitor shape.
+   *
+   * This is a full teardown. Dockview has no "re-flow" operation, and moving
+   * regions one at a time through a grid that is already the wrong shape gives
+   * worse arrangements than starting over.
+   *
+   * Open files are carried across: their paths are captured first, the removal
+   * cleanup is suppressed for the duration so no buffer is dropped, and the
+   * tabs are re-added afterwards. Changing which monitor you're on is not a
+   * reason to lose the file you were editing.
+   */
+  const applyLayout = useCallback(
+    (variant: LayoutVariant) => {
+      const api = apiRef.current;
+      if (!api) return;
+
+      const openPaths = api.panels
+        .map((panel) => editorPathFromPanelId(panel.id))
+        .filter((path): path is string => path !== null);
+
+      variantRef.current = variant;
+      setLayoutVariant(variant);
+
+      rebuildingRef.current = true;
+      try {
+        buildLayout(api, variant);
+      } finally {
+        rebuildingRef.current = false;
+      }
+
+      for (const path of openPaths) {
+        openEditor(path, getEditorsState().docs[path]?.name ?? basename(path));
+      }
+
+      setLeftCollapsed(false);
+      saveLayout(api, variant);
+    },
+    [openEditor],
+  );
+
   const toggleLeftPanel = useCallback(
     (id: PanelId) => {
       const api = apiRef.current;
@@ -325,14 +394,28 @@ export function useLayoutController(): LayoutController {
 
       const group = panel.group;
       const fronted = group.activePanel?.id === id;
-      const collapsed = group.api.width < COLLAPSED_THRESHOLD;
+
+      /* Which way the dock collapses depends on which edge it is docked to, and
+         that is read from geometry rather than from the layout variant — the
+         user can drag the sources anywhere, and the arrangement on screen is
+         the only thing that is definitely true. A group spanning the full dock
+         width is a band with no horizontal neighbour to hand space back to, so
+         it has to fold vertically. */
+      const isBand = group.api.width >= api.width - COLLAPSED_THRESHOLD;
+      const extent = isBand ? group.api.height : group.api.width;
+      const collapsed = extent < COLLAPSED_THRESHOLD;
 
       if (collapsed || !fronted) {
-        // Expand and front. Dockview clamps a group to its minimum width, so
-        // the constraint has to be restored before the size is.
+        // Expand and front. Dockview clamps a group to its minimum, so the
+        // constraint has to be lifted before the size can be restored.
         if (collapsed) {
-          group.api.setConstraints({ minimumWidth: 100 });
-          group.api.setSize({ width: leftWidthRef.current });
+          if (isBand) {
+            group.api.setConstraints({ minimumHeight: 80 });
+            group.api.setSize({ height: leftHeightRef.current });
+          } else {
+            group.api.setConstraints({ minimumWidth: 100 });
+            group.api.setSize({ width: leftWidthRef.current });
+          }
         }
         panel.api.setActive();
         setActiveLeftPanelId(id);
@@ -341,10 +424,16 @@ export function useLayoutController(): LayoutController {
       }
 
       // Clicking the source you're already in collapses the dock, the way it
-      // does in JupyterLab — the fastest way to hand the width to the editor.
-      leftWidthRef.current = Math.max(group.api.width, 200);
-      group.api.setConstraints({ minimumWidth: 0 });
-      group.api.setSize({ width: 0 });
+      // does in JupyterLab — the fastest way to hand the space to the editor.
+      if (isBand) {
+        leftHeightRef.current = Math.max(group.api.height, 160);
+        group.api.setConstraints({ minimumHeight: 0 });
+        group.api.setSize({ height: 0 });
+      } else {
+        leftWidthRef.current = Math.max(group.api.width, 200);
+        group.api.setConstraints({ minimumWidth: 0 });
+        group.api.setSize({ width: 0 });
+      }
       setLeftCollapsed(true);
     },
     [openPanel],
@@ -377,6 +466,8 @@ export function useLayoutController(): LayoutController {
     openPanel,
     closeAllPanels,
     openEditor,
+    applyLayout,
+    layoutVariant,
     activeLeftPanelId,
     leftCollapsed,
     toggleLeftPanel,

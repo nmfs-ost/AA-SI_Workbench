@@ -1,4 +1,5 @@
 import type { DialogId } from './dialogs';
+import type { LayoutVariant } from './layout';
 import type { PanelId } from './panels';
 
 /**
@@ -13,7 +14,8 @@ export type ShellActionId =
   | 'open-panel'
   | 'open-dialog'
   | 'open-external'
-  | 'save-active-file';
+  | 'save-active-file'
+  | 'apply-layout';
 
 /** A menu row. A row is either a command, a divider, or a submenu. */
 export interface MenuItemDefinition {
@@ -31,6 +33,12 @@ export interface MenuItemDefinition {
   dialogPayload?: string;
   /** For 'open-external', the URL to open in a new tab. */
   href?: string;
+  /**
+   * For 'apply-layout', which monitor arrangement to build. The menu bar also
+   * ticks the item matching the layout in force — a runtime fact, so it is
+   * computed at render rather than stored here.
+   */
+  layoutVariant?: LayoutVariant;
   disabled?: boolean;
   /** Render a separator line instead of a command. */
   divider?: boolean;

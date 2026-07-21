@@ -8,12 +8,18 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import { CheckOutlined } from '@mui/icons-material';
 
 import type { MenuItemDefinition } from '../../types';
 import { useLayout } from '../../context/LayoutContext';
 import { openDialog } from '../../state/dialogs';
 import { saveActiveDoc } from '../../state/editors';
 import { menus } from './menuConfig';
+
+/** True when any row in this menu carries a tick, so all its rows get the column. */
+function menuHasChecks(items: MenuItemDefinition[]): boolean {
+  return items.some((item) => item.layoutVariant !== undefined);
+}
 
 /**
  * Desktop-style menu bar. Clicking a top-level label opens its menu; while any
@@ -26,7 +32,8 @@ import { menus } from './menuConfig';
  */
 export function MenuBar() {
   const theme = useTheme();
-  const { resetLayout, closeAllPanels, openPanel } = useLayout();
+  const { resetLayout, closeAllPanels, openPanel, applyLayout, layoutVariant } =
+    useLayout();
 
   const [openId, setOpenId] = useState<string | null>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -58,6 +65,9 @@ export function MenuBar() {
         break;
       case 'save-active-file':
         void saveActiveDoc();
+        break;
+      case 'apply-layout':
+        if (item.layoutVariant) applyLayout(item.layoutVariant);
         break;
       default:
         // 'noop' / unimplemented placeholder.
@@ -143,7 +153,32 @@ export function MenuBar() {
                     disabled={item.disabled}
                     onClick={() => dispatch(item)}
                     title={item.panelId ? undefined : item.label}
+                    {...(item.layoutVariant
+                      ? {
+                          role: 'menuitemradio',
+                          'aria-checked': item.layoutVariant === layoutVariant,
+                        }
+                      : {})}
                   >
+                    {/* A tick column, present on every row in a menu that has
+                        any checkable item, so labels stay aligned. */}
+                    {menuHasChecks(menu.items) && (
+                      <Box
+                        component="span"
+                        aria-hidden
+                        sx={{
+                          width: 16,
+                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          color: theme.aa.color.accent.main,
+                        }}
+                      >
+                        {item.layoutVariant === layoutVariant && (
+                          <CheckOutlined sx={{ fontSize: 14 }} />
+                        )}
+                      </Box>
+                    )}
                     <Box
                       component="span"
                       sx={{ flex: 1, whiteSpace: 'nowrap', pr: 3 }}

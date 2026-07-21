@@ -83,9 +83,22 @@ export const menus: MenuDefinition[] = [
     id: 'view',
     label: 'View',
     items: [
+      {
+        id: 'view-layout-horizontal',
+        label: 'Horizontal Monitor Layout',
+        action: 'apply-layout',
+        layoutVariant: 'horizontal',
+      },
+      {
+        id: 'view-layout-vertical',
+        label: 'Vertical Monitor Layout',
+        action: 'apply-layout',
+        layoutVariant: 'vertical',
+      },
+      { id: 'view-div-1', divider: true },
       { id: 'view-reset', label: 'Reset Layout', action: 'reset-layout' },
       { id: 'view-close-all', label: 'Close All Panels', action: 'close-all-panels' },
-      { id: 'view-div-1', divider: true },
+      { id: 'view-div-2', divider: true },
       { id: 'view-appearance', label: 'Appearance', disabled: true },
     ],
   },

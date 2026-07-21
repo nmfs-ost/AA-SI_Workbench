@@ -1,7 +1,9 @@
 import type { DockviewApi } from 'dockview';
 
+import type { LayoutVariant } from '../../types';
+
 /**
- * Builds the initial IDE arrangement programmatically.
+ * The landscape arrangement — the default, and what most workstations get.
  *
  *   ┌──┬──────────┬───────────────────────┬──────────┐
  *   │A │  LEFT    │  CENTER: Workspace,   │  RIGHT   │
@@ -19,8 +21,12 @@ import type { DockviewApi } from 'dockview';
  * therefore render as tabs. The workspace is added first so every other region
  * can be positioned relative to it. All sizes are initial hints — the user can
  * resize and re-dock freely afterwards.
+ *
+ * See `buildVerticalLayout` below for the portrait counterpart. Both are offered
+ * under View; neither is a mode the rest of the app knows about — each just
+ * arranges the same panels differently and then gets out of the way.
  */
-export function buildDefaultLayout(api: DockviewApi): void {
+export function buildHorizontalLayout(api: DockviewApi): void {
   api.clear();
 
   // Center — added first as the anchor for the other regions. It is one group:
@@ -129,4 +135,123 @@ export function buildDefaultLayout(api: DockviewApi): void {
   api.getPanel('metadata')?.api.setActive();
   api.getPanel('ncei')?.api.setActive();
   api.getPanel('pipelines')?.api.setActive();
+}
+
+/**
+ * The portrait arrangement: four full-width bands, stacked.
+ *
+ *   ┌──┬─────────────────────────┐
+ *   │A │  SOURCES                │  NCEI · Files · Derived · OMAO
+ *   │C ├─────────────────────────┤
+ *   │T │  CENTER                 │  Workspace · Pipelines · open files
+ *   │  │                         │
+ *   │  ├─────────────────────────┤
+ *   │  │  INSPECTOR              │  Metadata · Configuration · Calibration
+ *   │  ├─────────────────────────┤
+ *   │  │  TOOLS                  │  Terminal · Log · Progress · Console · Map
+ *   └──┴─────────────────────────┘
+ *
+ * **Nothing is ever split side by side.** That is the whole idea. A portrait
+ * monitor is typically 1080–1200px wide, and the horizontal layout spends ~700
+ * of them on the activity bar plus two sidebars before the workspace gets any —
+ * which leaves an echogram path, a command preview, and a file tree all fighting
+ * over what's left. Height is the abundant resource here, so every region takes
+ * the full width and pays in height instead.
+ *
+ * The band order follows the work: choose data, work on it, inspect it, watch it
+ * run. That is the same left-to-right order the horizontal layout reads in, so
+ * switching between monitors doesn't mean relearning where anything lives.
+ *
+ * The activity bar stays a vertical strip on the far left in both layouts. It is
+ * shell chrome outside Dockview, it still drives the sources band, and moving it
+ * per-layout would cost the one piece of navigation that never moves.
+ */
+export function buildVerticalLayout(api: DockviewApi): void {
+  api.clear();
+
+  // Center first, as the anchor. Everything else is placed relative to it.
+  api.addPanel({ id: 'workspace', component: 'workspace', title: 'Workspace' });
+  api.addPanel({
+    id: 'pipelines',
+    component: 'pipelines',
+    title: 'Pipelines',
+    position: { referencePanel: 'workspace', direction: 'within' },
+  });
+
+  // Sources band, above. Tall enough for a file listing to be worth reading —
+  // a 150px tree is a scrollbar with a few rows attached.
+  api.addPanel({
+    id: 'ncei',
+    component: 'ncei',
+    title: 'NCEI',
+    position: { referencePanel: 'workspace', direction: 'above' },
+    initialHeight: 320,
+  });
+  for (const [id, title] of [
+    ['files', 'Files'],
+    ['derived', 'Derived'],
+    ['omao', 'OMAO'],
+  ] as const) {
+    api.addPanel({
+      id,
+      component: id,
+      title,
+      position: { referencePanel: 'ncei', direction: 'within' },
+    });
+  }
+
+  // Inspector band, below the workspace: what the selection *is*, and how the
+  // pipeline is configured.
+  api.addPanel({
+    id: 'metadata',
+    component: 'metadata',
+    title: 'Metadata',
+    position: { referencePanel: 'workspace', direction: 'below' },
+    initialHeight: 260,
+  });
+  for (const [id, title] of [
+    ['configuration', 'Configuration'],
+    ['calibration', 'Calibration'],
+    ['processingQueue', 'Processing Queue'],
+  ] as const) {
+    api.addPanel({
+      id,
+      component: id,
+      title,
+      position: { referencePanel: 'metadata', direction: 'within' },
+    });
+  }
+
+  // Tools band, at the foot — where output appears, so it reads last.
+  api.addPanel({
+    id: 'terminal',
+    component: 'terminal',
+    title: 'Terminal',
+    position: { referencePanel: 'metadata', direction: 'below' },
+    initialHeight: 240,
+  });
+  for (const [id, title] of [
+    ['log', 'Log'],
+    ['progress', 'Progress'],
+    ['console', 'Console'],
+    ['map', 'Map'],
+  ] as const) {
+    api.addPanel({
+      id,
+      component: id,
+      title,
+      position: { referencePanel: 'terminal', direction: 'within' },
+    });
+  }
+
+  api.getPanel('terminal')?.api.setActive();
+  api.getPanel('metadata')?.api.setActive();
+  api.getPanel('ncei')?.api.setActive();
+  api.getPanel('pipelines')?.api.setActive();
+}
+
+/** Build whichever arrangement the user has chosen. */
+export function buildLayout(api: DockviewApi, variant: LayoutVariant): void {
+  if (variant === 'vertical') buildVerticalLayout(api);
+  else buildHorizontalLayout(api);
 }

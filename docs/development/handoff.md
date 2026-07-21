@@ -223,6 +223,49 @@ shell chrome and can never be dragged away or docked somewhere surprising.
   background (`bg.selected`), and full-strength icon colour against muted neighbours. Names
   live in the tooltip, which is also the `aria-label`.
 
+## Two monitor layouts — WIRED (View menu)
+`defaultLayout.ts` exports `buildHorizontalLayout` (the default), `buildVerticalLayout`, and
+`buildLayout(api, variant)`. **View ▸ Horizontal / Vertical Monitor Layout**, with a tick on
+whichever is in force.
+
+```
+HORIZONTAL (landscape)                    VERTICAL (portrait)
+┌──┬──────┬────────────┬──────┐          ┌──┬─────────────────────────┐
+│A │SOURCE│  CENTER    │INSPEC│          │A │  SOURCES                │
+│C │      │            │      │          │C ├─────────────────────────┤
+│T │      ├────────────┤      │          │T │  CENTER                 │
+│  │      │   TOOLS    │      │          │  ├─────────────────────────┤
+└──┴──────┴────────────┴──────┘          │  │  INSPECTOR              │
+                                          │  ├─────────────────────────┤
+                                          │  │  TOOLS                  │
+                                          └──┴─────────────────────────┘
+```
+- **The portrait rule is "never split sideways".** A portrait monitor is ~1080–1200px wide;
+  the landscape layout spends ~700 of them on the activity bar plus two sidebars before the
+  workspace gets any. Vertical makes every region a full-width band and pays in height, which
+  is the abundant resource. There is a test asserting no panel is ever placed `left` or
+  `right` in the vertical builder.
+- **Band order matches the horizontal layout's reading order** (sources → work → inspect →
+  watch), so switching monitors isn't relearning where things live.
+- **The activity bar stays a vertical strip in both.** It is chrome outside Dockview, it still
+  drives the sources band, and moving it per-layout would cost the one piece of navigation
+  that never moves.
+- **Switching is a full teardown** (`api.clear()` + rebuild) — Dockview has no re-flow, and
+  nudging regions through a grid that's already the wrong shape gives worse results. **Open
+  files are carried across**: paths are captured first, `rebuildingRef` suppresses the
+  panel-removal cleanup so no buffer is dropped, and the tabs are re-added after. Changing
+  monitors is not a reason to lose the file you were editing.
+- **The collapse gesture is orientation-aware**, read from geometry rather than from the
+  variant: a group as wide as the whole dock is a band with no horizontal neighbour to hand
+  space back to, so it folds by height instead of width. Geometry, not the stored variant, is
+  the only thing that stays true after the user drags something.
+- `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**
+  rather than snapping back to horizontal. Records written before this existed have no
+  `variant` and are read as `'horizontal'`.
+- **LAYOUT_VERSION was NOT bumped** (still 11). The horizontal default is byte-identical, and
+  the new field is optional and back-compatible, so there is nothing a returning user needs to
+  be forced into.
+
 ## Sources sidebar has no tab strip
 `components/layout/sidebarChrome.ts` (the predicate) + `syncSidebarChrome()` in
 `useLayoutController.ts` (the application). User's words: *"the side tabs already do the
@@ -252,6 +295,17 @@ twice and costs 34px of height in the narrowest part of the window.
 - **Consequence to watch:** the icons are now the only label. If "which source am I in?"
   turns out to be too subtle in practice, the fix is one line — delete the `header.hidden`
   assignment. Nothing else depends on it.
+
+## Toolbar — only wired items
+`toolbarConfig.tsx` + `AppToolbar.tsx`. The bar now holds two right-aligned buttons: the
+environment updater (which doubles as the background-job indicator) and feedback.
+
+Open, Save, Refresh, Run, Stop and Settings were **removed** at the user's request — they were
+placeholder affordances with no `action`, so they clicked to no effect. A control that does
+nothing teaches people not to trust the controls that do, which is why they were deleted
+rather than disabled. Save and Open live in the File menu where they are wired; Run and Stop
+belong to the Pipelines panel if and when pipelines execute. **If a future feature wants a
+toolbar button, add it here with its action.**
 
 ## Copy absolute path — WIRED (one control, every listing)
 `components/panels/CopyPathButton.tsx`. Props: `value`, `label`, `alwaysVisible`, `size`.
@@ -551,12 +605,13 @@ Everything below was run in this session, in this order, from a clean extract.
 | Check | Command | Result |
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
-| Frontend tests | `npm test` | **64 passed** (4 files) |
-| Frontend build | `npm run build` | clean — **1,121.00 kB / 311.95 kB gzip** |
+| Frontend tests | `npm test` | **77 passed** (5 files) |
+| Frontend build | `npm run build` | clean — **1,123.44 kB / 312.46 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
-- Bundle grew **1,088.95 → 1,121.00 kB** (+32 kB raw, +10.5 kB gzip) for the whole editor.
+- Bundle grew **1,088.95 → 1,123.44 kB** (+34 kB raw, +11 kB gzip), nearly all of it the
+  editor.
   That number is the argument against Monaco; keep an eye on it.
 - The skip is `test_files.py:390` — a read-only-file test that cannot mean anything when the
   suite runs as a user whose privileges ignore the write bit (root in a container). It skips
@@ -572,12 +627,20 @@ Everything below was run in this session, in this order, from a clean extract.
     lookup, and the open/don't-open routing for the acoustic binaries.
   - `sidebar.test.ts` (6) — `isSourceGroup`: pure-source groups, the centre group, mixed
     groups, empty groups, unknown ids, and an unresolvable region lookup.
+  - `layouts.test.ts` (13) — both builders against a recording fake `DockviewApi`: the two
+    arrangements hold the same panel set, every panel is added once and anchored to something
+    already placed, the vertical builder never uses `left`/`right`, band order and sizing axis.
+    It can't prove either layout *looks* right — nothing without a browser can.
 - `make lint` used to die on its first line (it called `npm run lint`; no such script, and the
   repo has no eslint config). It now runs `npm run typecheck` — strict TS with
   noUnusedLocals/Parameters is the gate this repo actually has. `make test` now runs both
   halves instead of backend only.
 
 ### What is still NOT verified
+- **Neither monitor layout has been seen on a real screen**, portrait or otherwise. The
+  builders are asserted structurally; the band heights (320 / 260 / 240) are judgement, and
+  the first thing to check on an actual portrait monitor is whether the sources band is tall
+  enough to be worth having.
 - **No browser rendering check of the editor.** Caret/highlight alignment, scroll sync, and
   the notebook layout have never been seen by a real engine. The metrics constants are the
   fragile part.
@@ -677,6 +740,13 @@ now that Vitest is here, porting those node checks is cheap and worth doing.
    `self is not defined` from `@xterm/addon-fit`'s UMD wrapper. `React.lazy` on the heavy
    panels fixes both at once. Until then, keep pure logic in modules that don't reach the
    registry — `sidebarChrome.ts` is the pattern.
+22. **Layout switching drops the *arrangement*, not just the shape.** `applyLayout` rebuilds
+   from the template, so any resizing or re-docking the user did is lost — only open files are
+   carried across. Remembering per-variant arrangements (two saved layouts instead of one)
+   would fix it and is a small change to `PersistedLayout`; nobody has asked yet.
+23. **Band heights in the vertical layout are guesses.** 320 sources / 260 inspector / 240
+   tools. On a 1920-tall monitor that leaves ~1050 for the workspace, which felt right on
+   paper and has never been checked on glass.
 
 ## Open design questions
 Not bugs and not TODOs — places where a reasonable person could pick differently, recorded so
@@ -696,6 +766,11 @@ the next session doesn't relitigate them by accident.
 - **Calibration content is still unsettled** — the user has said so explicitly. The panel is
   an honest scaffold and the schema is one file; don't invest in it until someone says what
   belongs there.
+- **Is the toolbar still worth 34px?** It now holds two right-aligned buttons. Moving them to
+  the right edge of the menu bar would reclaim a whole strip of vertical space on every
+  screen — which matters most on the landscape layout, where height is the scarce resource.
+  Left alone because it wasn't asked for and `toolbarConfig.tsx` is a schema other features
+  may want.
 - **Bundle strategy.** 1.12 MB / 312 kB gzip is fine over a workstation LAN and not fine over
   a hotel wifi. The two obvious wins are `React.lazy` on the terminal (~300 kB of xterm) and
   route-splitting the editor. Neither has been done because neither has been needed yet.

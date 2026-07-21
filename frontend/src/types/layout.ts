@@ -10,8 +10,25 @@ export const LAYOUT_STORAGE_KEY = 'aa-si.layout';
  */
 export const LAYOUT_VERSION = 11;
 
+/**
+ * Which monitor the arrangement is shaped for.
+ *
+ * `horizontal` spends the screen's width: sources on the left, inspector on the
+ * right, workspace between them. On a portrait monitor that costs ~700px of the
+ * ~1080 available before the workspace gets any, so `vertical` spends height
+ * instead — every region becomes a full-width band and nothing is ever split
+ * side by side.
+ */
+export type LayoutVariant = 'horizontal' | 'vertical';
+
 /** What gets written to localStorage. */
 export interface PersistedLayout {
   version: number;
   layout: SerializedDockview;
+  /**
+   * Which builder produced this arrangement, so Reset Layout rebuilds the one
+   * the user chose rather than snapping back to horizontal. Absent in records
+   * written before the vertical layout existed — treat as 'horizontal'.
+   */
+  variant?: LayoutVariant;
 }
