@@ -2,7 +2,6 @@ import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
 import {
   FolderOpenOutlined,
-  WorkspacesOutlined,
   DataObjectOutlined,
   PlaylistPlayOutlined,
   TravelExploreOutlined,
@@ -21,7 +20,6 @@ import {
 
 import type { PanelDefinition, PanelId } from '../../types';
 
-import { WorkspacePanel } from './WorkspacePanel';
 import { FilesPanel } from './FilesPanel';
 import { EditorPanel } from './editor/EditorPanel';
 import { MapPanel } from './MapPanel';
@@ -46,15 +44,6 @@ import { ConsolePanel } from './ConsolePanel';
  * menu, and the "re-open a closed panel" logic are all derived from this list.
  */
 export const panelDefinitions: readonly PanelDefinition[] = [
-  {
-    id: 'workspace',
-    title: 'Workspace',
-    icon: WorkspacesOutlined,
-    description: 'The central workspace surface for visualizations.',
-    region: 'center',
-    component: WorkspacePanel,
-    closeable: false,
-  },
   {
     id: 'pipelines',
     title: 'Pipelines',

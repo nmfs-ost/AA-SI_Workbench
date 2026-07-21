@@ -3,7 +3,6 @@ import { Box } from '@mui/material';
 
 import { DialogHost } from '../dialogs';
 import { MenuBar } from './MenuBar';
-import { AppToolbar } from './AppToolbar';
 import { ActivityBar } from './ActivityBar';
 import { DockLayout } from './DockLayout';
 import { StatusBar } from './StatusBar';
@@ -15,9 +14,15 @@ import {
 } from '../../state/editors';
 
 /**
- * The application shell. A fixed vertical stack — menu bar, toolbar, docking
- * surface, status bar — filling the viewport. The docking surface is the only
- * region that grows; everything else keeps its fixed height.
+ * The application shell. A fixed vertical stack — menu bar, docking surface,
+ * status bar — filling the viewport. The docking surface is the only region
+ * that grows; everything else keeps its fixed height.
+ *
+ * There used to be a toolbar strip between the menu bar and the dock. Its six
+ * placeholder buttons were removed when they turned out to do nothing, and its
+ * remaining two moved into the activity bar, at which point a 34px empty band
+ * was all that was left of it. Deleting it also lets the activity bar's first
+ * icon sit flush with the top of the dock beside it.
  *
  * The middle band is a row: the activity bar is shell chrome pinned to the left
  * edge, outside Dockview, so it can never be dragged away or docked somewhere
@@ -66,7 +71,6 @@ export function AppShell() {
       }}
     >
       <MenuBar />
-      <AppToolbar />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <ActivityBar />
         <DockLayout />

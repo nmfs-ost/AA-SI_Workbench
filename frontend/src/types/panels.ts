@@ -15,7 +15,6 @@ export type PanelRegion = 'left' | 'right' | 'bottom' | 'center';
 
 /** The identifiers of the panels shipped with the shell. */
 export type BuiltinPanelId =
-  | 'workspace'
   | 'pipelines'
   | 'editor'
   | 'metadata'
@@ -56,7 +55,10 @@ export interface PanelDefinition {
   /** The React component rendered inside the Dockview panel. */
   component: FunctionComponent<IDockviewPanelProps>;
   /**
-   * If false the panel cannot be closed by the user (the central workspace).
+   * If false, Close All Panels leaves this one alone. Nothing sets it today —
+   * the Workspace placeholder was the only user and it was removed — but the
+   * hook stays because "close everything except X" is a reasonable thing for a
+   * future panel to want, and `openPanel` no longer assumes any panel survives.
    * Defaults to true.
    */
   closeable?: boolean;

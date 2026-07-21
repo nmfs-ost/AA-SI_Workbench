@@ -92,7 +92,7 @@ cd backend  && ruff check . && pytest
   no Node/proxy/CORS at runtime. `_paths.py` resolves dist (override env → bundled
   `aa_si_workbench/_frontend/` → source `frontend/dist`).
 
-## Current layout (defaultLayout.ts, LAYOUT_VERSION = 11)
+## Current layout (defaultLayout.ts, LAYOUT_VERSION = 12)
 ```
 ┌──┬──────────┬───────────────────────┬──────────┐
 │A │  LEFT    │  CENTER: Workspace,   │  RIGHT   │
@@ -109,10 +109,16 @@ cd backend  && ruff check . && pytest
   Derived · OMAO. Recipes REMOVED. FileBrowser + WorkflowExplorer previously REMOVED.
   **The tab strip is hidden** — see the sidebar section below. The activity bar is its
   tab strip; the four panels are still one Dockview group, just chrome-less.
-- **Center (ONE group):** Pipelines + Workspace, plus one tab per open file.
-  **Pipelines fronts on load.** The center is no longer split — Echogram used to
-  own the right half. Sv panel REMOVED earlier (the aa-sv *pipeline stage* remains
-  in pipelineDefinitions — different thing).
+- **Center (ONE group):** Pipelines, plus one tab per open file. The center is not split —
+  Echogram used to own the right half. Sv panel REMOVED earlier (the aa-sv *pipeline stage*
+  remains in pipelineDefinitions — different thing).
+- **Workspace REMOVED** (user: "we don't use it"). It was a placeholder showing the app name,
+  but it was also the *anchor*: every region was positioned relative to it, `openPanel` and
+  `openEditor` fell back to it by id, and `closeable: false` guaranteed it survived Close All
+  Panels. **Pipelines is the anchor now**, and — more importantly — nothing assumes an anchor
+  exists any more. `openPanel` looks for any centre-region panel and, finding none, adds
+  positionless (Dockview gives it a fresh group). That is what makes every panel closeable
+  without the shell painting itself into a corner.
 - **Echogram REMOVED this session** (user: "in the way, no longer needed").
   `EchogramPanel.tsx` and `ViewerScaffold.tsx` are both deleted — Sv had already
   gone, so the scaffold had no other consumer. "Echogram" still appears as a
@@ -126,18 +132,20 @@ cd backend  && ruff check . && pytest
   fitted cos-lat projection + graticule. Coords come from the mapTrack store
   (state/mapTrack.ts), published by useNceiSearch — today they are MOCK positions on each file
   (RawFile.lat/lon, filled by the mock generator's per-survey random walk; apiNceiSource omits them).
-- BuiltinPanelId union: workspace, pipelines, **editor**, ncei, **files**, derived, omao,
-  metadata, configuration, calibration, processingQueue, terminal, log, progress, console, map.
-  (`'files'` was missing before this session — a live typo-safety hole, since `PanelId` has a
-  `(string & {})` escape hatch that let a bad id pass `tsc`. `'echogram'` removed.)
+- BuiltinPanelId union: pipelines, editor, ncei, files, derived, omao, metadata,
+  configuration, calibration, processingQueue, terminal, log, progress, console, map.
+  (`'echogram'` and `'workspace'` removed; `'files'` and `'editor'` added. Keep this union in
+  step with the registry — `PanelId` has a `(string & {})` escape hatch, so a typo'd id passes
+  `tsc` silently.)
 - **`PanelDefinition.dynamic`** (new): marks a panel that is a *template*, opened
   programmatically many times with different params. Only `editor` uses it. Dynamic panels are
   registered as Dockview components but excluded from the Window menu, the default layout, and
   the activity bar — "open an editor" isn't a thing to pick from a list, you open a *file*.
 - NCEI file rows use pl:1.25 / pr:1 (they were flush against the panel edge).
-- **LAYOUT_VERSION is 11.** Bumped from 10 when Echogram was removed and the center collapsed
-  to one group. Persisted v10 layouts are discarded on load — intended, otherwise returning
-  users keep a layout referencing a panel that no longer exists.
+- **LAYOUT_VERSION is 12.** Bumped from 11 when Workspace was removed; a persisted v11 layout
+  references a panel that no longer exists, so it is discarded and rebuilt. (It was
+  deliberately *not* bumped for the hidden sidebar tabs or the vertical layout — neither
+  added, removed, or moved a panel. Bump for structure, not for chrome.)
 
 ## File editor — WIRED (center tabs) — the big feature of this session
 Click a file in the Files panel and it opens as a tab in the center, beside Workspace and
@@ -222,6 +230,26 @@ shell chrome and can never be dragged away or docked somewhere surprising.
   state carries three cues rather than one: accent hairline against the edge, tinted
   background (`bg.selected`), and full-strength icon colour against muted neighbours. Names
   live in the tooltip, which is also the `aria-label`.
+- **Below a divider sit the shell's two standing actions**, environment update and feedback,
+  which used to be a separate toolbar. Same width, same height, same left edge as the sources
+  — the divider is the only thing saying "these do something rather than show something". The
+  environment button still doubles as the background-job indicator (spinner in place of icon).
+- **`pt: 0`.** The first icon is flush with the top of the dock beside it. This is only
+  possible because the toolbar strip is gone.
+- **Collapse is `group.api.setVisible(false)`, not a resize to zero.** Dockview removes a
+  hidden view from the grid, gives its space to the neighbours, and remembers its size for the
+  return trip. The old implementation drove the width to 0 while lifting the minimum-width
+  constraint, which meant fighting the grid's own clamps — the sidebar could end up stuck
+  narrow and half-drawn, and because "collapsed" was then *inferred from geometry*, the state
+  machine couldn't tell that had happened and refused to expand again. Visibility is a
+  boolean; there is no threshold to land on the wrong side of, and it works identically in
+  both monitor layouts with no axis detection.
+- **Repeat clicks inside `DOUBLE_CLICK_MS` (350ms) on the same icon count once.** A
+  double-click is two click events, and left alone the second undoes the first — so a user
+  double-clicking to close the sidebar saw it flash and stay open. Clicking a *different*
+  source is a different intent and stays instant.
+- Visibility is serialized with the layout, so a sidebar collapsed before a reload comes back
+  collapsed, and `seedActiveLeft` reads `isVisible` rather than measuring anything.
 
 ## Two monitor layouts — WIRED (View menu)
 `defaultLayout.ts` exports `buildHorizontalLayout` (the default), `buildVerticalLayout`, and
@@ -262,9 +290,9 @@ HORIZONTAL (landscape)                    VERTICAL (portrait)
 - `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**
   rather than snapping back to horizontal. Records written before this existed have no
   `variant` and are read as `'horizontal'`.
-- **LAYOUT_VERSION was NOT bumped** (still 11). The horizontal default is byte-identical, and
-  the new field is optional and back-compatible, so there is nothing a returning user needs to
-  be forced into.
+- **LAYOUT_VERSION was not bumped for this feature.** The horizontal default was unchanged and
+  the new field is optional and back-compatible. (It has since gone to 12 for the Workspace
+  removal, which is a real structural change.)
 
 ## Sources sidebar has no tab strip
 `components/layout/sidebarChrome.ts` (the predicate) + `syncSidebarChrome()` in
@@ -296,16 +324,21 @@ twice and costs 34px of height in the narrowest part of the window.
   turns out to be too subtle in practice, the fix is one line — delete the `header.hidden`
   assignment. Nothing else depends on it.
 
-## Toolbar — only wired items
-`toolbarConfig.tsx` + `AppToolbar.tsx`. The bar now holds two right-aligned buttons: the
-environment updater (which doubles as the background-job indicator) and feedback.
+## No toolbar — the activity bar holds everything
+There is no toolbar strip. It went in two steps, both at the user's request: first the six
+placeholder buttons (Open, Save, Refresh, Run, Stop, Settings) were deleted because they had
+no `action` and clicked to no effect — a control that does nothing teaches people not to
+trust the ones that do. Then the two that remained (environment update, report a problem)
+moved into the activity bar, at which point a 34px empty band was all that was left.
 
-Open, Save, Refresh, Run, Stop and Settings were **removed** at the user's request — they were
-placeholder affordances with no `action`, so they clicked to no effect. A control that does
-nothing teaches people not to trust the controls that do, which is why they were deleted
-rather than disabled. Save and Open live in the File menu where they are wired; Run and Stop
-belong to the Pipelines panel if and when pipelines execute. **If a future feature wants a
-toolbar button, add it here with its action.**
+`AppToolbar.tsx`, `toolbarConfig.tsx` and the `size.toolBar` token are all gone. Save and
+Open live in the File menu where they are wired; Run and Stop belong to the Pipelines panel
+if and when pipelines execute. **A future toolbar button goes in the activity bar's `ACTIONS`
+list, with its dialog id.**
+
+Removing the strip is also what lets the activity bar's first icon sit flush with the top of
+the dock beside it — the column and the panel now share one baseline, which they could not
+while a separate bar sat between them.
 
 ## Copy absolute path — WIRED (one control, every listing)
 `components/panels/CopyPathButton.tsx`. Props: `value`, `label`, `alwaysVisible`, `size`.
@@ -606,12 +639,12 @@ Everything below was run in this session, in this order, from a clean extract.
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
 | Frontend tests | `npm test` | **77 passed** (5 files) |
-| Frontend build | `npm run build` | clean — **1,123.44 kB / 312.46 kB gzip** |
+| Frontend build | `npm run build` | clean — **1,121.30 kB / 312.10 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
-- Bundle grew **1,088.95 → 1,123.44 kB** (+34 kB raw, +11 kB gzip), nearly all of it the
-  editor.
+- Bundle grew **1,088.95 → 1,121.30 kB** (+32 kB raw, +11 kB gzip), nearly all of it the
+  editor; the toolbar's removal gave a little back.
   That number is the argument against Monaco; keep an eye on it.
 - The skip is `test_files.py:390` — a read-only-file test that cannot mean anything when the
   suite runs as a user whose privileges ignore the write bit (root in a container). It skips
@@ -637,6 +670,9 @@ Everything below was run in this session, in this order, from a clean extract.
   halves instead of backend only.
 
 ### What is still NOT verified
+- **The sidebar collapse fix has not been seen in a browser.** `setVisible` is the documented
+  primitive and the grid stores the size for the return trip, but the bug it replaces was
+  precisely a grid-clamping behaviour that only shows up on screen.
 - **Neither monitor layout has been seen on a real screen**, portrait or otherwise. The
   builders are asserted structurally; the band heights (320 / 260 / 240) are judgement, and
   the first thing to check on an actual portrait monitor is whether the sources band is tall
@@ -757,6 +793,11 @@ the next session doesn't relitigate them by accident.
   are: widen activeAsset so Metadata answers; or show a small "what is this file" summary in
   the editor's unsupported state (size, sonar guess, acquisition time from the filename); or
   leave it. Doing nothing is defensible but currently feels like a dead click.
+- **The centre has no home tab.** With Workspace gone, a fresh install opens on Pipelines and
+  closing every file leaves Pipelines alone in the centre. That's cleaner than a placeholder
+  that says nothing, but it does mean there is no surface for a future viewer (echogram, Sv,
+  3-D) to land on — whatever comes next will need to register its own centre panel rather than
+  mounting into an existing one.
 - **Where do notebooks really belong?** The Workbench edits them but will never run them. If
   scientists want to *run* notebooks the honest answer is JupyterLab, and the Workbench should
   perhaps offer to open the file there rather than growing a kernel.
@@ -766,11 +807,6 @@ the next session doesn't relitigate them by accident.
 - **Calibration content is still unsettled** — the user has said so explicitly. The panel is
   an honest scaffold and the schema is one file; don't invest in it until someone says what
   belongs there.
-- **Is the toolbar still worth 34px?** It now holds two right-aligned buttons. Moving them to
-  the right edge of the menu bar would reclaim a whole strip of vertical space on every
-  screen — which matters most on the landscape layout, where height is the scarce resource.
-  Left alone because it wasn't asked for and `toolbarConfig.tsx` is a schema other features
-  may want.
 - **Bundle strategy.** 1.12 MB / 312 kB gzip is fine over a workstation LAN and not fine over
   a hotel wifi. The two obvious wins are `React.lazy` on the terminal (~300 kB of xterm) and
   route-splitting the editor. Neither has been done because neither has been needed yet.

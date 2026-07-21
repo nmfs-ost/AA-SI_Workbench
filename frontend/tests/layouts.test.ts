@@ -60,7 +60,6 @@ function fakeApi() {
 }
 
 const ALL_PANELS = [
-  'workspace',
   'pipelines',
   'ncei',
   'files',
@@ -106,11 +105,11 @@ describe('both layouts', () => {
     }
   });
 
-  it('anchor everything to the workspace, which is added first', () => {
+  it('anchor everything to the centre panel, which is added first', () => {
     for (const build of [buildHorizontalLayout, buildVerticalLayout]) {
       const f = fakeApi();
       build(f.api);
-      expect(f.ids()[0]).toBe('workspace');
+      expect(f.ids()[0]).toBe('pipelines');
       // Every later panel references one that already exists.
       const seen = new Set<string>();
       for (const entry of f.added) {
@@ -136,17 +135,17 @@ describe('horizontal layout', () => {
   buildHorizontalLayout(f.api);
 
   it('puts sources left and the inspector right', () => {
-    expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'workspace' });
+    expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
       direction: 'right',
-      reference: 'workspace',
+      reference: 'pipelines',
     });
   });
 
-  it('puts the tools dock under the workspace, not under the inspector', () => {
+  it('puts the tools dock under the centre, not under the inspector', () => {
     expect(f.find('terminal')).toMatchObject({
       direction: 'below',
-      reference: 'workspace',
+      reference: 'pipelines',
     });
   });
 
@@ -167,13 +166,13 @@ describe('vertical layout', () => {
   });
 
   it('stacks sources, workspace, inspector, tools in that order', () => {
-    expect(f.find('ncei')).toMatchObject({ direction: 'above', reference: 'workspace' });
+    expect(f.find('ncei')).toMatchObject({ direction: 'above', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
       direction: 'below',
-      reference: 'workspace',
+      reference: 'pipelines',
     });
-    // Below the *inspector*, not the workspace — otherwise the tools band would
-    // land between the workspace and the inspector.
+    // Below the *inspector*, not the centre — otherwise the tools band would
+    // land between the centre and the inspector.
     expect(f.find('terminal')).toMatchObject({
       direction: 'below',
       reference: 'metadata',
@@ -187,8 +186,8 @@ describe('vertical layout', () => {
     }
   });
 
-  it('leaves the workspace unconstrained so it takes the remaining height', () => {
-    expect(f.find('workspace')?.initialHeight).toBeUndefined();
+  it('leaves the centre unconstrained so it takes the remaining height', () => {
+    expect(f.find('pipelines')?.initialHeight).toBeUndefined();
   });
 });
 

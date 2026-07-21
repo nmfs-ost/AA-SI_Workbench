@@ -8,7 +8,7 @@ export const LAYOUT_STORAGE_KEY = 'aa-si.layout';
  * (a panel added, removed, or moved). A saved layout whose version doesn't match
  * is discarded and the default layout is rebuilt.
  */
-export const LAYOUT_VERSION = 11;
+export const LAYOUT_VERSION = 12;
 
 /**
  * Which monitor the arrangement is shaped for.

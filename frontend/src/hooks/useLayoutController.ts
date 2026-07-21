@@ -71,11 +71,12 @@ const REGION_DIRECTION: Record<
   bottom: 'below',
 };
 
-/** Size the sources dock returns to after a collapse, per axis. */
-const DEFAULT_LEFT_WIDTH = 360;
-const DEFAULT_LEFT_HEIGHT = 320;
-/** Below this the dock counts as collapsed rather than merely small. */
-const COLLAPSED_THRESHOLD = 8;
+/**
+ * Repeat clicks on the same activity-bar icon inside this window count as one
+ * intent. Long enough to swallow an OS double-click, short enough that nobody
+ * notices it when deliberately toggling twice.
+ */
+const DOUBLE_CLICK_MS = 350;
 
 export interface LayoutController {
   /** Wire to <DockviewReact onReady={...} />. */
@@ -90,7 +91,7 @@ export interface LayoutController {
   layoutVariant: LayoutVariant;
   /** Focus a panel if open, otherwise open it in its default region. */
   openPanel: (id: PanelId) => void;
-  /** Close every user-closeable panel (keeps the workspace). */
+  /** Close every user-closeable panel. */
   closeAllPanels: () => void;
   /** Open a file as a centre tab, or focus it if it's already open. */
   openEditor: (path: string, name: string) => void;
@@ -143,9 +144,8 @@ export function useLayoutController(): LayoutController {
   const apiRef = useRef<DockviewApi | null>(null);
   const disposablesRef = useRef<Disposable[]>([]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Size to restore the sources dock to after a collapse, one ref per axis. */
-  const leftWidthRef = useRef(DEFAULT_LEFT_WIDTH);
-  const leftHeightRef = useRef(DEFAULT_LEFT_HEIGHT);
+  /** Last activity-bar toggle, for collapsing a double-click into one action. */
+  const lastToggleRef = useRef<{ id: string; at: number }>({ id: '', at: 0 });
   /* Set while a layout is being torn down and rebuilt, so the panel-removal
      cleanup doesn't mistake a re-flow for the user closing their files. */
   const rebuildingRef = useRef(false);
@@ -205,17 +205,10 @@ export function useLayoutController(): LayoutController {
         );
         const fronted = leftPanel?.group?.activePanel ?? leftPanel;
         if (fronted) setActiveLeftPanelId(fronted.id);
-        // A layout saved while collapsed restores at zero; believe the layout
-        // rather than the fresh component state. Either axis can be the folded
-        // one, so the smaller of the two decides.
-        if (leftPanel) {
-          const groupApi = leftPanel.group.api;
-          const extent =
-            groupApi.width >= api.width - COLLAPSED_THRESHOLD
-              ? groupApi.height
-              : groupApi.width;
-          setLeftCollapsed(extent < COLLAPSED_THRESHOLD);
-        }
+        // Visibility is serialized with the layout, so a sidebar collapsed
+        // before a reload comes back collapsed. Believe the layout rather than
+        // the fresh component state.
+        if (leftPanel) setLeftCollapsed(!leftPanel.group.api.isVisible);
       };
 
       seedActiveLeft();
@@ -285,13 +278,18 @@ export function useLayoutController(): LayoutController {
       return;
     }
 
-    // No sibling open: dock a fresh region relative to the workspace.
-    if (definition.region === 'center') {
+    /* No sibling open, so dock relative to whatever holds the centre. Nothing
+       is guaranteed to be open — every panel is closeable — so the last resort
+       is a positionless add, which Dockview places in a group of its own. */
+    const anchor = api.panels.find(
+      (candidate) => getPanelDefinition(candidate.id)?.region === 'center',
+    );
+
+    if (!anchor) {
       api.addPanel({
         id: definition.id,
         component: definition.id,
         title: definition.title,
-        position: { referencePanel: 'workspace', direction: 'within' },
       });
       return;
     }
@@ -301,8 +299,11 @@ export function useLayoutController(): LayoutController {
       component: definition.id,
       title: definition.title,
       position: {
-        referencePanel: 'workspace',
-        direction: REGION_DIRECTION[definition.region],
+        referencePanel: anchor.id,
+        direction:
+          definition.region === 'center'
+            ? 'within'
+            : REGION_DIRECTION[definition.region],
       },
     });
   }, []);
@@ -325,7 +326,6 @@ export function useLayoutController(): LayoutController {
 
     const reference =
       [...api.panels].reverse().find((panel) => editorPathFromPanelId(panel.id)) ??
-      api.getPanel('workspace') ??
       api.panels.find((panel) => getPanelDefinition(panel.id)?.region === 'center');
 
     api.addPanel({
@@ -385,6 +385,15 @@ export function useLayoutController(): LayoutController {
       const api = apiRef.current;
       if (!api) return;
 
+      /* A double-click is two click events. Left alone, the second undoes the
+         first, so a user who double-clicks to close the sidebar sees it flash
+         and stay open. Repeats on the *same* icon collapse into one action;
+         clicking a different source is a different intent and stays instant. */
+      const now = Date.now();
+      const last = lastToggleRef.current;
+      if (last.id === id && now - last.at < DOUBLE_CLICK_MS) return;
+      lastToggleRef.current = { id, at: now };
+
       const panel = api.getPanel(id);
       if (!panel) {
         openPanel(id);
@@ -393,30 +402,17 @@ export function useLayoutController(): LayoutController {
       }
 
       const group = panel.group;
+      /* Collapse is `setVisible`, not a resize to zero. Dockview removes a
+         hidden view from the grid, hands its space to the neighbours, and
+         remembers its size for when it comes back. Driving the width to 0
+         instead means fighting the grid's minimum-size clamps, which is what
+         used to leave the sidebar stuck narrow and half-drawn. Visibility is
+         also a boolean, so there is no threshold to be on the wrong side of. */
+      const hidden = !group.api.isVisible;
       const fronted = group.activePanel?.id === id;
 
-      /* Which way the dock collapses depends on which edge it is docked to, and
-         that is read from geometry rather than from the layout variant — the
-         user can drag the sources anywhere, and the arrangement on screen is
-         the only thing that is definitely true. A group spanning the full dock
-         width is a band with no horizontal neighbour to hand space back to, so
-         it has to fold vertically. */
-      const isBand = group.api.width >= api.width - COLLAPSED_THRESHOLD;
-      const extent = isBand ? group.api.height : group.api.width;
-      const collapsed = extent < COLLAPSED_THRESHOLD;
-
-      if (collapsed || !fronted) {
-        // Expand and front. Dockview clamps a group to its minimum, so the
-        // constraint has to be lifted before the size can be restored.
-        if (collapsed) {
-          if (isBand) {
-            group.api.setConstraints({ minimumHeight: 80 });
-            group.api.setSize({ height: leftHeightRef.current });
-          } else {
-            group.api.setConstraints({ minimumWidth: 100 });
-            group.api.setSize({ width: leftWidthRef.current });
-          }
-        }
+      if (hidden || !fronted) {
+        if (hidden) group.api.setVisible(true);
         panel.api.setActive();
         setActiveLeftPanelId(id);
         setLeftCollapsed(false);
@@ -425,15 +421,7 @@ export function useLayoutController(): LayoutController {
 
       // Clicking the source you're already in collapses the dock, the way it
       // does in JupyterLab — the fastest way to hand the space to the editor.
-      if (isBand) {
-        leftHeightRef.current = Math.max(group.api.height, 160);
-        group.api.setConstraints({ minimumHeight: 0 });
-        group.api.setSize({ height: 0 });
-      } else {
-        leftWidthRef.current = Math.max(group.api.width, 200);
-        group.api.setConstraints({ minimumWidth: 0 });
-        group.api.setSize({ width: 0 });
-      }
+      group.api.setVisible(false);
       setLeftCollapsed(true);
     },
     [openPanel],

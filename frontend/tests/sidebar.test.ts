@@ -18,7 +18,6 @@ const REGIONS: Record<string, PanelRegion> = {
   files: 'left',
   derived: 'left',
   omao: 'left',
-  workspace: 'center',
   pipelines: 'center',
   editor: 'center',
   terminal: 'bottom',
@@ -34,8 +33,8 @@ describe('isSourceGroup', () => {
   });
 
   it('rejects the centre group, tabs and all', () => {
-    expect(isSourceGroup(group('workspace', 'pipelines'), regionOf)).toBe(false);
-    expect(isSourceGroup(group('workspace', 'editor:/home/u/a.py'), regionOf)).toBe(false);
+    expect(isSourceGroup(group('pipelines', 'editor:/home/u/a.py'), regionOf)).toBe(false);
+    expect(isSourceGroup(group('pipelines'), regionOf)).toBe(false);
   });
 
   it('rejects a mixed group, so a dragged-in panel stays reachable', () => {

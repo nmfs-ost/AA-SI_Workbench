@@ -87,7 +87,6 @@ export const tokens = {
   /* Fixed heights for the chrome regions (px). */
   size: {
     menuBar: 32,
-    toolBar: 40,
     statusBar: 24,
   },
 } as const;
