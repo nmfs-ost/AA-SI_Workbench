@@ -4,6 +4,44 @@ Dense state summary for resuming work. **The uploaded source is ground truth** �
 re-read the actual files before acting; this repo has drifted from mid-session
 assumptions before (e.g. panels removed/moved between turns). Verify, don't assume.
 
+## Read this first
+This document is a map, not a substitute for the code. It is written to be read
+top-to-bottom once at the start of a session, then used as an index. Two habits
+matter more than anything else in it:
+
+1. **Open the file before you change it.** Every section here was true when it
+   was written and several have been wrong since.
+2. **Run it before you claim it works.** Frontend: `cd frontend && npm install &&
+   npm run build && npm test`. Backend: `cd backend && ruff check . && pytest`.
+   A section of this document saying something passes is not evidence that it
+   still does.
+
+## Rules that are load-bearing
+Break these and something silently stops working, usually somewhere else.
+
+1. **Code is ground truth.** Verify with a read or a grep before editing.
+2. **Never claim it runs without running it.** See above for the commands. Say
+   plainly what is wired, what is preview-only, and what could not be tested
+   here (anything needing `aalibrary`, echopype, or GCP credentials).
+3. **Schema-driven, always.** Panels come from `panelDefinitions`
+   (`components/panels/registry.tsx`), dialogs from `dialogs/registry.tsx`,
+   pipeline params from `pipelineDefinitions.ts`, NCEI options from
+   `combineOptions.ts`, new-file kinds from `NEW_FILE_SUFFIX` in `api/files.py`.
+   Adding a tool, a field, or a panel touches a *definition*, never a component.
+4. **Cross-panel state lives in a `state/` module store** (useSyncExternalStore),
+   never React context. Dockview mounts panels through portals, so context does
+   not reach them. Current stores: activeAsset, calibration, dialogs, editors,
+   environment, fileBrowser, mapTrack, pipelines, terminal.
+5. **Bump `LAYOUT_VERSION`** (`frontend/src/types/layout.ts`) whenever the
+   default dock layout changes. A saved layout that references a removed panel
+   is how returning users get a broken window.
+6. **`aa-get` / `aa-fetch` are interactive.** They are composed and handed to
+   the PTY terminal, never driven headlessly. Do not "improve" this.
+7. **The terminal is arbitrary code execution by design.** The security boundary
+   is the loopback check, not the command. Mirror the `AASI_ALLOW_REMOTE_*`
+   guard in any new route that touches the machine (fs, terminal, environment,
+   derived all have one).
+
 ## What this is
 NOAA Fisheries **AA-SI (Active Acoustics Strategic Initiative) Workbench**: an
 IDE-style scientific desktop app that runs in a browser on a Google Cloud
@@ -15,6 +53,7 @@ React 18.3.1 · TypeScript 5.6.3 · MUI 6.5.0 (@mui/material + icons-material +
 emotion) · **Dockview 1.17.2** (docking) · Vite 5.4 · Node 22. Backend: Python
 ≥3.11 · FastAPI · uvicorn · pydantic v2 · boto3 · (optional) google-cloud-bigquery.
 TS is strict incl. noUnusedLocals/Parameters — no unused imports/vars/params.
+Frontend tests: **Vitest 2.1** (`npm test` → `vitest run`), covering pure logic only.
 
 ## Run it
 ```bash
@@ -23,6 +62,12 @@ aa-workbench                # builds UI first run, serves UI+API on :8000
 ```
 Real NCEI data: default `--source s3` (public bucket, NO creds). Faster path:
 `--source cache` + `gcloud auth application-default login` (BigQuery on ggn-nmfs-aa-dev-1).
+
+Checks (`make lint`, `make test`, or directly):
+```bash
+cd frontend && npm run typecheck && npm test && npm run build
+cd backend  && ruff check . && pytest
+```
 
 ## Architecture / key decisions
 - **Docking = Dockview** (not Mosaic/Golden Layout). Chosen for tabs + inter-region
@@ -47,13 +92,30 @@ Real NCEI data: default `--source s3` (public bucket, NO creds). Faster path:
   no Node/proxy/CORS at runtime. `_paths.py` resolves dist (override env → bundled
   `aa_si_workbench/_frontend/` → source `frontend/dist`).
 
-## Current layout (defaultLayout.ts, LAYOUT_VERSION = 10)
-- **Left window (data sources):** NCEI (real content, active) · Derived (placeholder)
-  · OMAO (placeholder). Recipes REMOVED. FileBrowser + WorkflowExplorer previously REMOVED.
-- **Center (split vertically):** left-center group [Pipelines + Workspace tabs] · right-center
-  group [Echogram]. **Pipelines fronts on load.** Sv panel REMOVED (the aa-sv *pipeline stage*
-  remains in pipelineDefinitions — different thing). Echogram/Sv are viewer scaffolds (ViewerScaffold.tsx)
-  bound to the active-asset store; live rendering NOT wired.
+## Current layout (defaultLayout.ts, LAYOUT_VERSION = 11)
+```
+┌──┬──────────┬───────────────────────┬──────────┐
+│A │  LEFT    │  CENTER: Workspace,   │  RIGHT   │
+│C │ (tabs)   │  Pipelines, and any   │ (tabs)   │
+│T │          │  open files as tabs   │          │
+│  │          ├───────────────────────┤          │
+│  │          │   BOTTOM  (tabs)      │          │
+└──┴──────────┴───────────────────────┴──────────┘
+```
+- **Activity bar (far left, shell chrome — NOT a Dockview region).**
+  `components/layout/ActivityBar.tsx`, mounted in AppShell beside `<DockLayout/>`.
+  See its own section below.
+- **Left window (data sources):** NCEI (real content, fronts on load) · Files ·
+  Derived · OMAO. Recipes REMOVED. FileBrowser + WorkflowExplorer previously REMOVED.
+- **Center (ONE group):** Pipelines + Workspace, plus one tab per open file.
+  **Pipelines fronts on load.** The center is no longer split — Echogram used to
+  own the right half. Sv panel REMOVED earlier (the aa-sv *pipeline stage* remains
+  in pipelineDefinitions — different thing).
+- **Echogram REMOVED this session** (user: "in the way, no longer needed").
+  `EchogramPanel.tsx` and `ViewerScaffold.tsx` are both deleted — Sv had already
+  gone, so the scaffold had no other consumer. "Echogram" still appears as a
+  *pipeline stage* name in `toolCatalog.ts`/`pipelineDefinitions.ts`; that is a
+  different thing and was left alone.
 - **Right window:** Metadata (auto-populates from NCEI file click) · Configuration ·
   Calibration · Processing Queue. Properties REMOVED. Configuration auto-fronts when a pipeline card is focused
   (DockLayout subscribes to the pipelines store and calls layout `openPanel('configuration')`).
@@ -62,12 +124,124 @@ Real NCEI data: default `--source s3` (public bucket, NO creds). Faster path:
   fitted cos-lat projection + graticule. Coords come from the mapTrack store
   (state/mapTrack.ts), published by useNceiSearch — today they are MOCK positions on each file
   (RawFile.lat/lon, filled by the mock generator's per-survey random walk; apiNceiSource omits them).
-- BuiltinPanelId union: workspace, pipelines, echogram, ncei, derived, omao, metadata,
-  configuration, calibration, processingQueue, terminal, log, progress, console, map.
+- BuiltinPanelId union: workspace, pipelines, **editor**, ncei, **files**, derived, omao,
+  metadata, configuration, calibration, processingQueue, terminal, log, progress, console, map.
+  (`'files'` was missing before this session — a live typo-safety hole, since `PanelId` has a
+  `(string & {})` escape hatch that let a bad id pass `tsc`. `'echogram'` removed.)
+- **`PanelDefinition.dynamic`** (new): marks a panel that is a *template*, opened
+  programmatically many times with different params. Only `editor` uses it. Dynamic panels are
+  registered as Dockview components but excluded from the Window menu, the default layout, and
+  the activity bar — "open an editor" isn't a thing to pick from a list, you open a *file*.
 - NCEI file rows use pl:1.25 / pr:1 (they were flush against the panel edge).
-- **LAYOUT_VERSION is 10.** Bumped from 9 when the Files tab joined the left dock group
-  (NCEI / Files / Derived / OMAO). Persisted layouts from v9 are discarded on load, which
-  is the intended behaviour — otherwise the new tab would be invisible to existing users.
+- **LAYOUT_VERSION is 11.** Bumped from 10 when Echogram was removed and the center collapsed
+  to one group. Persisted v10 layouts are discarded on load — intended, otherwise returning
+  users keep a layout referencing a panel that no longer exists.
+
+## File editor — WIRED (center tabs) — the big feature of this session
+Click a file in the Files panel and it opens as a tab in the center, beside Workspace and
+Pipelines. `components/panels/editor/` + `state/editors.ts` + backend read/write/create routes.
+
+**Module map** (`components/panels/editor/`, all pure except the two components):
+- `paths.ts` — basename/dirname/extname/ellipsizePath. POSIX display helpers only.
+- `language.ts` — `languageFor(path)`, `documentViewFor(kind,path)` → text|notebook|image|
+  unsupported, `isOpenable()`, `unsupportedReason()`. **This is the routing table**; change
+  what opens how by editing it, not a component.
+- `highlight.ts` — a small regex tokenizer, one rule list per language.
+- `notebook.ts` — nbformat parse/edit/serialize, pure.
+- `CodeEditor.tsx` — the text surface.
+- `NotebookEditor.tsx` — the cell surface.
+- `EditorPanel.tsx` — header + routing between the three surfaces.
+- `panelIds.ts` — `editor:{path}` id scheme, both directions.
+
+**Decisions that are load-bearing:**
+- **No CodeMirror/Monaco.** A transparent `<textarea>` sits on top of a highlighted `<pre>`,
+  sharing one set of font metrics (FONT_SIZE 12.5 / LINE_HEIGHT 19 — changing one without the
+  others is what breaks caret alignment). The browser keeps caret, selection, IME, undo and
+  a11y; the layer below only paints. Cost: **~31 kB** of bundle. Monaco would have been ~10x.
+  **The highlighter must never add or remove a character** — there is a test for exactly this.
+- **`highlight()` output goes through `dangerouslySetInnerHTML`.** Every emitted token is
+  HTML-escaped. `tests/highlight.test.ts` asserts that *every* `<` in the output opens one of
+  the highlighter's own spans, across all seven languages and five hostile inputs. If you touch
+  that file, run the tests.
+- **Wrapping is off, deliberately.** Soft wrap makes the gutter lie about line numbers, and a
+  fixed-width data file has to keep its columns.
+- **Buffers live in the store, not the component.** Dockview unmounts and remounts a panel when
+  it is dragged between groups; a buffer in component state would be lost. `EditorPanel` owns
+  no content.
+- **`.raw`/`.nc`/`.zarr` select but do not open.** A text view of a 2 GB echosounder file can
+  say nothing true, and a tab explaining that on every click is worse than no tab.
+- **Notebooks do not execute.** No kernel, and the Run affordance is *absent* rather than
+  greyed out — a disabled button reads as "not yet", and this one isn't coming. Outputs are
+  whatever Jupyter last wrote, shown read-only, preserved byte-for-byte on save.
+- **Notebook saves keep everything they don't understand.** Each cell retains its original raw
+  object and edits are written over it; unknown metadata survives. Serialization matches
+  Jupyter's own one-space indent + trailing newline so a save isn't a whole-file diff.
+- **Closing a dirty tab keeps the buffer.** Dockview reports `onDidRemovePanel` *after* the
+  fact, so a close cannot be vetoed; discarding would be silent data loss. Clean docs are
+  dropped, dirty ones are kept and counted in the status bar (click it to reopen). A
+  `beforeunload` guard covers the browser tab itself.
+
+**Saving:** `Ctrl+S` in the editor, `Ctrl+S` anywhere (AppShell global handler, which also
+stops the browser's own save-page dialog), or File ▸ Save (`ShellActionId 'save-active-file'`).
+All three route to `saveActiveDoc()`, which uses `state.focusedPath` — published by
+`EditorPanel` from `api.onDidActiveChange`.
+
+**Backend** (`api/files.py`, same `/api/fs` router as the browser):
+- `GET /api/fs/read?path=` → `FsDocument`. Binary and oversized files return **200 with a
+  `detail`** rather than an error, because the panel needs something to render. NUL-byte +
+  UTF-8 detection for binary; `MAX_TEXT_BYTES` 2 MB, truncation blocks saving; `readOnly`
+  from `os.access`.
+- `GET /api/fs/raw?path=` → FileResponse for `<img src>`. `MAX_RAW_BYTES` 32 MB, 413 over.
+- `POST /api/fs/write` → atomic (tempfile + `os.replace`), preserves mode, **refuses to
+  create** (404 if missing) so a typo'd path can't silently make a new file.
+- `POST /api/fs/create` → kinds text/python/notebook/markdown/folder via `NEW_FILE_SUFFIX`.
+  Refuses overwrite (409), rejects slashes and `..` in the name (400), and **re-resolves
+  through the parent** so a symlinked folder can't escape the root.
+- `new_notebook_source()` emits valid nbformat 4.5 (per-cell `id` is required at 4.5).
+- `AASI_FS_READONLY=true` removes the write half entirely (405 on write/create).
+- The existing loopback guard (`AASI_ALLOW_REMOTE_FS`) covers every new route — tested.
+
+## Activity bar — WIRED (JupyterLab-style source switcher)
+`components/layout/ActivityBar.tsx`, 44 px, mounted in AppShell **beside** DockLayout so it is
+shell chrome and can never be dragged away or docked somewhere surprising.
+- **Generated from the panel registry** (`region: 'left'`, `!dynamic`). Register a new data
+  source and its icon appears; there is no second list to update.
+- The problem it solves: four unrelated storage systems (public S3 archive, the workstation's
+  own disk, a GCS bucket of derived products, the OMAO fleet) behind small text tabs, with no
+  standing answer to "which one am I in".
+- Clicking the source you are already in **collapses the dock** (JupyterLab's gesture, fastest
+  way to hand the width to the editor). Collapse is `group.api.setConstraints({minimumWidth:0})`
+  then `setSize({width:0})` — the constraint has to be lifted first or Dockview clamps it, and
+  restored before the width is restored. A layout saved while collapsed is detected on ready
+  (`width < COLLAPSED_THRESHOLD`) so the bar doesn't lie after a reload.
+- Active source tracked from `api.onDidActivePanelChange`, not polled — a panel can be fronted
+  by a tab click, the Window menu, a drag, or a restored layout, and they all arrive there.
+
+## Copy absolute path — WIRED (one control, every listing)
+`components/panels/CopyPathButton.tsx`. Props: `value`, `label`, `alwaysVisible`, `size`.
+- Invisible until row hover or `:focus-visible`, so 200 rows don't become 200 buttons. Rows
+  opt in with `'&:hover .aa-copy': { opacity: 1 }`.
+- Falls back to `document.execCommand('copy')` when `navigator.clipboard` is unavailable —
+  the workstation is often plain-HTTP localhost, which is not a secure context.
+- **Each source copies its own kind of absolute address**, which is the point: Files → a
+  filesystem path; NCEI → `s3://noaa-wcsd-pds/…` (`nceiS3Uri()`); Derived → the `gs://` URI;
+  Metadata → the full S3 URI, not the bucket-relative key it used to show.
+- `NCEI_BUCKET`/`nceiKey()`/`nceiS3Uri()` live in `ncei/nceiService.ts` and **mirror `BUCKET`
+  in `api/ncei.py`** — same archive, must not drift.
+
+## Creating files — WIRED
+`components/dialogs/NewFileDialog.tsx`, registered in the dialog registry as `'new-file'`.
+- Two entry points, one implementation: **File ▸ New Text/Python/Notebook/Folder** (menu items
+  pass the kind as `dialogPayload`) and the **+** in the Files panel toolbar.
+- Creates into `state/fileBrowser.ts`'s `currentDirectory` — whatever folder Files is showing.
+  Falls back to the first discovered root if Files was never opened. This is the answer that
+  needs no explaining: you make the thing where you're standing.
+- **The server appends the extension**, so `analysis` → `analysis.py` and nobody gets
+  `analysis.py.py`. A live "Creates: …/name.ext" line shows the result before it happens.
+- On success: `refreshFileBrowser(path)` (Files re-reads that folder and selects the new entry)
+  then `openFile()`. Creating a notebook you can't see would be a strange kind of success.
+- `state/fileBrowser.ts` is the seam between the dialog and the panel: `currentDirectory`,
+  a monotonic `refreshToken`, and `revealPath`.
 
 ## Pipelines feature (schema-driven — the key design)
 `components/panels/pipelines/`: pipelineTypes.ts (schema + helpers) · pipelineDefinitions.ts
@@ -182,9 +356,15 @@ avoids escaping keystrokes that look like JSON.
 `api/files.py` + `components/panels/FilesPanel.tsx`. An explorer tree, not a navigator:
 folders expand **in place** so context is never lost, children are fetched lazily on first
 expand and cached (a home dir with a season of survey data is far too big to walk eagerly),
-and a filter keeps a folder visible when any loaded descendant matches. Read-only by
-design: browsing and handing a path to a pipeline is the job; create/delete belongs in the
-terminal where the user can see what they're doing.
+and a filter keeps a folder visible when any loaded descendant matches.
+- **Clicking a file opens it** in the center editor (see the File editor section). Folders
+  toggle. `.raw`/`.nc`/`.zarr` select without opening.
+- **Creating is here** (the **+** button and the empty-state link, both opening the New file
+  dialog). **Deleting and renaming still are not** — a destructive action one misclick from a
+  file listing is a poor trade, and the terminal is right there.
+- Publishes its current folder to `state/fileBrowser.ts` so File ▸ New knows where to create;
+  honours `revealPath` so a file created elsewhere shows up selected.
+- Every row carries the shared `CopyPathButton` (hover-revealed).
 - Roots are *discovered*: home, cwd, Downloads, aa-docs, and any `*_NCEI` folder aa-raw
   left in `$HOME`.
 - Every path is resolved then confined to `AASI_FS_ROOT` (default `$HOME`) — `..` and
@@ -321,52 +501,61 @@ PREVIEW-ONLY (stage a job; honest "backend not connected" note). Files: ncei/
 - Terminal: `AASI_TERMINAL_SHELL` (default `$SHELL`), `AASI_VENV_SEARCH` (extra venv
   paths, os.pathsep-separated), `AASI_ALLOW_REMOTE_TERMINAL`.
 - Files: `AASI_FS_ROOT` (default `$HOME`; set `/` to browse the whole machine),
-  `AASI_ALLOW_REMOTE_FS`.
+  `AASI_ALLOW_REMOTE_FS`, **`AASI_FS_READONLY`** (true → `/api/fs/write` and `/api/fs/create`
+  return 405 and the editor renders read-only; reading is unaffected).
 - Derived: `AASI_DERIVED_BUCKET` (default `ggn-nmfs-aa-dev-1-data`), `AASI_DERIVED_PREFIX`,
   `AALIBRARY_GCP_PROJECT_ID`.
 - Frontend also: `VITE_AASI_GITHUB_ORG` / `VITE_AASI_GITHUB_REPO` (fork overrides).
 
 ## Verification status
-- Frontend `npm run build` (tsc -b && vite build) passes clean. Bundle now **~765 kB
-  (218 kB gzip)**, up from ~673 kB — the dialogs pull in MUI Table/ToggleButton/Switch/Chip.
-  Only the benign >500 kB chunk warning. `vite` dev server boots and transforms the new
-  modules (HTTP 200 on `/src/components/dialogs/EnvironmentDialog.tsx`).
-- Backend: `pytest` **16 passed** (`tests/test_environment.py` starts real child processes
-  through a fake `AASI_UPDATE_COMMAND` — success, non-zero exit, cancel/SIGTERM of the
-  process group, 409 double-start, 400 unknown action, 403 + 404 guards, cursor slicing,
-  ANSI/`\r` cleaning). `ruff check` clean on the new files.
-- Frontend pure logic exercised in node (tsc→CJS, `import.meta.env` shimmed): **14 checks** —
-  prefill URL construction/encoding/fork override, template↔YAML field-id match, environment
-  report, store load/error/append-from-cursor/stop-on-terminal, version diff.
-- **UI wiring verified in jsdom** (React 18 + real components, stubbed fetch): **33 checks** —
-  Tools menu → dialog opens → GET /api/env → tool table renders → Run update → POST →
-  log renders → status bar shows "Updating environment…" → poll appends → completion; Help →
-  Report a Problem → env prefilled → submit gates on required fields → correct
-  `issues/new?template=bug_report.yml&…` URL opened; both toolbar buttons.
-- **Real HTTP drive** (uvicorn on the built dist, fake update script): `/`=UI, SPA fallback
-  200, POST start → running, second POST → 409, polling appended output to `succeeded`,
-  unknown action → 400, `/api/ncei/vessels` still 502 (provider reached; aalibrary absent).
-- NOT tested: live NCEI/BigQuery, and **`aa-setup` itself was never executed** — no AA-SI
-  environment in the sandbox. Its argv/flags are assumed to be `aa-setup` with no arguments;
-  if the real tool needs flags, set `AASI_UPDATE_COMMAND` (no code change).
-- No browser rendering check (jsdom has no layout), so visual polish of the dialogs is
-  unverified.
 
-### This session (terminal / files / pipelines / padding)
-- `npm run build` clean. Bundle **1,073 kB (296 kB gzip)**, up from 765 — xterm.js is
-  essentially all of it. This is where lazy-loading the terminal panel starts to pay.
-- Backend `ruff` clean, 16 tests still pass.
-- Real HTTP + real WebSocket drive against the built dist: `/api/fs/list` returns tagged
-  entries, `/etc` and `../../etc` both 403, `/api/terminal` reports available, and a PTY
-  session over an actual `websockets` client echoed a command back. PTY resize verified
-  via `tput lines; tput cols` (40x120) and the loopback guard verified to refuse the
-  socket at 0.0.0.0.
-- jsdom, 21 checks: Files panel discovers roots → lists → navigates into a folder →
-  filters; every pipeline card has an Edit button; all four new pipelines registered,
-  single-stage, hole-free, and every stage maps to a known tool; terminal socket URL
-  carries venv + geometry on the page origin.
-- NOT tested: xterm.js rendering (jsdom has no canvas — the panel is excluded from the
-  DOM harness), and `aa-seabed` was never executed because the tool name is unconfirmed.
+### Current — re-run these, don't trust this list
+Everything below was run in this session, in this order, from a clean extract.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Frontend types | `npm run typecheck` | clean |
+| Frontend tests | `npm test` | **58 passed** (3 files) |
+| Frontend build | `npm run build` | clean — **1,120.60 kB / 311.81 kB gzip** |
+| Backend lint | `ruff check .` | clean |
+| Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
+
+- Bundle grew **1,088.95 → 1,120.60 kB** (+31 kB raw, +10 kB gzip) for the whole editor.
+  That number is the argument against Monaco; keep an eye on it.
+- The skip is `test_files.py:390` — a read-only-file test that cannot mean anything when the
+  suite runs as a user whose privileges ignore the write bit (root in a container). It skips
+  itself rather than passing vacuously.
+- Backend tests by file: `test_files.py` **46** (new this session), `test_derived.py` 16,
+  `test_environment.py` 15, `test_smoke.py` 1.
+- Frontend tests (`frontend/tests/`, Vitest) cover **pure logic only** — no DOM, no jsdom:
+  - `highlight.test.ts` (20) — HTML-escaping across 7 languages × 5 hostile inputs, the
+    every-`<`-opens-our-own-span invariant, text preservation round-trips, oversized files.
+  - `notebook.test.ts` (17) — unknown-metadata preservation, outputs byte-for-byte, double
+    round-trip stability, nbformat validity when a cell's type changes, cell operations.
+  - `language.test.ts` (21) — path helpers incl. dotfiles and root-level files, language
+    lookup, and the open/don't-open routing for the acoustic binaries.
+- `make lint` used to die on its first line (it called `npm run lint`; no such script, and the
+  repo has no eslint config). It now runs `npm run typecheck` — strict TS with
+  noUnusedLocals/Parameters is the gate this repo actually has. `make test` now runs both
+  halves instead of backend only.
+
+### What is still NOT verified
+- **No browser rendering check of the editor.** Caret/highlight alignment, scroll sync, and
+  the notebook layout have never been seen by a real engine. The metrics constants are the
+  fragile part.
+- Live NCEI / BigQuery / the real derived bucket — no `aalibrary`, no echopype, no GCP
+  credentials in this sandbox.
+- `aa-setup` has never been executed; `aa-seabed` has never been executed (name unconfirmed).
+- xterm.js rendering (jsdom has no canvas).
+
+### Earlier sessions (context only — these harnesses do NOT ship)
+Prior sessions ran ad-hoc checks that cannot be re-run from the repo: node checks via
+tsc→CJS (prefill URLs, environment report, store cursor logic, `buildCommand()` including
+the `{input}` file-swap property), jsdom UI drives (Tools menu → env dialog → poll →
+completion; feedback prefill; Files panel navigation), and real HTTP/WebSocket drives against
+the built dist (SPA fallback, 409 double-start, `/etc` → 403, a PTY echoing a command, the
+loopback guard refusing 0.0.0.0). **`buildCommand()` is still asserted by nothing that ships** —
+now that Vitest is here, porting those node checks is cheap and worth doing.
 
 ## Open items / TODOs
 1. **Download/Combine/Upload actions** are preview-only. Wire backend endpoints:
@@ -398,10 +587,11 @@ PREVIEW-ONLY (stage a job; honest "backend not connected" note). Files: ncei/
    natural home for it; the store already holds the lines, so a panel that renders
    `useEnvironment().lines` is small. Same plumbing (`?since=` cursor + job state) is what a
    pipeline-run endpoint will need — reuse it rather than inventing a second mechanism.
-11. **Pre-existing ruff debt**: `ruff check backend` reports 15 errors in ncei.py/cli.py/
-   main.py (line length, `datetime.timezone.utc`→`UTC`, one unused import, one `raise…from`).
-   Untouched deliberately; `make lint` also references a frontend `lint` script that
-   package.json doesn't define.
+11. ~~**Pre-existing ruff debt** / broken `make lint`~~ **DONE / was stale.** `ruff check .`
+   is clean under the repo's own config (`E,F,I,W,UP,B` @ 88) and has been for a while — the
+   "15 errors" claim was out of date. `make lint` genuinely was broken (it called a frontend
+   `lint` script that doesn't exist); it now runs `npm run typecheck`, and `make test` covers
+   both halves.
 12. **`aa-seabed` is a GUESS.** Every other entry in `toolCatalog.ts` matches a real
    tool; this one was inferred from the naming convention because no seabed tool is
    documented publicly and none exists in the catalog. The card is tagged "unverified
@@ -412,16 +602,59 @@ PREVIEW-ONLY (stage a job; honest "backend not connected" note). Files: ncei/
    environment updater's job runner (single-flight, cursor-paged log, cancel) is the
    pattern to reuse rather than inventing a second mechanism.
 14. **Files panel → activeAsset.** `AssetMetadata.source` is the literal `'NCEI'` and the
-   locator field is `s3Path`. Widen to `'NCEI' | 'local'` and add a generic `path` to let
-   a local file drive Metadata/Echogram, then check MetadataPanel's labels.
+   locator field is `s3Path`. Widen to `'NCEI' | 'local'` and add a generic `path` so a local
+   file can drive the Metadata panel, then check MetadataPanel's labels (it now renders a full
+   `s3://` URI, which would be wrong for a local file). This is the reason clicking a `.raw`
+   in Files still shows nothing anywhere — the editor correctly declines it, and there is no
+   other destination for it yet. **Highest-value follow-up in this list.**
 15. **Terminal bundle cost.** xterm.js is ~300 kB. `React.lazy` on the terminal panel
    inside the registry would claw it back for users who never open it.
-16. **Center viewers + real GPS.** Echogram/Sv need real rendering. The **Map now plots MOCK
-   positions** (RawFile.lat/lon filled by the mock generator; apiNceiSource omits them). For real
-   GPS: extract position from the raw/NetCDF in the backend and return lat/lon on RawFile (add to
-   the backend RawFile schema + both providers); MapPanel already fits + plots + highlights the
-   active file. Stores: state/{activeAsset,mapTrack}.ts. Panels:
-   {ViewerScaffold,EchogramPanel,SvPanel,MapPanel}.tsx.
+16. **Real GPS on the Map.** The **Map plots MOCK positions** (RawFile.lat/lon filled by the
+   mock generator; apiNceiSource omits them). For real GPS: extract position from the
+   raw/NetCDF in the backend and return lat/lon on RawFile (backend RawFile schema + both
+   providers); MapPanel already fits + plots + highlights the active file. Stores:
+   state/{activeAsset,mapTrack}.ts. Panels: MapPanel.tsx.
+   *(Echogram and Sv viewers are gone — Sv was removed earlier, Echogram this session, and
+   `ViewerScaffold.tsx` went with it. If echogram rendering is ever wanted again it is a new
+   feature, not a resumed one.)*
+17. **The editor has never rendered in a real browser.** Caret-to-highlight alignment depends
+   on `CodeEditor.tsx`'s three layers sharing exact font metrics, and jsdom has no layout, so
+   nothing here can catch a drift. First thing to eyeball: a Python file with tabs, a long
+   line, and a wide unicode character.
+18. **No conflict detection on save.** `saveDoc()` guards against a race with *itself*, not
+   against the world: if a pipeline or another editor writes the file while it is open, Save
+   overwrites it silently. `FsDocument` already carries `modifiedAt` — send it back on write
+   and let the server 409 on a mismatch. Same gap in reverse: nothing watches for external
+   changes, so an open file can be stale (the Revert button is the manual answer).
+19. **Editor scope, deliberately left out.** No find/replace, no go-to-line, no multi-cursor,
+   no block indent of a multi-line selection (Tab indents at the caret only), no bracket
+   matching. Each is a real request the day someone edits a long file; none is worth a
+   megabyte of editor library. Find/replace is the one most likely to be missed first.
+20. **Port the old node checks to Vitest.** `buildCommand()` — including the `{input}`
+   file-swap property that makes hand-written commands safe — is still asserted only by
+   prose in this document. The harness now exists; the tests are a copy-paste away.
+
+## Open design questions
+Not bugs and not TODOs — places where a reasonable person could pick differently, recorded so
+the next session doesn't relitigate them by accident.
+
+- **Should a `.raw` click do *something*?** Right now it selects and nothing else, because the
+  editor honestly can't show it and the Metadata panel only speaks NCEI (TODO 14). The options
+  are: widen activeAsset so Metadata answers; or show a small "what is this file" summary in
+  the editor's unsupported state (size, sonar guess, acquisition time from the filename); or
+  leave it. Doing nothing is defensible but currently feels like a dead click.
+- **Where do notebooks really belong?** The Workbench edits them but will never run them. If
+  scientists want to *run* notebooks the honest answer is JupyterLab, and the Workbench should
+  perhaps offer to open the file there rather than growing a kernel.
+- **Is the activity bar the right home for anything else?** VS Code puts search and source
+  control there. Keeping it to data sources is what makes it legible at a glance; adding a
+  second category of thing to it is the decision that would erode that.
+- **Calibration content is still unsettled** — the user has said so explicitly. The panel is
+  an honest scaffold and the schema is one file; don't invest in it until someone says what
+  belongs there.
+- **Bundle strategy.** 1.12 MB / 312 kB gzip is fine over a workstation LAN and not fine over
+  a hotel wifi. The two obvious wins are `React.lazy` on the terminal (~300 kB of xterm) and
+  route-splitting the editor. Neither has been done because neither has been needed yet.
 
 ## Deliverable
 `/mnt/user-data/outputs/AA-SI_Workbench.zip` (whole monorepo; node_modules/dist stripped).
@@ -431,3 +664,6 @@ Rebuild flow: `cd frontend && npm install` before any build; clean node_modules/
 ## Working notes
 Minimal narration during tool calls; concise prose wrap-ups; verify builds before claiming
 "runs"; present ZIPs via present_files; honest about what's preview vs wired vs untested.
+Comments in this codebase explain **why**, not what — the code already says what. When a
+decision looks odd (no Monaco; notebooks that don't run; a close that keeps the buffer), the
+comment saying why it is that way is the thing stopping someone from "fixing" it.

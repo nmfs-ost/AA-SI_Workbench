@@ -14,26 +14,53 @@ import { panelDefinitions } from '../panels/registry';
  * this file stays pure data.
  */
 
-const windowPanelItems: MenuItemDefinition[] = panelDefinitions.map(
-  (definition) => ({
+/* Dynamic panels (the file editor) are excluded: they're opened by opening a
+   file, and a "Window ▸ Editor" item would open an empty one. */
+const windowPanelItems: MenuItemDefinition[] = panelDefinitions
+  .filter((definition) => !definition.dynamic)
+  .map((definition) => ({
     id: `open-${definition.id}`,
     label: definition.title,
     action: 'open-panel',
     panelId: definition.id,
-  }),
-);
+  }));
 
 export const menus: MenuDefinition[] = [
   {
     id: 'file',
     label: 'File',
     items: [
-      { id: 'file-new', label: 'New Session', shortcut: 'Ctrl+N', action: 'noop' },
-      { id: 'file-open', label: 'Open…', shortcut: 'Ctrl+O', action: 'noop' },
-      { id: 'file-open-recent', label: 'Open Recent', disabled: true },
+      {
+        id: 'file-new-text',
+        label: 'New Text File…',
+        action: 'open-dialog',
+        dialogId: 'new-file',
+        dialogPayload: 'text',
+      },
+      {
+        id: 'file-new-python',
+        label: 'New Python File…',
+        action: 'open-dialog',
+        dialogId: 'new-file',
+        dialogPayload: 'python',
+      },
+      {
+        id: 'file-new-notebook',
+        label: 'New Notebook…',
+        action: 'open-dialog',
+        dialogId: 'new-file',
+        dialogPayload: 'notebook',
+      },
+      {
+        id: 'file-new-folder',
+        label: 'New Folder…',
+        action: 'open-dialog',
+        dialogId: 'new-file',
+        dialogPayload: 'folder',
+      },
       { id: 'file-div-1', divider: true },
-      { id: 'file-save', label: 'Save', shortcut: 'Ctrl+S', action: 'noop' },
-      { id: 'file-save-as', label: 'Save As…', shortcut: 'Ctrl+Shift+S', action: 'noop' },
+      { id: 'file-open', label: 'Open…', shortcut: 'Ctrl+O', action: 'open-panel', panelId: 'files' },
+      { id: 'file-save', label: 'Save', shortcut: 'Ctrl+S', action: 'save-active-file' },
       { id: 'file-div-2', divider: true },
       { id: 'file-close', label: 'Close Window', action: 'noop' },
     ],

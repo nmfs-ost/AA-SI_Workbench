@@ -3,11 +3,16 @@ import type { DockviewApi } from 'dockview';
 /**
  * Builds the initial IDE arrangement programmatically.
  *
- *   ┌──────────┬───────────────────────┬──────────┐
- *   │  LEFT    │       WORKSPACE        │  RIGHT   │
- *   │ (tabs)   ├───────────────────────┤ (tabs)   │
- *   │          │   BOTTOM  (tabs)       │          │
- *   └──────────┴───────────────────────┴──────────┘
+ *   ┌──┬──────────┬───────────────────────┬──────────┐
+ *   │A │  LEFT    │  CENTER: Workspace,   │  RIGHT   │
+ *   │C │ (tabs)   │  Pipelines, and any   │ (tabs)   │
+ *   │T │          │  open files as tabs   │          │
+ *   │  │          ├───────────────────────┤          │
+ *   │  │          │   BOTTOM  (tabs)      │          │
+ *   └──┴──────────┴───────────────────────┴──────────┘
+ *
+ * The activity bar (A) on the far left is shell chrome rather than a Dockview
+ * region — see ActivityBar.tsx.
  *
  * Panels added with `direction: 'within'` join the referenced panel's group and
  * therefore render as tabs. The workspace is added first so every other region
@@ -17,8 +22,9 @@ import type { DockviewApi } from 'dockview';
 export function buildDefaultLayout(api: DockviewApi): void {
   api.clear();
 
-  // Center — added first as the anchor for the other regions. The center is
-  // split vertically: Pipelines + Workspace on the left, the Echogram viewer on the right.
+  // Center — added first as the anchor for the other regions. It is one group:
+  // Workspace, Pipelines, and every file the user opens arrive here as tabs,
+  // the way documents do in any editor.
   api.addPanel({ id: 'workspace', component: 'workspace', title: 'Workspace' });
   api.addPanel({
     id: 'pipelines',
@@ -81,15 +87,6 @@ export function buildDefaultLayout(api: DockviewApi): void {
     position: { referencePanel: 'metadata', direction: 'within' },
   });
 
-  // Right half of the center split: the Echogram viewer opens as its own group to
-  // the right of the Pipelines/Workspace group, before the right sidebar.
-  api.addPanel({
-    id: 'echogram',
-    component: 'echogram',
-    title: 'Echogram',
-    position: { referencePanel: 'workspace', direction: 'right' },
-  });
-
   // Bottom dock — sits beneath the central workspace.
   api.addPanel({
     id: 'terminal',
@@ -123,7 +120,7 @@ export function buildDefaultLayout(api: DockviewApi): void {
     position: { referencePanel: 'terminal', direction: 'within' },
   });
 
-  // Surface the primary tab in each dock; Echogram fronts the split center.
+  // Surface the primary tab in each dock.
   api.getPanel('terminal')?.api.setActive();
   api.getPanel('metadata')?.api.setActive();
   api.getPanel('ncei')?.api.setActive();

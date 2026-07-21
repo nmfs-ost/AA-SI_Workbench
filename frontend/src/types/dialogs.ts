@@ -6,4 +6,4 @@
  * dialog without importing the component registry (which would invert the
  * dependency: types must not depend on components).
  */
-export type DialogId = 'about' | 'environment' | 'feedback';
+export type DialogId = 'about' | 'environment' | 'feedback' | 'new-file';
