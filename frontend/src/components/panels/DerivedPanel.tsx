@@ -29,6 +29,7 @@ import {
 import { CopyPathButton } from './CopyPathButton';
 import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
+import { panelDensity } from './panelStyles';
 
 const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
   folder: FolderOutlined,
@@ -289,7 +290,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 0.5,
-                    height: 22,
+                    height: panelDensity.rowHeight,
                     pr: 0.5,
                     pl: `${depth * 12 + 4}px`,
                     cursor: 'pointer',
@@ -310,18 +311,18 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                         <CircularProgress size={10} sx={{ ml: '2px' }} />
                       ) : open ? (
                         <ExpandMoreOutlined
-                          sx={{ fontSize: 16, color: theme.aa.color.text.muted }}
+                          sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
                         />
                       ) : (
                         <ChevronRightOutlined
-                          sx={{ fontSize: 16, color: theme.aa.color.text.muted }}
+                          sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
                         />
                       ))}
                   </Box>
 
                   <Icon
                     sx={{
-                      fontSize: 14,
+                      fontSize: panelDensity.icon.row,
                       flexShrink: 0,
                       color: ASSET_KINDS.has(entry.kind)
                         ? theme.aa.color.accent.main
@@ -333,7 +334,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                     sx={{
                       flex: 1,
                       minWidth: 0,
-                      fontSize: 12,
+                      fontSize: panelDensity.font.row,
                       fontFamily: ASSET_KINDS.has(entry.kind)
                         ? theme.aa.font.mono
                         : undefined,
@@ -349,7 +350,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                   {!entry.isDir && entry.sizeBytes > 0 && (
                     <Typography
                       sx={{
-                        fontSize: 10.5,
+                        fontSize: panelDensity.font.meta,
                         color: theme.aa.color.text.muted,
                         flexShrink: 0,
                         fontVariantNumeric: 'tabular-nums',

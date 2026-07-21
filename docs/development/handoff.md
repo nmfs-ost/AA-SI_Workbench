@@ -1,20 +1,35 @@
 # AA-SI Workbench — session handoff
 
-Dense state summary for resuming work. **The uploaded source is ground truth** —
-re-read the actual files before acting; this repo has drifted from mid-session
-assumptions before (e.g. panels removed/moved between turns). Verify, don't assume.
+Dense state summary for resuming work. **The source is ground truth** — re-read the
+actual files before acting; this repo has drifted from mid-session assumptions before
+(panels removed or moved between turns). Verify, don't assume.
 
 ## Read this first
-This document is a map, not a substitute for the code. It is written to be read
-top-to-bottom once at the start of a session, then used as an index. Two habits
-matter more than anything else in it:
+This document is a map, not a substitute for the code. Read it top-to-bottom once at
+the start of a session, then use it as an index. Three habits matter more than
+anything else in it:
 
-1. **Open the file before you change it.** Every section here was true when it
-   was written and several have been wrong since.
+1. **Open the file before you change it.** Every section here was true when it was
+   written and several have been wrong since.
 2. **Run it before you claim it works.** Frontend: `cd frontend && npm install &&
-   npm run build && npm test`. Backend: `cd backend && ruff check . && pytest`.
-   A section of this document saying something passes is not evidence that it
-   still does.
+   npm run build && npm test`. Backend: `cd backend && ruff check . && pytest`. A
+   section of this document saying something passes is not evidence that it still
+   does.
+3. **Say what wasn't verified.** Nothing in this sandbox can render a browser, reach
+   GCP, or run `aalibrary`/echopype. A great deal of the UI has therefore never been
+   *seen*. Distinguish wired / preview-only / untested every time, and never let a
+   clean build stand in for "it works".
+
+### Where things stand
+The backend and the whole editor/filesystem layer are real and tested. The shell
+chrome — two icon strips, two monitor layouts, hidden dock tab strips — is built and
+type-checked but **has never rendered in a browser**, so its visual behaviour is the
+largest open risk. The scientific core (pipelines, echogram rendering, real GPS) is
+still UI-only: `buildCommand()` produces exact command chains that nothing executes.
+
+The most valuable next moves, in order: get it on screen and fix what the layout
+tests can't catch; wire `.raw` selection to the Metadata panel (TODO 14); then make
+pipelines actually run (TODO 8).
 
 ## Rules that are load-bearing
 Break these and something silently stops working, usually somewhere else.
@@ -118,7 +133,7 @@ cd backend  && ruff check . && pytest
   exists any more. `openPanel` looks for any centre-region panel and, finding none, adds
   positionless (Dockview gives it a fresh group). That is what makes every panel closeable
   without the shell painting itself into a corner.
-- **Echogram REMOVED this session** (user: "in the way, no longer needed").
+- **Echogram REMOVED** (user: "in the way, no longer needed").
   `EchogramPanel.tsx` and `ViewerScaffold.tsx` are both deleted — Sv had already
   gone, so the scaffold had no other consumer. "Echogram" still appears as a
   *pipeline stage* name in `toolCatalog.ts`/`pipelineDefinitions.ts`; that is a
@@ -147,7 +162,46 @@ cd backend  && ruff check . && pytest
   deliberately *not* bumped for the hidden sidebar tabs or the vertical layout — neither
   added, removed, or moved a panel. Bump for structure, not for chrome.)
 
-## File editor — WIRED (center tabs) — the big feature of this session
+## Two monitor layouts — WIRED (View menu)
+`defaultLayout.ts` exports `buildHorizontalLayout` (the default), `buildVerticalLayout`, and
+`buildLayout(api, variant)`. **View ▸ Horizontal / Vertical Monitor Layout**, with a tick on
+whichever is in force (`MenuBar` compares `item.layoutVariant` to the controller's
+`layoutVariant`; the tick column appears only in menus that have a checkable item).
+
+```
+HORIZONTAL (landscape)                  VERTICAL (portrait)
+┌──┬──────┬──────────┬──────┬──┐        ┌──┬────────────────────┬──┐
+│A │SOURCE│  CENTER  │INSPEC│I │        │A │  SOURCES           │I │
+│  │      ├──────────┤      │  │        │  ├────────────────────┤  │
+│  │      │  TOOLS   │      │  │        │  │  CENTER            │  │
+└──┴──────┴──────────┴──────┴──┘        │  ├────────────────────┤  │
+                                         │  │  INSPECTOR         │  │
+                                         │  ├────────────────────┤  │
+                                         │  │  TOOLS             │  │
+                                         └──┴────────────────────┴──┘
+```
+- **The portrait rule is "never split sideways".** A portrait monitor is ~1080–1200px wide;
+  the landscape layout spends ~700 of them on two icon strips plus two sidebars before the
+  centre gets any. Vertical makes every region a full-width band and pays in height, which is
+  the abundant resource. `layouts.test.ts` asserts no panel is ever placed `left` or `right`
+  in the vertical builder.
+- **Band order matches the horizontal layout's reading order** (sources → work → inspect →
+  watch), so switching monitors isn't relearning where things live.
+- **The icon strips stay vertical, on the outer edges, in both.** They are chrome outside
+  Dockview, they still drive their bands, and moving them per-layout would cost the one piece
+  of navigation that never moves.
+- **Switching is a full teardown** (`api.clear()` + rebuild) — Dockview has no re-flow, and
+  nudging regions through a grid that's already the wrong shape gives worse results. **Open
+  files are carried across**: paths are captured first, `rebuildingRef` suppresses the
+  panel-removal cleanup so no buffer is dropped, and the tabs are re-added after. Changing
+  monitors is not a reason to lose the file you were editing.
+- `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**
+  rather than snapping back to horizontal. Records written before this existed have no
+  `variant` and are read as `'horizontal'`.
+- Adding a third arrangement means a new `build*Layout` + a `LayoutVariant` member + one menu
+  entry. Nothing else knows layouts have variants.
+
+## File editor — WIRED (center tabs)
 Click a file in the Files panel and it opens as a tab in the center, beside Workspace and
 Pipelines. `components/panels/editor/` + `state/editors.ts` + backend read/write/create routes.
 
@@ -572,7 +626,7 @@ PREVIEW-ONLY (stage a job; honest "backend not connected" note). Files: ncei/
 ## Verification status
 
 ### Current — re-run these, don't trust this list
-Everything below was run in this session, in this order, from a clean extract.
+Everything below was run from a clean extract, in this order, at the end of the last session.
 
 | Check | Command | Result |
 | --- | --- | --- |
@@ -582,13 +636,13 @@ Everything below was run in this session, in this order, from a clean extract.
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
-- Bundle grew **1,088.95 → 1,121.92 kB** (+33 kB raw, +11 kB gzip), nearly all of it the
-  editor; the toolbar's removal gave a little back.
-  That number is the argument against Monaco; keep an eye on it.
+- Bundle grew **1,088.95 → 1,121.92 kB** (+33 kB raw, +11 kB gzip) across all the work above,
+  nearly all of it the editor; removing the toolbar gave a little back. That number is the
+  argument against Monaco — keep an eye on it.
 - The skip is `test_files.py:390` — a read-only-file test that cannot mean anything when the
   suite runs as a user whose privileges ignore the write bit (root in a container). It skips
   itself rather than passing vacuously.
-- Backend tests by file: `test_files.py` **46** (new this session), `test_derived.py` 16,
+- Backend tests by file: `test_files.py` **46**, `test_derived.py` 16,
   `test_environment.py` 15, `test_smoke.py` 1.
 - Frontend tests (`frontend/tests/`, Vitest) cover **pure logic only** — no DOM, no jsdom:
   - `highlight.test.ts` (20) — HTML-escaping across 7 languages × 5 hostile inputs, the
@@ -692,7 +746,7 @@ now that Vitest is here, porting those node checks is cheap and worth doing.
    raw/NetCDF in the backend and return lat/lon on RawFile (backend RawFile schema + both
    providers); MapPanel already fits + plots + highlights the active file. Stores:
    state/{activeAsset,mapTrack}.ts. Panels: MapPanel.tsx.
-   *(Echogram and Sv viewers are gone — Sv was removed earlier, Echogram this session, and
+   *(Echogram and Sv viewers are gone — Sv was removed earlier, Echogram later, and
    `ViewerScaffold.tsx` went with it. If echogram rendering is ever wanted again it is a new
    feature, not a resumed one.)*
 17. **The editor has never rendered in a real browser.** Caret-to-highlight alignment depends
@@ -752,23 +806,56 @@ the next session doesn't relitigate them by accident.
   a hotel wifi. The two obvious wins are `React.lazy` on the terminal (~300 kB of xterm) and
   route-splitting the editor. Neither has been done because neither has been needed yet.
 
-## Files deleted so far (orphans to remove when upgrading in place)
-Unzipping a release over an existing checkout leaves deleted files behind, and
-`tsconfig.app.json` includes all of `src`, so an orphan that references a removed token fails
-the build even though nothing imports it. This has already bitten once — a stale
-`AppToolbar.tsx` referencing `size.toolBar` after the token was deleted.
+## Deployment: how this repo reaches the workstation
+The Workbench runs on a Google Cloud Workstation at `/home/user/AA-SI_Workbench`, installed
+into `venv313` by an installer that ends with `aa-workbench build`. That build is `tsc -b &&
+vite build`, and **`tsconfig.app.json` includes all of `src`** — so TypeScript checks every
+file under `frontend/src` whether or not anything imports it.
 
-```
-frontend/src/components/layout/AppToolbar.tsx
-frontend/src/components/layout/toolbarConfig.tsx
-frontend/src/components/panels/WorkspacePanel.tsx
-frontend/src/components/panels/EchogramPanel.tsx
-frontend/src/components/panels/ViewerScaffold.tsx
-frontend/src/components/layout/ActivityBar.tsx
+**That one fact is behind every deployment failure so far.** A source file deleted in a new
+version but left on disk still gets compiled, and if it references an export that no longer
+exists, the whole install fails on a file nobody is using.
+
+Three failures, three distinct causes, all worth knowing:
+
+1. **Unzipping over a checkout.** Archives add and overwrite; they never delete. Left a stale
+   `AppToolbar.tsx` behind after `size.toolBar` was removed from the theme tokens.
+2. **A hand-maintained list of deleted files can't be complete.** `ActivityBar.tsx` was
+   *created* in one release and *deleted* in a later one, so it appears in no diff between the
+   first release and the last — only on machines that installed something in between.
+3. **The stale files got committed.** Applying a release to the git checkout without first
+   removing tracked files produced a commit that still contained them, so `git pull` and even
+   `git reset --hard` faithfully restored the breakage. If a file survives
+   `git reset --hard origin/main` followed by `git clean -fd`, it is *tracked at that commit* —
+   that is the whole diagnosis.
+
+**The durable fix is to make the repo the source of truth**, then pull. Git applies deletions;
+archives don't. To lay a release into a git checkout so removals register:
+
+```bash
+git ls-files -z | xargs -0 rm -f     # drop tracked files; ignored ones (node_modules) stay
+unzip -q <release>.zip -d /tmp/wb
+cp -R /tmp/wb/AA-SI_Workbench/. .
+git add -A && git status             # deletions now show as D
 ```
 
-**Add to this list whenever you delete a source file**, and see
-`docs/development/setup.md` → "Upgrading an existing checkout".
+To find orphans without a list, compare the tree to a release — see
+`docs/development/setup.md` → "Finding orphans". As a checksum, the current release has
+**88** `.ts`/`.tsx` files under `frontend/src`.
+
+Files deleted so far, for reference only — **do not treat this as authoritative**, see cause 2:
+`AppToolbar.tsx`, `toolbarConfig.tsx`, `ActivityBar.tsx` (all `components/layout/`),
+`WorkspacePanel.tsx`, `EchogramPanel.tsx`, `ViewerScaffold.tsx` (all `components/panels/`).
+
+### Launching
+`--open` belongs to the `serve` subcommand, not the bare parser:
+
+```bash
+aa-workbench serve --open      # NOT `aa-workbench --open` — argparse rejects it
+aa-workbench                   # bare = serve on 127.0.0.1:8000, no browser
+```
+The installer's closing "You're all set" text prints the wrong form; that text lives in the
+installer, not this repo.
 
 ## Deliverable
 `/mnt/user-data/outputs/AA-SI_Workbench.zip` (whole monorepo; node_modules/dist stripped).
@@ -778,6 +865,15 @@ Rebuild flow: `cd frontend && npm install` before any build; clean node_modules/
 ## Working notes
 Minimal narration during tool calls; concise prose wrap-ups; verify builds before claiming
 "runs"; present ZIPs via present_files; honest about what's preview vs wired vs untested.
+
 Comments in this codebase explain **why**, not what — the code already says what. When a
-decision looks odd (no Monaco; notebooks that don't run; a close that keeps the buffer), the
-comment saying why it is that way is the thing stopping someone from "fixing" it.
+decision looks odd (no Monaco; notebooks that don't run; a tab close that keeps the buffer;
+a sidebar that hides rather than resizes), the comment saying why is the thing stopping
+someone from "fixing" it. Several of those comments name the bug that the current approach
+replaced; don't delete that history.
+
+The user's standing preferences, learned across sessions: intuitive over feature-complete,
+never cluttered; remove a control rather than disable it; say plainly what wasn't tested.
+When a request would strand something — removing a tab strip from a panel with no icon,
+deleting the layout's anchor — handle the consequence and *say so*, rather than shipping the
+literal request and letting them find it.

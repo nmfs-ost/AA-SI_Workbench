@@ -25,21 +25,34 @@ under `frontend/src`, reachable from the entry point or not. One orphaned file r
 token that no longer exists fails `tsc -b`, which fails `npm run build`, which fails
 `aa-workbench build` — and the error names a file you may not even know is still there.
 
-If a build fails on a file you don't recognise, that's the cause. Remove the orphans:
+If a build fails on a file you don't recognise, that's the cause.
+
+### Finding orphans
+
+Don't keep a list — a file created in one release and deleted in a later one won't appear in
+any diff of the first release against the last, but it *will* be sitting on a machine that
+installed the middle one. Compare the working tree against the release instead:
 
 ```bash
-cd AA-SI_Workbench/frontend
-rm -f src/components/layout/AppToolbar.tsx \
-      src/components/layout/toolbarConfig.tsx \
-      src/components/panels/WorkspacePanel.tsx \
-      src/components/panels/EchogramPanel.tsx \
-      src/components/panels/ViewerScaffold.tsx \
-      src/components/layout/ActivityBar.tsx
-rm -f tsconfig*.tsbuildinfo
+unzip -q -o ~/Downloads/AA-SI_Workbench.zip -d /tmp/wb
+cd AA-SI_Workbench
+comm -23 <(cd frontend/src && find . -type f | sort) \
+         <(cd /tmp/wb/AA-SI_Workbench/frontend/src && find . -type f | sort)
+```
+
+Anything printed is in your tree but not in the release. To delete them:
+
+```bash
+comm -23 <(cd frontend/src && find . -type f | sort) \
+         <(cd /tmp/wb/AA-SI_Workbench/frontend/src && find . -type f | sort) \
+  | sed 's|^\./|frontend/src/|' | xargs -r rm -f
+rm -f frontend/tsconfig*.tsbuildinfo
 npm run build
 ```
 
-That list is the set of files deleted so far; it will grow.
+`frontend/src` is where it matters, because that's what `tsconfig.app.json` includes. Widen
+the paths if you suspect orphans elsewhere; nothing outside `src` fails a build just by
+existing.
 
 ### Applying a release zip to a git checkout
 

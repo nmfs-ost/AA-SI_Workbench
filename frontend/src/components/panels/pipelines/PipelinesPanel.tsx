@@ -26,9 +26,9 @@ import { defaultValues } from './pipelineTypes';
  * Pipelines panel — the saved console-tool workflows, as cards.
  *
  * Tick one or more cards and the file selected in the NCEI panel is injected as
- * their input automatically; the run controls at the bottom show exactly what
- * would run. Clicking a card focuses it, opening its settings in the
- * Configuration panel. A dashed card at the end (and the + in the header)
+ * their input automatically; the run controls directly beneath the header show
+ * exactly what would run. Clicking a card focuses it, opening its settings in
+ * the Configuration panel. A dashed card at the end (and the + in the header)
  * creates a new pipeline.
  */
 export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
@@ -97,6 +97,17 @@ export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
         </Tooltip>
       </Box>
 
+      <PipelineRunControls
+        selectedPipelines={selectedPipelines}
+        draftsFor={(id) => {
+          const pipeline = state.pipelines.find((p) => p.id === id);
+          return state.drafts[id] ?? (pipeline ? defaultValues(pipeline) : {});
+        }}
+        injectedInput={injectedInput}
+        injectedSource={injectedSource}
+        onClearSelection={clearSelection}
+      />
+
       {/* Cards */}
       <Box
         sx={{
@@ -156,17 +167,6 @@ export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           </Typography>
         </Box>
       </Box>
-
-      <PipelineRunControls
-        selectedPipelines={selectedPipelines}
-        draftsFor={(id) => {
-          const pipeline = state.pipelines.find((p) => p.id === id);
-          return state.drafts[id] ?? (pipeline ? defaultValues(pipeline) : {});
-        }}
-        injectedInput={injectedInput}
-        injectedSource={injectedSource}
-        onClearSelection={clearSelection}
-      />
 
       <NewPipelineDialog
         open={createOpen}

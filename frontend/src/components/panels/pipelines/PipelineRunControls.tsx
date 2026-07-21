@@ -29,6 +29,14 @@ interface Props {
  * Shows what will run, what file is being injected as the input (from the
  * left-window selection), and the exact commands the run would issue. Execution
  * is deferred to the backend — staging is honest about that.
+ *
+ * It sits directly under the panel header, above the cards, because the card
+ * list is unbounded. Pinned to the bottom, this band's distance from the card
+ * you had just ticked grew with every pipeline saved, and expanding the command
+ * preview pushed *upwards* against a scroll region rather than opening into
+ * free space. At the top it stays beside the header that names the panel, and
+ * the two questions it answers — what is selected, what would run — are read
+ * before the list instead of hunted for after it.
  */
 export function PipelineRunControls({
   selectedPipelines,
@@ -58,7 +66,7 @@ export function PipelineRunControls({
   return (
     <Box
       sx={{
-        borderTop: `1px solid ${theme.aa.color.border.subtle}`,
+        borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         backgroundColor: theme.aa.color.bg.chrome,
         p: 1.25,
         display: 'flex',

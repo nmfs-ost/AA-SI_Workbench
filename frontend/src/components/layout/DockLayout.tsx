@@ -3,14 +3,15 @@ import { DockviewReact } from 'dockview';
 import { Box } from '@mui/material';
 
 import { dockviewComponents } from '../panels/registry';
+import { PanelTab } from './PanelTab';
 import { useLayout } from '../../context/LayoutContext';
 import { getPipelinesState, subscribePipelines } from '../../state/pipelines';
 import { clearOpenRequest, useOpenRequest } from '../../state/editors';
 
 /**
  * The docking surface. Thin wrapper around <DockviewReact />: it supplies the
- * component map from the registry and the `onReady` handler from the layout
- * controller, and fills the remaining shell height.
+ * component map from the registry, the tab renderer, and the `onReady` handler
+ * from the layout controller, and fills the remaining shell height.
  *
  * It also translates two store signals into layout changes, because this is the
  * one component guaranteed to sit inside the layout provider and therefore to
@@ -50,6 +51,7 @@ export function DockLayout() {
       <DockviewReact
         className="dockview-theme-dark aa-dockview"
         components={dockviewComponents}
+        defaultTabComponent={PanelTab}
         onReady={onReady}
       />
     </Box>
