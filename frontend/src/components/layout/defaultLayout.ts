@@ -23,9 +23,10 @@ import type { LayoutVariant } from '../../types';
  * because something has to be placed before anything can be placed beside it.
  * All sizes are initial hints; the user can resize and re-dock freely.
  *
- * See `buildVerticalLayout` below for the portrait counterpart. Both are offered
- * under View; neither is a mode the rest of the app knows about — each just
- * arranges the same panels differently and then gets out of the way.
+ * See `buildVerticalLayout` below for the counterpart that runs the tools dock
+ * the full width instead. Both are offered under View; neither is a mode the
+ * rest of the app knows about — each just arranges the same panels differently
+ * and then gets out of the way.
  */
 export function buildHorizontalLayout(api: DockviewApi): void {
   api.clear();
@@ -92,7 +93,10 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     position: { referencePanel: 'metadata', direction: 'within' },
   });
 
-  // Bottom dock — sits beneath the centre.
+  /* Tools dock — added last, so it splits the centre's cell and sits beneath
+     that column only, with the side docks running past it to the floor. The
+     vertical layout adds this same block first and gets a full-width band; see
+     `buildVerticalLayout`. */
   api.addPanel({
     id: 'terminal',
     component: 'terminal',
@@ -132,48 +136,81 @@ export function buildHorizontalLayout(api: DockviewApi): void {
 }
 
 /**
- * The portrait arrangement: four full-width bands, stacked.
+ * The full-width-tools arrangement.
  *
- *   ┌──┬─────────────────────────┬──┐
- *   │A │  SOURCES                │I │  NCEI · Files · Derived · OMAO
- *   │  ├─────────────────────────┤  │
- *   │  │  CENTER                 │  │  Pipelines · open files
- *   │  │                         │  │
- *   │  ├─────────────────────────┤  │
- *   │  │  INSPECTOR              │  │  Metadata · Configuration · Calibration
- *   │  ├─────────────────────────┤  │
- *   │  │  TOOLS                  │  │  Terminal · Log · Progress · Console · Map
- *   └──┴─────────────────────────┴──┘
+ *   ┌──┬──────────┬───────────────────────┬──────────┬──┐
+ *   │A │  LEFT    │  CENTER: Pipelines and│  RIGHT   │I │
+ *   │  │          │  any open files       │          │  │
+ *   │  ├──────────┴───────────────────────┴──────────┤  │
+ *   │  │              BOTTOM  (full width)           │  │
+ *   └──┴─────────────────────────────────────────────┴──┘
  *
- * **Nothing is ever split side by side.** That is the whole idea. A portrait
- * monitor is typically 1080–1200px wide, and the horizontal layout spends ~700
- * of them on two icon strips plus two sidebars before the centre gets any —
- * which leaves an echogram path, a command preview, and a file tree all fighting
- * over what's left. Height is the abundant resource here, so every region takes
- * the full width and pays in height instead.
+ * Identical to the landscape arrangement in every respect but one: the tools
+ * dock runs the whole width beneath the other three, so the left and right
+ * docks stop at its top edge instead of running past it to the floor.
  *
- * The band order follows the work: choose data, work on it, inspect it, watch it
- * run. That is the same left-to-right order the horizontal layout reads in, so
- * switching between monitors doesn't mean relearning where anything lives.
+ * The only thing that produces that is the *order* the regions are added in.
+ * Dockview's grid is nested splits, and `direction: 'below'` splits the cell
+ * holding the referenced panel — so adding the tools dock after the sides puts
+ * it under the centre column alone (the landscape layout), and adding it first,
+ * while the centre still owns the entire grid, splits the root and leaves it
+ * spanning everything the sides are later carved out of. Same panels, same
+ * anchors, same sizes; one reordering.
  *
- * The icon strips stay vertical, on the outer edges, in both layouts. They are
- * shell chrome outside Dockview, they still drive their bands, and moving them
- * per-layout would cost the one piece of navigation that never moves.
+ * This is what a terminal wants. A shell, a log and a map are all read in long
+ * lines, and under the centre column alone each of them is reading through a
+ * slot a third of the monitor wide while two file trees sit either side of it
+ * with width they aren't using.
+ *
+ * (This replaced a portrait band-stack — four full-width regions, nothing split
+ * sideways, aimed at a 1080px-wide monitor turned on its end. No panel arrangement
+ * targets that shape now.)
+ *
+ * The icon strips stay on the outer edges in both layouts. They are shell chrome
+ * outside Dockview, they still drive their docks, and moving them per-layout
+ * would cost the one piece of navigation that never moves.
  */
 export function buildVerticalLayout(api: DockviewApi): void {
   api.clear();
 
-  // Center first, as the anchor. Everything else is placed relative to it.
+  // Centre first, as the anchor. Everything else is placed relative to it.
   api.addPanel({ id: 'pipelines', component: 'pipelines', title: 'Pipelines' });
 
-  // Sources band, above. Tall enough for a file listing to be worth reading —
-  // a 150px tree is a scrollbar with a few rows attached.
+  /* Tools dock, added *before* the side docks — this is the whole difference
+     between this layout and the landscape one. Right now the centre occupies
+     the entire grid, so splitting it downwards yields a band the full width of
+     the window; the sides are then carved out of the top cell and leave it
+     alone. Move this block below them and the band narrows to the centre
+     column. */
+  api.addPanel({
+    id: 'terminal',
+    component: 'terminal',
+    title: 'Terminal',
+    position: { referencePanel: 'pipelines', direction: 'below' },
+    initialHeight: 220,
+  });
+  for (const [id, title] of [
+    ['log', 'Log'],
+    ['progress', 'Progress'],
+    ['console', 'Console'],
+    ['map', 'Map'],
+  ] as const) {
+    api.addPanel({
+      id,
+      component: id,
+      title,
+      position: { referencePanel: 'terminal', direction: 'within' },
+    });
+  }
+
+  // Left dock — data sources. Splits the top cell, so it ends where the tools
+  // dock begins.
   api.addPanel({
     id: 'ncei',
     component: 'ncei',
     title: 'NCEI',
-    position: { referencePanel: 'pipelines', direction: 'above' },
-    initialHeight: 320,
+    position: { referencePanel: 'pipelines', direction: 'left' },
+    initialWidth: 360,
   });
   for (const [id, title] of [
     ['files', 'Files'],
@@ -188,14 +225,13 @@ export function buildVerticalLayout(api: DockviewApi): void {
     });
   }
 
-  // Inspector band, below the centre: what the selection *is*, and how the
-  // pipeline is configured.
+  // Right dock — details about the current selection.
   api.addPanel({
     id: 'metadata',
     component: 'metadata',
     title: 'Metadata',
-    position: { referencePanel: 'pipelines', direction: 'below' },
-    initialHeight: 260,
+    position: { referencePanel: 'pipelines', direction: 'right' },
+    initialWidth: 300,
   });
   for (const [id, title] of [
     ['configuration', 'Configuration'],
@@ -207,28 +243,6 @@ export function buildVerticalLayout(api: DockviewApi): void {
       component: id,
       title,
       position: { referencePanel: 'metadata', direction: 'within' },
-    });
-  }
-
-  // Tools band, at the foot — where output appears, so it reads last.
-  api.addPanel({
-    id: 'terminal',
-    component: 'terminal',
-    title: 'Terminal',
-    position: { referencePanel: 'metadata', direction: 'below' },
-    initialHeight: 240,
-  });
-  for (const [id, title] of [
-    ['log', 'Log'],
-    ['progress', 'Progress'],
-    ['console', 'Console'],
-    ['map', 'Map'],
-  ] as const) {
-    api.addPanel({
-      id,
-      component: id,
-      title,
-      position: { referencePanel: 'terminal', direction: 'within' },
     });
   }
 

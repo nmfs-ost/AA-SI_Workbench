@@ -4,7 +4,7 @@ import { dockSideOfGroup } from '../src/components/layout/sidebarChrome';
 import type { PanelRegion } from '../src/types';
 
 /**
- * Both sidebars render without a tab strip. This is what decides which group
+ * Every edge dock renders without a tab strip. This is what decides which group
  * that applies to, and getting it wrong in the permissive direction would strip
  * the tabs from the *centre* group — where every open file lives — leaving no
  * way to switch between them.
@@ -55,8 +55,10 @@ describe('dockSideOfGroup', () => {
     expect(dockSideOfGroup(group('pipelines'), regionOf)).toBe(null);
   });
 
-  it('leaves the bottom dock alone — it is not an edge strip', () => {
-    expect(dockSideOfGroup(group('terminal', 'log'), regionOf)).toBe(null);
+  it('names the tools dock, which has a strip of its own now', () => {
+    // It was excluded while its tabs were its only label; hiding them would
+    // have left a collapsed dock with nothing to reopen it.
+    expect(dockSideOfGroup(group('terminal', 'log'), regionOf)).toBe('bottom');
   });
 
   it('leaves a mixed group alone, so a dragged-in panel stays reachable', () => {

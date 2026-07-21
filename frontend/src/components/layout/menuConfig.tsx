@@ -85,13 +85,13 @@ export const menus: MenuDefinition[] = [
     items: [
       {
         id: 'view-layout-horizontal',
-        label: 'Horizontal Monitor Layout',
+        label: 'Horizontal Layout',
         action: 'apply-layout',
         layoutVariant: 'horizontal',
       },
       {
         id: 'view-layout-vertical',
-        label: 'Vertical Monitor Layout',
+        label: 'Vertical Layout',
         action: 'apply-layout',
         layoutVariant: 'vertical',
       },

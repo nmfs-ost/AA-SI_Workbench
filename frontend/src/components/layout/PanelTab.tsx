@@ -105,8 +105,14 @@ export function PanelTab({ api }: IDockviewPanelHeaderProps) {
           aria-label={definition.title}
           sx={{
             position: 'relative',
+            boxSizing: 'border-box',
             width: ICON_TAB_WIDTH,
             height: '100%',
+            // Explicit zeroes: the glyph is centred by this box and nothing
+            // else, so any padding or line-height inherited from the tab strip
+            // would shift it off-centre by a few unaccountable pixels.
+            p: 0,
+            lineHeight: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -117,7 +123,7 @@ export function PanelTab({ api }: IDockviewPanelHeaderProps) {
             '&:hover .aa-tab-close, &:focus-within .aa-tab-close': { opacity: 1 },
           }}
         >
-          <Icon sx={{ fontSize: 17 }} />
+          <Icon sx={{ fontSize: 17, display: 'block' }} />
           <Box
             className="aa-tab-close"
             sx={{

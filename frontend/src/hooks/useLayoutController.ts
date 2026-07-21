@@ -113,13 +113,19 @@ export interface LayoutController {
 }
 
 /**
- * Strip the tab strip from both sidebars.
+ * Strip the tab strip from every edge dock.
  *
  * The icon strip on the outside of each dock already names its panels, marks
  * the active one, and switches between them, so a row of text tabs directly
- * beside it says the same thing twice and costs 34px of vertical space in the
- * narrowest part of the window. Removing it makes each dock a *sidebar* rather
- * than a dock group, which is what they have always behaved like.
+ * beside it says the same thing twice and costs 34px in the narrowest part of
+ * the window. Removing it makes each dock a *sidebar* rather than a dock group,
+ * which is what they have always behaved like.
+ *
+ * This covers the bottom dock too, now that its icons live on a strip of their
+ * own rather than being its tabs. That ordering matters: while the tabs were
+ * the only way back to a hidden tools dock, hiding them would have been a trap,
+ * which is why the bottom was excluded from `isDockSide` until the strip
+ * existed to replace them.
  *
  * Two consequences are handled here rather than left to surprise someone:
  *   - With no header there is nothing to drag, so the sidebar is also locked
@@ -163,10 +169,11 @@ export function useLayoutController(): LayoutController {
   const variantRef = useRef<LayoutVariant>('horizontal');
   const [activeDockPanel, setActiveDockPanel] = useState<
     Record<DockSide, PanelId | null>
-  >({ left: null, right: null });
+  >({ left: null, right: null, bottom: null });
   const [dockCollapsed, setDockCollapsed] = useState<Record<DockSide, boolean>>({
     left: false,
     right: false,
+    bottom: false,
   });
 
   const scheduleSave = useCallback(() => {
@@ -241,10 +248,14 @@ export function useLayoutController(): LayoutController {
         api.onDidLayoutChange(() => {
           // A docked panel can disappear (closed, or dragged elsewhere); keep
           // each strip's highlight pointing at something that exists.
-          setActiveDockPanel((current) => ({
-            left: current.left && api.getPanel(current.left) ? current.left : null,
-            right: current.right && api.getPanel(current.right) ? current.right : null,
-          }));
+          setActiveDockPanel((current) => {
+            const next = { ...current };
+            for (const side of DOCK_SIDES) {
+              const id = current[side];
+              if (id && !api.getPanel(id)) next[side] = null;
+            }
+            return next;
+          });
         }),
         /* Closing an editor tab drops its buffer — unless it has unsaved edits,
            which are kept so reopening the file restores them. Nothing here can
@@ -395,7 +406,7 @@ export function useLayoutController(): LayoutController {
         openEditor(path, getEditorsState().docs[path]?.name ?? basename(path));
       }
 
-      setDockCollapsed({ left: false, right: false });
+      setDockCollapsed({ left: false, right: false, bottom: false });
       saveLayout(api, variant);
     },
     [openEditor],

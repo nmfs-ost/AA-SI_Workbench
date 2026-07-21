@@ -24,10 +24,18 @@ import {
  * band was all that was left of it. Deleting it also lets each strip's first
  * icon sit flush with the top of the dock beside it.
  *
- * The middle band is a row: an icon strip pinned to each outer edge, outside
+ * The middle band is a row: an icon strip pinned to each side edge, outside
  * Dockview, so neither can be dragged away or docked somewhere unexpected.
- * Between them sits everything that moves. The strips are the one piece of
+ * Between them sits everything that moves, with a third strip along the foot of
+ * it — inside the two verticals, so the three read as one frame around the dock
+ * rather than three bars that happen to meet. The strips are the one piece of
  * navigation that always stays put.
+ *
+ * The bottom strip spans the whole dock area even when the tools dock beneath
+ * it does not (the landscape layout tucks that dock under the centre column
+ * only). A strip that resized itself to match would have to track a sash the
+ * user can drag, and it lives outside Dockview precisely so that nothing about
+ * it moves.
  *
  * `DialogHost` is mounted once here so shell dialogs (About, environment
  * update, feedback, New file) can be opened from the menu bar, the toolbar, or
@@ -74,7 +82,12 @@ export function AppShell() {
       <MenuBar />
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
         <SideBar side="left" />
-        <DockLayout />
+        <Box
+          sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}
+        >
+          <DockLayout />
+          <SideBar side="bottom" />
+        </Box>
         <SideBar side="right" />
       </Box>
       <StatusBar />

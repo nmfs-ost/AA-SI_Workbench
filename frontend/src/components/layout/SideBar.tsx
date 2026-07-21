@@ -12,25 +12,31 @@ import { useUpdateJobState } from '../../state/environment';
 import type { DockSide } from './sidebarChrome';
 
 /**
- * The vertical strip of icons down an outer edge — the only navigation in the
- * shell that never moves.
+ * The strip of icons along an outer edge — the only navigation in the shell
+ * that never moves.
  *
- * The problem it solves, twice over. On the left, four different storage
+ * The problem it solves, three times over. On the left, four different storage
  * systems share one dock (a public S3 archive, the workstation's own disk, a
  * GCS bucket of derived products, the OMAO fleet); on the right, four different
- * views of the current selection. In both cases a row of small text tabs makes
- * it easy to lose track of which one you're reading, and "Processing Queue"
- * eats a third of a narrow dock's width just to name itself. JupyterLab's
- * answer is a permanent column of icons where the current one is unmistakably
- * marked, and that's what this is.
+ * views of the current selection; along the bottom, five places output turns
+ * up. In every case a row of small text tabs makes it easy to lose track of
+ * which one you're reading, and "Processing Queue" eats a third of a narrow
+ * dock's width just to name itself. JupyterLab's answer is a permanent strip of
+ * icons where the current one is unmistakably marked, and that's what this is.
  *
- * Both docks' tab strips are hidden (see `syncSidebarChrome`), so these icons
- * are their *only* label. The active state therefore carries three cues —
+ * All three docks' tab strips are hidden (see `syncSidebarChrome`), so these
+ * icons are their *only* label. The active state therefore carries three cues —
  * accent hairline, tinted background, full-strength icon colour — and the names
  * live in the tooltips, which are also the accessible labels.
  *
+ * The bottom strip is why the tools dock can be collapsed at all. Its icons
+ * used to be the dock's own tabs, which meant hiding the dock hid the only
+ * control that could bring it back; moving them out here, beside the dock
+ * rather than inside it, is what makes clicking one close the whole thing
+ * safely — the same gesture, and the same code path, as either side.
+ *
  * Everything is generated from the panel registry by `region`, so registering a
- * new panel on either edge puts an icon here with no further wiring.
+ * new panel on any of the three edges puts an icon here with no further wiring.
  *
  * The left strip also carries the shell's two standing actions beneath a
  * divider. They used to be a separate toolbar; that strip held nothing else, so
@@ -61,13 +67,28 @@ const SHELL_ACTIONS: readonly ActionItem[] = [
   },
 ];
 
+/** Thickness of a vertical strip. */
 const STRIP_WIDTH = 44;
-/** Every icon in a column is this tall, so they read as one list. */
-const ITEM_HEIGHT = 42;
+/**
+ * Thickness of the horizontal one. It is the tab strip's own height, so the
+ * bottom dock's chrome costs exactly what it did before the icons moved out of
+ * it — the collapse this buys is free in vertical space.
+ */
+const STRIP_HEIGHT = 34;
+/** Extent of one icon along the strip, so they read as one list. */
+const ITEM_EXTENT = 42;
 
 const STRIP_LABEL: Record<DockSide, string> = {
   left: 'Data sources',
   right: 'Inspectors',
+  bottom: 'Output and diagnostics',
+};
+
+/** Which way a tooltip opens: outward, away from the dock the strip serves. */
+const TIP_PLACEMENT: Record<DockSide, 'left' | 'right' | 'top'> = {
+  left: 'right',
+  right: 'left',
+  bottom: 'top',
 };
 
 function TipBody({ title, detail }: { title: string; detail?: string }) {
@@ -89,14 +110,18 @@ export function SideBar({ side }: { side: DockSide }) {
   const { activeDockPanel, dockCollapsed, toggleDockPanel } = useLayout();
   const updating = useUpdateJobState() === 'running';
 
+  const vertical = side !== 'bottom';
+
   const panels = panelDefinitions.filter(
     (definition) => definition.region === side && !definition.dynamic,
   );
 
   const itemSx = (selected: boolean) => ({
     position: 'relative' as const,
-    height: ITEM_HEIGHT,
-    width: '100%',
+    boxSizing: 'border-box' as const,
+    height: vertical ? ITEM_EXTENT : '100%',
+    width: vertical ? '100%' : ITEM_EXTENT,
+    p: 0,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -118,14 +143,14 @@ export function SideBar({ side }: { side: DockSide }) {
     },
     '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
     // The active marker: a hairline of accent against the outer edge, so the
-    // two strips mirror each other rather than both pointing left.
+    // strips mirror each other rather than all pointing the same way.
     '&::before': {
       content: '""',
       position: 'absolute',
       [side]: 0,
-      top: 6,
-      bottom: 6,
-      width: 2,
+      ...(vertical
+        ? { top: 6, bottom: 6, width: 2 }
+        : { left: 6, right: 6, height: 2 }),
       borderRadius: 1,
       backgroundColor: selected ? theme.aa.color.accent.main : 'transparent',
     },
@@ -134,22 +159,27 @@ export function SideBar({ side }: { side: DockSide }) {
   return (
     <Box
       sx={{
-        width: STRIP_WIDTH,
+        ...(vertical
+          ? { width: STRIP_WIDTH, flexDirection: 'column' }
+          : { height: STRIP_HEIGHT, flexDirection: 'row' }),
         flexShrink: 0,
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'stretch',
-        // No top padding: the first icon sits flush with the top of the dock
-        // beside it, so the column and the panel share one baseline.
-        pt: 0,
-        pb: 0.5,
+        // No padding on the leading edge: the first icon sits flush with the
+        // start of the dock beside it, so strip and panel share one baseline.
+        ...(vertical ? { pt: 0, pb: 0.5 } : { pl: 0, pr: 0.5 }),
         backgroundColor: theme.aa.color.bg.base,
-        [side === 'left' ? 'borderRight' : 'borderLeft']:
+        [vertical ? (side === 'left' ? 'borderRight' : 'borderLeft') : 'borderTop']:
           `1px solid ${theme.aa.color.border.strong}`,
         userSelect: 'none',
       }}
     >
-      <Box role="tablist" aria-label={STRIP_LABEL[side]} aria-orientation="vertical">
+      <Box
+        role="tablist"
+        aria-label={STRIP_LABEL[side]}
+        aria-orientation={vertical ? 'vertical' : 'horizontal'}
+        sx={{ display: 'flex', flexDirection: vertical ? 'column' : 'row' }}
+      >
         {panels.map((definition) => {
           const Icon = definition.icon;
           const selected =
@@ -161,7 +191,7 @@ export function SideBar({ side }: { side: DockSide }) {
               title={
                 <TipBody title={definition.title} detail={definition.description} />
               }
-              placement={side === 'left' ? 'right' : 'left'}
+              placement={TIP_PLACEMENT[side]}
               disableInteractive
             >
               <Box
@@ -172,7 +202,7 @@ export function SideBar({ side }: { side: DockSide }) {
                 onClick={() => toggleDockPanel(definition.id as PanelId)}
                 sx={itemSx(selected)}
               >
-                <Icon sx={{ fontSize: 20 }} />
+                <Icon sx={{ fontSize: 20, display: 'block' }} />
               </Box>
             </Tooltip>
           );
@@ -207,7 +237,7 @@ export function SideBar({ side }: { side: DockSide }) {
                   {busy ? (
                     <CircularProgress size={15} thickness={5} />
                   ) : (
-                    <Icon sx={{ fontSize: 20 }} />
+                    <Icon sx={{ fontSize: 20, display: 'block' }} />
                   )}
                 </Box>
               </Tooltip>

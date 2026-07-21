@@ -11,8 +11,11 @@ import {
  * The layout builders are imperative Dockview calls, so they're exercised
  * against a fake that records what was asked for. That can't prove the result
  * looks right — nothing without a browser can — but it does prove the two
- * arrangements hold the same panels and that the portrait one never splits the
- * screen sideways, which is its entire reason to exist.
+ * arrangements hold the same panels, and it pins the one difference between
+ * them, which is invisible in the finished grid: *when* the tools dock is
+ * added. Add it while the centre still owns the whole grid and it spans the
+ * full width; add it after the sides are carved out and it sits under the
+ * centre column alone.
  */
 
 interface Recorded {
@@ -149,6 +152,12 @@ describe('horizontal layout', () => {
     });
   });
 
+  it('adds the tools dock last, so the side docks run past it to the floor', () => {
+    const order = f.ids();
+    expect(order.indexOf('terminal')).toBeGreaterThan(order.indexOf('ncei'));
+    expect(order.indexOf('terminal')).toBeGreaterThan(order.indexOf('metadata'));
+  });
+
   it('sizes the side docks by width', () => {
     expect(f.find('ncei')?.initialWidth).toBeGreaterThan(0);
     expect(f.find('metadata')?.initialWidth).toBeGreaterThan(0);
@@ -159,46 +168,54 @@ describe('vertical layout', () => {
   const f = fakeApi();
   buildVerticalLayout(f.api);
 
-  it('never splits the screen sideways — the whole point', () => {
-    for (const entry of f.added) {
-      expect(entry.direction === 'left' || entry.direction === 'right').toBe(false);
-    }
+  it('adds the tools dock first — this is what makes it full width', () => {
+    // The grid is nested splits: splitting the centre downwards while it still
+    // owns everything gives a band the width of the window. Reorder these and
+    // the layout silently becomes the landscape one.
+    const order = f.ids();
+    expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('ncei'));
+    expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('metadata'));
   });
 
-  it('stacks sources, workspace, inspector, tools in that order', () => {
-    expect(f.find('ncei')).toMatchObject({ direction: 'above', reference: 'pipelines' });
+  it('places the side docks exactly where the landscape layout does', () => {
+    expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
+      direction: 'right',
+      reference: 'pipelines',
+    });
+  });
+
+  it('anchors the tools dock to the centre, never to a side dock', () => {
+    // Anchoring it to a side dock would split that dock instead of the root,
+    // which is the same bug as adding it too late.
+    expect(f.find('terminal')).toMatchObject({
       direction: 'below',
       reference: 'pipelines',
     });
-    // Below the *inspector*, not the centre — otherwise the tools band would
-    // land between the centre and the inspector.
-    expect(f.find('terminal')).toMatchObject({
-      direction: 'below',
-      reference: 'metadata',
-    });
   });
 
-  it('sizes every band by height', () => {
-    for (const id of ['ncei', 'metadata', 'terminal']) {
-      expect(f.find(id)?.initialHeight).toBeGreaterThan(0);
-      expect(f.find(id)?.initialWidth).toBeUndefined();
-    }
+  it('sizes the sides by width and the tools dock by height', () => {
+    expect(f.find('ncei')?.initialWidth).toBeGreaterThan(0);
+    expect(f.find('metadata')?.initialWidth).toBeGreaterThan(0);
+    expect(f.find('terminal')?.initialHeight).toBeGreaterThan(0);
   });
 
-  it('leaves the centre unconstrained so it takes the remaining height', () => {
+  it('leaves the centre unconstrained so it takes the remaining space', () => {
     expect(f.find('pipelines')?.initialHeight).toBeUndefined();
+    expect(f.find('pipelines')?.initialWidth).toBeUndefined();
   });
 });
 
 describe('buildLayout', () => {
   it('dispatches on the variant', () => {
+    // Both place the sides identically, so the discriminator is the ordering
+    // that decides how wide the tools dock ends up.
     const v = fakeApi();
     buildLayout(v.api, 'vertical');
-    expect(v.find('ncei')?.direction).toBe('above');
+    expect(v.ids().indexOf('terminal')).toBeLessThan(v.ids().indexOf('ncei'));
 
     const h = fakeApi();
     buildLayout(h.api, 'horizontal');
-    expect(h.find('ncei')?.direction).toBe('left');
+    expect(h.ids().indexOf('terminal')).toBeGreaterThan(h.ids().indexOf('ncei'));
   });
 });

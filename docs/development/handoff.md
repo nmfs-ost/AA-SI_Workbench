@@ -107,7 +107,7 @@ cd backend  && ruff check . && pytest
   no Node/proxy/CORS at runtime. `_paths.py` resolves dist (override env → bundled
   `aa_si_workbench/_frontend/` → source `frontend/dist`).
 
-## Current layout (defaultLayout.ts, LAYOUT_VERSION = 12)
+## Current layout (defaultLayout.ts, LAYOUT_VERSION = 13)
 ```
 ┌──┬──────────┬───────────────────────┬──────────┬──┐
 │A │  LEFT    │  CENTER: Pipelines +  │  RIGHT   │I │
@@ -142,7 +142,10 @@ cd backend  && ruff check . && pytest
   Calibration · Processing Queue. Properties REMOVED. **Its tab strip is hidden too** — the
   right icon strip replaces it, same mechanism as the left. Configuration auto-fronts when a pipeline card is focused
   (DockLayout subscribes to the pipelines store and calls layout `openPanel('configuration')`).
-- **Bottom:** Terminal · Log · Progress · Console · Map. Map (MapPanel.tsx) plots the in-view
+- **Bottom (tools):** Terminal · Log · Progress · Console · Map. **Its tab strip is hidden too**
+  — a horizontal icon strip along the foot of the dock area replaces it, same mechanism as the
+  two sides, which is what lets clicking an icon collapse the whole dock without hiding the
+  only control that could bring it back. Map (MapPanel.tsx) plots the in-view
   NCEI file positions as dots + a chronological track line, highlighting the identified file;
   fitted cos-lat projection + graticule. Coords come from the mapTrack store
   (state/mapTrack.ts), published by useNceiSearch — today they are MOCK positions on each file
@@ -157,49 +160,50 @@ cd backend  && ruff check . && pytest
   registered as Dockview components but excluded from the Window menu, the default layout, and
   the activity bar — "open an editor" isn't a thing to pick from a list, you open a *file*.
 - NCEI file rows use pl:1.25 / pr:1 (they were flush against the panel edge).
-- **LAYOUT_VERSION is 12.** Bumped from 11 when Workspace was removed; a persisted v11 layout
+- **LAYOUT_VERSION is 13.** Bumped from 12 when the vertical layout changed shape (regions
+  moved, so a persisted v12 record would restore the old portrait stack). A persisted older layout
   references a panel that no longer exists, so it is discarded and rebuilt. (It was
   deliberately *not* bumped for the hidden sidebar tabs or the vertical layout — neither
   added, removed, or moved a panel. Bump for structure, not for chrome.)
 
-## Two monitor layouts — WIRED (View menu)
+## Two layouts — WIRED (View ▸ Horizontal / Vertical Layout)
 `defaultLayout.ts` exports `buildHorizontalLayout` (the default), `buildVerticalLayout`, and
-`buildLayout(api, variant)`. **View ▸ Horizontal / Vertical Monitor Layout**, with a tick on
-whichever is in force (`MenuBar` compares `item.layoutVariant` to the controller's
-`layoutVariant`; the tick column appears only in menus that have a checkable item).
+`buildLayout(api, variant)`, with a tick on whichever is in force (`MenuBar` compares
+`item.layoutVariant` to the controller's `layoutVariant`).
 
 ```
-HORIZONTAL (landscape)                  VERTICAL (portrait)
-┌──┬──────┬──────────┬──────┬──┐        ┌──┬────────────────────┬──┐
-│A │SOURCE│  CENTER  │INSPEC│I │        │A │  SOURCES           │I │
-│  │      ├──────────┤      │  │        │  ├────────────────────┤  │
-│  │      │  TOOLS   │      │  │        │  │  CENTER            │  │
-└──┴──────┴──────────┴──────┴──┘        │  ├────────────────────┤  │
-                                         │  │  INSPECTOR         │  │
-                                         │  ├────────────────────┤  │
-                                         │  │  TOOLS             │  │
-                                         └──┴────────────────────┴──┘
+HORIZONTAL                              VERTICAL
+┌──┬──────┬──────────┬──────┬──┐        ┌──┬──────┬──────────┬──────┬──┐
+│A │SOURCE│  CENTER  │INSPEC│I │        │A │SOURCE│  CENTER  │INSPEC│I │
+│  │      ├──────────┤      │  │        │  ├──────┴──────────┴──────┤  │
+│  │      │  TOOLS   │      │  │        │  │      TOOLS (full)      │  │
+└──┴──────┴──────────┴──────┴──┘        └──┴────────────────────────┴──┘
+   └── bottom strip ──┘                    └──── bottom strip ─────┘
 ```
-- **The portrait rule is "never split sideways".** A portrait monitor is ~1080–1200px wide;
-  the landscape layout spends ~700 of them on two icon strips plus two sidebars before the
-  centre gets any. Vertical makes every region a full-width band and pays in height, which is
-  the abundant resource. `layouts.test.ts` asserts no panel is ever placed `left` or `right`
-  in the vertical builder.
-- **Band order matches the horizontal layout's reading order** (sources → work → inspect →
-  watch), so switching monitors isn't relearning where things live.
-- **The icon strips stay vertical, on the outer edges, in both.** They are chrome outside
-  Dockview, they still drive their bands, and moving them per-layout would cost the one piece
-  of navigation that never moves.
-- **Switching is a full teardown** (`api.clear()` + rebuild) — Dockview has no re-flow, and
-  nudging regions through a grid that's already the wrong shape gives worse results. **Open
+- **The two are identical but for the width of the tools dock**, and the only thing producing
+  that difference is the *order* regions are added in. Dockview's grid is nested splits and
+  `direction: 'below'` splits the cell holding the referenced panel: add the tools dock after
+  the sides and it lands under the centre column alone; add it first, while the centre still
+  owns the whole grid, and it splits the root and spans everything the sides are later carved
+  out of. Same panels, same anchors, same sizes — one reordering. `layouts.test.ts` asserts
+  that ordering in both directions, because it is invisible in the finished grid.
+- **Anchor the tools dock to `pipelines`, never to a side dock.** Anchoring it to a side would
+  split that dock instead of the root — the same bug as adding it too late. Tested.
+- Vertical is what a terminal wants: a shell, a log and a map are read in long lines, and
+  under the centre column alone each reads through a slot a third of the monitor wide while
+  two file trees sit either side with width they aren't using.
+- **This replaced a portrait band-stack** (four full-width regions, nothing split sideways,
+  aimed at a ~1080px-wide monitor turned on its end). No arrangement targets that shape now;
+  if a portrait monitor turns up, a third `build*Layout` is the answer, not a change to these.
+  Adding one means a new builder + a `LayoutVariant` member + one menu entry. Nothing else
+  knows layouts have variants.
+- **Switching is a full teardown** (`api.clear()` + rebuild) — Dockview has no re-flow. **Open
   files are carried across**: paths are captured first, `rebuildingRef` suppresses the
-  panel-removal cleanup so no buffer is dropped, and the tabs are re-added after. Changing
-  monitors is not a reason to lose the file you were editing.
-- `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**
-  rather than snapping back to horizontal. Records written before this existed have no
-  `variant` and are read as `'horizontal'`.
-- Adding a third arrangement means a new `build*Layout` + a `LayoutVariant` member + one menu
-  entry. Nothing else knows layouts have variants.
+  panel-removal cleanup so no buffer is dropped, and the tabs are re-added after.
+- `PersistedLayout.variant` records the choice so **Reset Layout rebuilds the one you chose**.
+  Records written before this existed are read as `'horizontal'`.
+- The menu labels dropped the word "Monitor" when the portrait layout went: neither
+  arrangement describes a monitor shape any more.
 
 ## File editor — WIRED (center tabs)
 Click a file in the Files panel and it opens as a tab in the center, beside Workspace and
@@ -265,7 +269,7 @@ All three route to `saveActiveDoc()`, which uses `state.focusedPath` — publish
 - `AASI_FS_READONLY=true` removes the write half entirely (405 on write/create).
 - The existing loopback guard (`AASI_ALLOW_REMOTE_FS`) covers every new route — tested.
 
-## Icon strips on both edges — WIRED (JupyterLab-style, mirrored)
+## Icon strips on three edges — WIRED (JupyterLab-style)
 `components/layout/SideBar.tsx`, one component rendered twice:
 `<SideBar side="left" />` and `<SideBar side="right" />`, mounted in AppShell **beside**
 DockLayout so they are shell chrome and can never be dragged away or docked somewhere
@@ -631,8 +635,8 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | Check | Command | Result |
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
-| Frontend tests | `npm test` | **79 passed** (5 files) |
-| Frontend build | `npm run build` | clean — **1,121.92 kB / 312.38 kB gzip** |
+| Frontend tests | `npm test` | **84 passed** (6 files) |
+| Frontend build | `npm run build` | clean — **1,120.57 kB / 312.59 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
@@ -775,9 +779,8 @@ now that Vitest is here, porting those node checks is cheap and worth doing.
    from the template, so any resizing or re-docking the user did is lost — only open files are
    carried across. Remembering per-variant arrangements (two saved layouts instead of one)
    would fix it and is a small change to `PersistedLayout`; nobody has asked yet.
-23. **Band heights in the vertical layout are guesses.** 320 sources / 260 inspector / 240
-   tools. On a 1920-tall monitor that leaves ~1050 for the workspace, which felt right on
-   paper and has never been checked on glass.
+23. ~~**Band heights in the vertical layout are guesses.**~~ **GONE** — the portrait
+   band-stack was replaced by a full-width-tools arrangement; there are no bands to size.
 
 ## Open design questions
 Not bugs and not TODOs — places where a reasonable person could pick differently, recorded so
