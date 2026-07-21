@@ -10,8 +10,7 @@ import {
 } from '@mui/material';
 import TravelExploreOutlined from '@mui/icons-material/TravelExploreOutlined';
 
-import { formatBytes, nceiS3Uri } from './nceiService';
-import { CopyPathButton } from '../CopyPathButton';
+import { formatBytes } from './nceiService';
 import type { NceiSearchController } from './useNceiSearch';
 
 interface Props {
@@ -47,8 +46,7 @@ function CenteredHint({ children }: { children: React.ReactNode }) {
 /** The list of .raw files for the selected sonar, with multi-select. */
 export function NceiResults({ controller }: Props) {
   const theme = useTheme();
-  const { filteredFiles, selected, loading, sonar, files, fileQuery, vessel, survey } =
-    controller;
+  const { filteredFiles, selected, loading, sonar, files, fileQuery } = controller;
 
   const shownSelected = filteredFiles.filter((f) => selected.has(f.name)).length;
   const allShownSelected =
@@ -100,12 +98,7 @@ export function NceiResults({ controller }: Props) {
               dense
               selected={controller.activeFileName === file.name}
               onClick={() => controller.identifyFile(file)}
-              sx={{
-                py: 0.25,
-                pl: 1.25,
-                pr: 1,
-                '&:hover .aa-copy': { opacity: 1 },
-              }}
+              sx={{ py: 0.25, pl: 1.25, pr: 1 }}
             >
               {/* No `edge="start"`: at size="small" MUI applies marginLeft:-3px,
                   which pulled every row 3px left of the select-all checkbox in
@@ -138,13 +131,6 @@ export function NceiResults({ controller }: Props) {
                   sx: { fontSize: 11, color: theme.aa.color.text.muted },
                 }}
               />
-              {/* The absolute address of a file that lives in S3, not on disk. */}
-              {vessel && survey && sonar && (
-                <CopyPathButton
-                  value={nceiS3Uri(vessel.id, survey.id, sonar.id, file.name)}
-                  label="Copy s3:// URI"
-                />
-              )}
             </ListItemButton>
           );
         })}

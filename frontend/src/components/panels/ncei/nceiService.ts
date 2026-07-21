@@ -33,41 +33,6 @@ export interface NceiCatalogSource {
 }
 
 /* ------------------------------------------------------------------ */
-/* Addressing                                                          */
-/* ------------------------------------------------------------------ */
-
-/**
- * The public NCEI water-column bucket. Mirrors `BUCKET` in
- * backend/src/aa_si_workbench/api/ncei.py — it is the same archive, and the
- * two must not drift.
- */
-export const NCEI_BUCKET = 'noaa-wcsd-pds';
-
-/** Key of a raw file within the bucket: data/raw/{ship}/{survey}/{sonar}/{file}. */
-export function nceiKey(
-  vesselId: string,
-  surveyId: string,
-  sonarId: string,
-  fileName: string,
-): string {
-  return `data/raw/${vesselId}/${surveyId}/${sonarId}/${fileName}`;
-}
-
-/**
- * The absolute address of a raw file in NCEI. This is what "copy path" means
- * for a remote object — an `s3://` URI is what boto3, the AWS CLI and
- * `aa-fetch` all accept, and what a colleague can act on.
- */
-export function nceiS3Uri(
-  vesselId: string,
-  surveyId: string,
-  sonarId: string,
-  fileName: string,
-): string {
-  return `s3://${NCEI_BUCKET}/${nceiKey(vesselId, surveyId, sonarId, fileName)}`;
-}
-
-/* ------------------------------------------------------------------ */
 /* Formatting                                                          */
 /* ------------------------------------------------------------------ */
 

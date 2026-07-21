@@ -8,8 +8,8 @@ import {
   TravelExploreOutlined,
   LayersOutlined,
   SailingOutlined,
+  WaterfallChartOutlined,
   MapOutlined,
-  DescriptionOutlined,
   AccountTreeOutlined,
   SettingsOutlined,
   ScienceOutlined,
@@ -22,8 +22,8 @@ import {
 import type { PanelDefinition, PanelId } from '../../types';
 
 import { WorkspacePanel } from './WorkspacePanel';
+import { EchogramPanel } from './EchogramPanel';
 import { FilesPanel } from './FilesPanel';
-import { EditorPanel } from './editor/EditorPanel';
 import { MapPanel } from './MapPanel';
 import { PipelinesPanel } from './pipelines/PipelinesPanel';
 import { ConfigurationPanel } from './pipelines/ConfigurationPanel';
@@ -64,13 +64,12 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     component: PipelinesPanel,
   },
   {
-    id: 'editor',
-    title: 'Editor',
-    icon: DescriptionOutlined,
-    description: 'View and edit a file from the workstation.',
+    id: 'echogram',
+    title: 'Echogram',
+    icon: WaterfallChartOutlined,
+    description: 'Echogram viewer for the selected raw file.',
     region: 'center',
-    component: EditorPanel as PanelDefinition['component'],
-    dynamic: true,
+    component: EchogramPanel,
   },
 
   // Left region — data sources.

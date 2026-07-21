@@ -7,7 +7,7 @@ import type {
   Survey,
   Vessel,
 } from './nceiTypes';
-import { nceiSource, nceiKey } from './nceiService';
+import { nceiSource } from './nceiService';
 import { fuzzyFilter } from './fuzzy';
 import { setActiveAsset } from '../../../state/activeAsset';
 import { setMapTrack } from '../../../state/mapTrack';
@@ -276,7 +276,7 @@ export function useNceiSearch(): NceiSearchController {
         sizeBytes: file.sizeBytes,
         acquiredAt: file.acquiredAt,
         channels,
-        s3Path: nceiKey(vessel.id, survey.id, sonar.id, file.name),
+        s3Path: `data/raw/${vessel.id}/${survey.id}/${sonar.id}/${file.name}`,
         source: 'NCEI',
       });
     },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
 import {
@@ -13,17 +13,14 @@ import {
   useTheme,
 } from '@mui/material';
 import {
-  ArticleOutlined,
   ChevronRightOutlined,
-  CodeOutlined,
+  ContentCopyOutlined,
   DescriptionOutlined,
   ExpandMoreOutlined,
   FolderOutlined,
   GridOnOutlined,
   ImageOutlined,
   InsightsOutlined,
-  MenuBookOutlined,
-  NoteAddOutlined,
   RefreshOutlined,
   SearchOutlined,
   UnfoldLessOutlined,
@@ -33,16 +30,6 @@ import {
 
 import { filesApi } from '../../services/filesApi';
 import type { FsEntry, FsKind, FsRoot } from '../../services/filesApi';
-import { openDialog } from '../../state/dialogs';
-import { openFile } from '../../state/editors';
-import {
-  clearReveal,
-  setCurrentDirectory,
-  useFileBrowser,
-} from '../../state/fileBrowser';
-import { CopyPathButton } from './CopyPathButton';
-import { isOpenable } from './editor/language';
-import { dirname } from './editor/paths';
 
 const KIND_ICON: Record<FsKind, typeof FolderOutlined> = {
   folder: FolderOutlined,
@@ -53,9 +40,6 @@ const KIND_ICON: Record<FsKind, typeof FolderOutlined> = {
   region: DescriptionOutlined,
   image: ImageOutlined,
   text: DescriptionOutlined,
-  python: CodeOutlined,
-  notebook: MenuBookOutlined,
-  markdown: ArticleOutlined,
   file: DescriptionOutlined,
 };
 
@@ -83,19 +67,12 @@ interface Row {
  * first expand and cached, because a home directory with a season of survey
  * data is far too large to walk eagerly.
  *
- * Clicking a file opens it in the centre, where anything readable as text — a
- * script, a config, a notebook, a CSV — can be read and edited without leaving
- * the Workbench. The scientific binaries (.raw, .nc, .zarr) select but don't
- * open: there is nothing in them a text view could honestly show, and a tab
- * saying so on every click would be worse than no tab.
- *
- * Creating is here too, but deleting and renaming still aren't. Destructive
- * operations one misclick away from a file listing are a poor trade, and the
- * terminal is right there for them.
+ * Read-only by design. Browsing and handing a path to a pipeline is the job;
+ * creating and deleting belongs in the terminal, where the user can see exactly
+ * what they are doing.
  */
 export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
-  const browser = useFileBrowser();
 
   const [roots, setRoots] = useState<FsRoot[]>([]);
   const [rootPath, setRootPath] = useState('');
@@ -106,7 +83,7 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const [query, setQuery] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState('');
-  const lastRefreshRef = useRef(browser.refreshToken);
+  const [copied, setCopied] = useState('');
 
   const fetchChildren = useCallback(
     async (path: string, hidden: boolean) => {
@@ -194,48 +171,18 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
     return walk(rootPath, 0);
   }, [children, expanded, query, rootPath]);
 
-  /* Something was created elsewhere (the New dialog): re-read the folder it
-     landed in and select it, so the tree shows the result of the action. */
-  useEffect(() => {
-    if (browser.refreshToken === lastRefreshRef.current) return;
-    lastRefreshRef.current = browser.refreshToken;
-
-    const reveal = browser.revealPath;
-    const folder = reveal ? dirname(reveal) : rootPath;
-    if (!folder) return;
-
-    void fetchChildren(folder, showHidden).then(() => {
-      if (!reveal) return;
-      setExpanded((current) => new Set(current).add(folder));
-      setSelected(reveal);
-      clearReveal();
-    });
-  }, [browser.refreshToken, browser.revealPath, fetchChildren, rootPath, showHidden]);
-
-  /* Publish where we're looking, so File ▸ New knows where to put things. */
-  const currentDirectory = useMemo(() => {
-    if (!selected) return rootPath;
-    const entry = Object.values(children)
-      .flat()
-      .find((candidate) => candidate.path === selected);
-    if (entry?.isDir) return entry.path;
-    return dirname(selected) || rootPath;
-  }, [children, rootPath, selected]);
-
-  useEffect(() => {
-    if (currentDirectory) setCurrentDirectory(currentDirectory);
-  }, [currentDirectory]);
-
-  /* A click on a file is a request to read it. Folders toggle instead. */
-  const handleActivate = useCallback((entry: FsEntry) => {
-    setSelected(entry.path);
-    if (!entry.isDir && isOpenable(entry.kind, entry.path)) {
-      openFile(entry.path, entry.name);
+  const copyPath = useCallback(async (entry: FsEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.path);
+      setCopied(entry.path);
+      window.setTimeout(() => setCopied(''), 1500);
+    } catch {
+      // Clipboard needs a secure context; the path is visible in the row, so
+      // this is a convenience rather than a dependency.
     }
   }, []);
 
   const rootLoading = loading.has(rootPath);
-  const activeRoot = roots.find((candidate) => candidate.path === rootPath);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -250,18 +197,6 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         }}
       >
-        <Tooltip
-          title={
-            activeRoot
-              ? `${activeRoot.description} — ${activeRoot.path}`
-              : 'Workstation filesystem'
-          }
-        >
-          <FolderOutlined
-            sx={{ fontSize: 15, mx: 0.5, color: theme.aa.color.text.muted }}
-          />
-        </Tooltip>
-
         <Select
           size="small"
           value={rootPath}
@@ -287,11 +222,6 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           ))}
         </Select>
 
-        <Tooltip title="New file or folder">
-          <IconButton size="small" onClick={() => openDialog('new-file', 'text')}>
-            <NoteAddOutlined sx={{ fontSize: 15 }} />
-          </IconButton>
-        </Tooltip>
         <Tooltip title="Collapse all">
           <IconButton size="small" onClick={() => setExpanded(new Set())}>
             <UnfoldLessOutlined sx={{ fontSize: 15 }} />
@@ -359,12 +289,8 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
             <Box
               key={entry.path}
               onClick={() => {
-                if (entry.isDir) {
-                  setSelected(entry.path);
-                  toggle(entry);
-                } else {
-                  handleActivate(entry);
-                }
+                setSelected(entry.path);
+                if (entry.isDir) toggle(entry);
               }}
               title={entry.path}
               sx={{
@@ -440,35 +366,34 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
                 </Typography>
               )}
 
-              <CopyPathButton value={entry.path} label="Copy path" />
+              <Tooltip title={copied === entry.path ? 'Copied' : 'Copy path'}>
+                <IconButton
+                  className="aa-copy"
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void copyPath(entry);
+                  }}
+                  sx={{ p: 0.25, flexShrink: 0, opacity: 0, transition: 'opacity .1s' }}
+                >
+                  <ContentCopyOutlined sx={{ fontSize: 12 }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           );
         })}
 
         {!rootLoading && rows.length === 0 && (
-          <Box sx={{ p: 2, textAlign: 'center' }}>
-            <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
-              {query ? `Nothing matches “${query}”.` : 'This folder is empty.'}
-            </Typography>
-            {!query && (
-              <Typography
-                component="button"
-                onClick={() => openDialog('new-file', 'text')}
-                sx={{
-                  mt: 1,
-                  fontSize: 11.5,
-                  color: theme.aa.color.accent.main,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  p: 0,
-                  '&:hover': { textDecoration: 'underline' },
-                }}
-              >
-                Create a file here
-              </Typography>
-            )}
-          </Box>
+          <Typography
+            sx={{
+              p: 1.5,
+              fontSize: 11.5,
+              color: theme.aa.color.text.muted,
+              textAlign: 'center',
+            }}
+          >
+            {query ? `Nothing matches “${query}”.` : 'This folder is empty.'}
+          </Typography>
         )}
       </Box>
     </Box>

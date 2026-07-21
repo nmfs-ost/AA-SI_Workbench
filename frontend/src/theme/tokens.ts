@@ -47,22 +47,6 @@ export const tokens = {
       soft: 'rgba(77, 141, 240, 0.16)',
     },
 
-    /* Syntax colours for the code editor.
-       Highlighting is the one place the single-accent rule has to bend: the
-       colours *are* the information. They're kept heavily desaturated so an
-       open Python file still reads as part of the same quiet chrome rather
-       than a rainbow pasted into it. Six hues, no more. */
-    syntax: {
-      comment: '#5f6a78',
-      string: '#a3c78d',
-      keyword: '#7fa6e8',
-      number: '#d8a76a',
-      /* Definitions and decorators — the names a file introduces. */
-      entity: '#c9b6ea',
-      /* Names a file refers to: variables, keys, links. */
-      reference: '#7cbdd0',
-    },
-
     /* Semantic colours. Defined for future log levels / status; used sparingly. */
     status: {
       success: '#3fb950',

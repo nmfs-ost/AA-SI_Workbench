@@ -18,14 +18,10 @@ dev: ## Run the frontend dev server
 	cd frontend && npm run dev
 
 lint: ## Lint frontend and backend
-	# The frontend's gate is the TypeScript compiler: strict mode with
-	# noUnusedLocals/noUnusedParameters catches what a linter would, and the
-	# repo carries no eslint config to run instead.
-	cd frontend && npm run typecheck
+	cd frontend && npm run lint
 	cd backend && ruff check .
 
-test: ## Run frontend and backend tests
-	cd frontend && npm test
+test: ## Run backend tests
 	cd backend && pytest
 
 build: ## Production build of the frontend

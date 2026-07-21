@@ -14,6 +14,7 @@ import {
 import {
   ChevronRightOutlined,
   CloudOutlined,
+  ContentCopyOutlined,
   DescriptionOutlined,
   ExpandMoreOutlined,
   FolderOutlined,
@@ -26,7 +27,6 @@ import {
   UnfoldLessOutlined,
 } from '@mui/icons-material';
 
-import { CopyPathButton } from './CopyPathButton';
 import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
 
@@ -78,6 +78,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
 
   const fetchPrefix = useCallback(async (prefix: string) => {
     setLoading((s) => new Set(s).add(prefix));
@@ -148,6 +149,16 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
       });
     return walk('', 0);
   }, [children, expanded, query]);
+
+  const copyUri = useCallback(async (entry: DerivedEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.uri);
+      setCopied(entry.uri);
+      window.setTimeout(() => setCopied(''), 1500);
+    } catch {
+      // Clipboard needs a secure context; the URI is in the row title anyway.
+    }
+  }, []);
 
   const busy = loading.has('');
 
@@ -359,7 +370,19 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                     </Typography>
                   )}
 
-                  <CopyPathButton value={entry.uri} label="Copy gs:// URI" />
+                  <Tooltip title={copied === entry.uri ? 'Copied' : 'Copy gs:// URI'}>
+                    <IconButton
+                      className="aa-copy"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copyUri(entry);
+                      }}
+                      sx={{ p: 0.25, flexShrink: 0, opacity: 0, transition: 'opacity .1s' }}
+                    >
+                      <ContentCopyOutlined sx={{ fontSize: 12 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
               );
             })}

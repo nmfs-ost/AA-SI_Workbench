@@ -12,7 +12,6 @@ import {
 import type { MenuItemDefinition } from '../../types';
 import { useLayout } from '../../context/LayoutContext';
 import { openDialog } from '../../state/dialogs';
-import { saveActiveDoc } from '../../state/editors';
 import { menus } from './menuConfig';
 
 /**
@@ -55,9 +54,6 @@ export function MenuBar() {
         break;
       case 'open-external':
         if (item.href) window.open(item.href, '_blank', 'noopener,noreferrer');
-        break;
-      case 'save-active-file':
-        void saveActiveDoc();
         break;
       default:
         // 'noop' / unimplemented placeholder.
