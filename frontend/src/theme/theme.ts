@@ -1,5 +1,5 @@
 import { createTheme } from '@mui/material/styles';
-import { tokensFor, type AaTokens } from './tokens';
+import { baseFor, tokensFor, type AaTokens } from './tokens';
 import type { ThemeMode } from '../types';
 
 /**
@@ -31,7 +31,8 @@ export function createAppTheme(mode: ThemeMode) {
     aa: tokensFor(mode),
 
     palette: {
-      mode,
+      /* MUI only knows light and dark; a palette says which it behaves like. */
+      mode: baseFor(mode),
       primary: {
         main: color.accent.main,
         dark: color.accent.main,

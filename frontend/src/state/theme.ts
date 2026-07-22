@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import type { ThemeMode } from '../types';
+import { isThemeMode } from '../theme';
 
 /**
  * The active palette.
@@ -19,9 +20,17 @@ import type { ThemeMode } from '../types';
 
 const STORAGE_KEY = 'aa-si.theme-mode';
 
+/**
+ * The stored value is validated against the palette registry rather than
+ * compared to a literal. A build that drops a palette, or a value edited by
+ * hand, would otherwise leave the shell holding an id with no palette behind
+ * it — and every token read is `palettes[mode].tokens.color…`, so the first one
+ * throws and the app renders nothing. Anything unrecognised falls back to dark.
+ */
 function load(): ThemeMode {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === 'light' ? 'light' : 'dark';
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return isThemeMode(stored) ? stored : 'dark';
   } catch {
     return 'dark';
   }

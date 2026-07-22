@@ -212,14 +212,37 @@ HORIZONTAL                              VERTICAL
 - The menu labels dropped the word "Monitor" when the portrait layout went: neither
   arrangement describes a monitor shape any more.
 
-## Light/Dark theme — WIRED (View ▸ Dark Theme / Light Theme)
+## Themes — WIRED (View ▸ Dark / Light / NOAA / Spring)
 Dark is the default and the fallback. `state/theme.ts` (module store, localStorage-backed)
 holds the mode; `MenuBar` ticks it with the same machinery as the layout variants.
 
-- **Two palettes, one theme definition.** `theme/tokens.ts` exports `dark`, `light` and
-  `tokensFor(mode)`; `createAppTheme(mode)` binds `color`/`font`/`radius` to one of them and
-  every MUI component override is written against those names. There is no second theme to
-  keep in step and no component that knows which mode it is in.
+- **Four palettes, one theme definition.** `theme/tokens.ts` holds `dark`, `light`, `noaa` and
+  `spring`; `createAppTheme(mode)` binds `color`/`font`/`radius` to one of them and every MUI
+  component override is written against those names. There is no second theme to keep in step
+  and no component that knows which mode it is in.
+- **Adding a palette is one object.** `palettes` is now `Record<ThemeMode, PaletteDefinition>`
+  = `{id, label, base, tokens}`, and `paletteList` drives the View menu — `menuConfig.tsx`
+  maps over it the same way the Window menu maps over the panel registry. A palette that
+  exists but cannot be selected, or a menu entry naming a palette that was deleted, are both
+  unrepresentable.
+- **`base` is the load-bearing field.** Three things outside our own CSS understand only the
+  words *light* and *dark*: MUI's `palette.mode`, the CSS `color-scheme` property (native
+  scrollbars, select dropdowns, caret) and Dockview's base class. All three used to
+  interpolate the mode id directly, which for a fourth palette would have produced
+  `dockview-theme-noaa` (matches nothing) and `color-scheme: noaa` (silently discarded).
+  Each palette declares its base and all three ask `baseFor(mode)`. **A new palette must
+  declare one** — the `Record<ThemeMode, …>` makes forgetting a type error.
+- **The persisted mode is validated, not compared.** `load()` narrows through `isThemeMode`
+  against the registry, so a stored id from another build falls back to dark instead of
+  throwing on the first token read. LAYOUT_VERSION is unrelated and was not bumped: themes
+  touch no panel and the theme key (`aa-si.theme-mode`) is its own thing.
+- **NOAA** is dark-based with navy neutrals instead of slate. Both emblem colours appear
+  literally — Pantone 287 (`#003087`) as the fronted tab, Process Blue's hue as the accent —
+  but the accent is lightened to `#29a0e0` because `#0085CA` carries only 3.7:1 on these
+  panels. Same substitution the light palette makes for `#4d8df0`.
+- **Spring** is light-based. Green and yellow get different jobs, because any yellow legible
+  as text on white has stopped being yellow: green carries the accent, and yellow tints the
+  whole neutral ramp and takes the `string` slot in the editor.
 - **`AaTokens` is `Widen<typeof dark>`.** `as const` on the reference palette is what makes
   the shape exact (a palette that forgets or invents a token is a type error); the `Widen`
   mapped type is what stops it also demanding the dark palette's literal *values*.
@@ -246,8 +269,16 @@ holds the mode; `MenuBar` ticks it with the same machinery as the layout variant
   cursor survive the switch. `color.terminalAnsi` carries the two ANSI slots (`white`,
   `brightWhite`) whose xterm defaults assume a dark background. **If another canvas/WebGL
   surface is ever added, it has the same problem.**
-- **Not seen in a browser.** The light palette's contrast was reasoned about, not measured, and
-  the syntax colours in particular have never been read against a white editor.
+- **Contrast is now measured, not reasoned about** (`tests/theme.test.ts`, 37 assertions over
+  all four palettes): text ramp, accent, syntax, status and the two terminal ANSI slots, each
+  against panel/editor/base. Thresholds are calibrated to what dark and light already shipped
+  rather than to the WCAG number for every rôle — `comment` and `disabled` are deliberately
+  quiet in every palette here (dark's comment is 2.9:1), so holding them to 4.5 would be a
+  different design, not a stricter test. The suite caught a real miss: spring's accent cleared
+  4.5:1 on white and 4.34:1 on the tinted strips.
+- **Still not seen in a browser.** Measured contrast is not the same as looking right. Nothing
+  here has read syntax colours against a white editor, and the two new palettes have never
+  been rendered at all.
 
 ## NOAA mark — WIRED (top-left + favicon)
 `components/branding/NoaaMark.tsx` replaced the "AA-SI" wordmark in the menu bar. Circle, gull,
@@ -689,8 +720,8 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | Check | Command | Result |
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
-| Frontend tests | `npm test` | **84 passed** (6 files) |
-| Frontend build | `npm run build` | clean — **1,123.43 kB / 313.58 kB gzip** |
+| Frontend tests | `npm test` | **121 passed** (7 files) |
+| Frontend build | `npm run build` | clean — **1,125.32 kB / 314.16 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 
@@ -709,6 +740,11 @@ Everything below was run from a clean extract, in this order, at the end of the 
     round-trip stability, nbformat validity when a cell's type changes, cell operations.
   - `language.test.ts` (21) — path helpers incl. dotfiles and root-level files, language
     lookup, and the open/don't-open routing for the acoustic binaries.
+  - `theme.test.ts` (37) — palette registry completeness both directions, every palette
+    declaring a light/dark base, token-shape parity against dark, **CSS custom-property
+    parity** (a palette emitting a variable another lacks would leave one stale colour behind
+    after a switch, since applying a theme writes properties and never removes them), and
+    measured contrast per rôle per surface.
   - `sidebar.test.ts` (8) — `dockSideOfGroup`: pure left and right groups, the centre group,
     the bottom dock, mixed groups, empty groups, unknown ids, and an unresolvable lookup.
   - `layouts.test.ts` (13) — both builders against a recording fake `DockviewApi`: the two

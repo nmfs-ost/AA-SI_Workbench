@@ -6,6 +6,7 @@ import { dockviewComponents } from '../panels/registry';
 import { PanelTab } from './PanelTab';
 import { useLayout } from '../../context/LayoutContext';
 import { useThemeMode } from '../../state/theme';
+import { baseFor } from '../../theme';
 import { getPipelinesState, subscribePipelines } from '../../state/pipelines';
 import { clearOpenRequest, useOpenRequest } from '../../state/editors';
 
@@ -51,7 +52,7 @@ export function DockLayout() {
   return (
     <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
       <DockviewReact
-        className={`dockview-theme-${mode} aa-dockview`}
+        className={`dockview-theme-${baseFor(mode)} aa-dockview`}
         components={dockviewComponents}
         defaultTabComponent={PanelTab}
         onReady={onReady}

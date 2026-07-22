@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
-import { applyCssVariables, createAppTheme, tokensFor } from './theme';
+import { applyCssVariables, baseFor, createAppTheme, tokensFor } from './theme';
 import { useThemeMode } from './state/theme';
 import { LayoutProvider } from './context/LayoutContext';
 import { AppShell } from './components/layout';
@@ -29,7 +29,7 @@ export default function App() {
     /* Tells the browser which way round form controls, scrollbars and the
        native caret should be drawn. Without it a light theme still gets dark
        select dropdowns and a dark scrollbar gutter. */
-    document.documentElement.style.colorScheme = mode;
+    document.documentElement.style.colorScheme = baseFor(mode);
   }, [mode]);
 
   return (

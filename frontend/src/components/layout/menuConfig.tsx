@@ -1,6 +1,7 @@
 import type { MenuDefinition, MenuItemDefinition } from '../../types';
 import { repo } from '../../config/repo';
 import { panelDefinitions } from '../panels/registry';
+import { paletteList } from '../../theme';
 
 /**
  * Data-driven menu bar definition. Window-management actions (Reset Layout,
@@ -13,6 +14,17 @@ import { panelDefinitions } from '../panels/registry';
  * name a dialog from the dialog registry rather than importing a component, so
  * this file stays pure data.
  */
+
+/* Theme items are generated from the palette registry for the same reason the
+   Window menu is generated from the panel registry: a palette that exists but
+   cannot be selected is invisible, and a menu entry naming a palette that was
+   removed is a dead command. One list, no drift. */
+const themeItems: MenuItemDefinition[] = paletteList.map((palette) => ({
+  id: `view-theme-${palette.id}`,
+  label: palette.label,
+  action: 'set-theme',
+  themeMode: palette.id,
+}));
 
 /* Dynamic panels (the file editor) are excluded: they're opened by opening a
    file, and a "Window ▸ Editor" item would open an empty one. */
@@ -99,13 +111,7 @@ export const menus: MenuDefinition[] = [
       { id: 'view-reset', label: 'Reset Layout', action: 'reset-layout' },
       { id: 'view-close-all', label: 'Close All Panels', action: 'close-all-panels' },
       { id: 'view-div-2', divider: true },
-      { id: 'view-theme-dark', label: 'Dark Theme', action: 'set-theme', themeMode: 'dark' },
-      {
-        id: 'view-theme-light',
-        label: 'Light Theme',
-        action: 'set-theme',
-        themeMode: 'light',
-      },
+      ...themeItems,
     ],
   },
   {
