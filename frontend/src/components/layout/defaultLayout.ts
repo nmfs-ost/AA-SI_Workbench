@@ -35,6 +35,18 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   // Pipelines, plus every file the user opens, arriving as tabs the way
   // documents do in any editor.
   api.addPanel({ id: 'pipelines', component: 'pipelines', title: 'Pipelines' });
+  // Recipes sits directly beside Pipelines: the same centre group, one tab
+  // over. Deliberately a tab and not a split — the two are peer answers to
+  // "run a workflow", and the user picks one at a time the way they pick a
+  // document. Added immediately after the anchor so Pipelines keeps the
+  // fronted position on a fresh install.
+  api.addPanel({
+    id: 'recipes',
+    component: 'recipes',
+    title: 'Recipes',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.getPanel('pipelines')?.api.setActive();
 
   // Left sidebar — data sources. These four are added as one group, but that
   // group renders without a tab strip: `syncSidebarChrome` in
@@ -175,6 +187,14 @@ export function buildVerticalLayout(api: DockviewApi): void {
 
   // Centre first, as the anchor. Everything else is placed relative to it.
   api.addPanel({ id: 'pipelines', component: 'pipelines', title: 'Pipelines' });
+  // Recipes beside Pipelines, same as the horizontal builder.
+  api.addPanel({
+    id: 'recipes',
+    component: 'recipes',
+    title: 'Recipes',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.getPanel('pipelines')?.api.setActive();
 
   /* Tools dock, added *before* the side docks — this is the whole difference
      between this layout and the landscape one. Right now the centre occupies

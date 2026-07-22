@@ -16,6 +16,7 @@ export type PanelRegion = 'left' | 'right' | 'bottom' | 'center';
 /** The identifiers of the panels shipped with the shell. */
 export type BuiltinPanelId =
   | 'pipelines'
+  | 'recipes'
   | 'editor'
   | 'metadata'
   | 'configuration'

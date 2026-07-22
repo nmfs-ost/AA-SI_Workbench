@@ -22,6 +22,8 @@ dependencies = [
   "pydantic>=2.6",
   # NCEI catalog listing (anonymous access to the public noaa-wcsd-pds bucket):
   "boto3>=1.34",
+  # Recipe discovery (reads aa-recipe-manager YAML for display only):
+  "pyyaml>=6.0",
 ]
 # NOTE: the NCEI providers reuse `aalibrary` (the same library aa-find uses).
 # Install it into this environment as well, e.g.

@@ -64,6 +64,7 @@ function fakeApi() {
 
 const ALL_PANELS = [
   'pipelines',
+  'recipes',
   'ncei',
   'files',
   'derived',
@@ -141,6 +142,15 @@ describe('horizontal layout', () => {
     expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
       direction: 'right',
+      reference: 'pipelines',
+    });
+  });
+
+  it('tabs Recipes into the centre group beside Pipelines', () => {
+    // 'within' is what makes it a *tab* rather than a split; anchoring to a
+    // side panel instead would move it out of the centre entirely.
+    expect(f.find('recipes')).toMatchObject({
+      direction: 'within',
       reference: 'pipelines',
     });
   });

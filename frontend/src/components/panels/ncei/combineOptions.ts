@@ -247,10 +247,9 @@ export function defaultsFor(defs: readonly OptionDef[]): OptionValues {
   return values;
 }
 
-/** Shell-quote a value only when it needs it, so previews stay readable. */
-export function quote(value: string): string {
-  return /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : `"${value.replace(/"/g, '\\"')}"`;
-}
+/** Shell-quote a value only when it needs it. Shared with the recipes feature. */
+import { quote } from '../shellQuote';
+export { quote };
 
 /**
  * Build an argv string from a schema plus values.

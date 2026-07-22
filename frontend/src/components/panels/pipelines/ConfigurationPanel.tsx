@@ -27,6 +27,8 @@ import DeleteOutlineOutlined from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 
 import { PanelPlaceholder } from '../PanelPlaceholder';
+import { RecipeConfiguration } from '../recipes/RecipeConfiguration';
+import { useConfigurationFocus } from '../../../state/configurationFocus';
 import { useActiveAsset } from '../../../state/activeAsset';
 import {
   currentConfig,
@@ -148,6 +150,16 @@ function StageCommandEditor({
 }
 
 export const ConfigurationPanel: FunctionComponent<IDockviewPanelProps> = () => {
+  /* One Configuration tab, two independent systems behind it. The focus store
+     (written only by DockLayout, from whichever card was activated last) picks
+     which branch renders. The recipe branch is a separate component with its
+     own store and schema — the two systems share this window, not a model. */
+  const focus = useConfigurationFocus();
+  if (focus === 'recipes') return <RecipeConfiguration />;
+  return <PipelineConfiguration />;
+};
+
+const PipelineConfiguration: FunctionComponent = () => {
   const theme = useTheme();
   const state = usePipelines();
   const asset = useActiveAsset();

@@ -23,6 +23,7 @@ from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
 from .ncei import router as ncei_router
+from .recipes import router as recipes_router
 from .terminal import router as terminal_router
 
 
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(environment_router)
     app.include_router(derived_router)
     app.include_router(files_router)
+    app.include_router(recipes_router)
     app.include_router(terminal_router)
 
     @app.get("/health", tags=["meta"])

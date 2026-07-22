@@ -45,13 +45,17 @@ Break these and something silently stops working, usually somewhere else.
    Adding a tool, a field, or a panel touches a *definition*, never a component.
 4. **Cross-panel state lives in a `state/` module store** (useSyncExternalStore),
    never React context. Dockview mounts panels through portals, so context does
-   not reach them. Current stores: activeAsset, calibration, dialogs, editors,
-   environment, fileBrowser, mapTrack, pipelines, terminal.
+   not reach them. Current stores: activeAsset, calibration, configurationFocus,
+   dialogs, editors, environment, fileBrowser, mapTrack, pipelines, recipes,
+   terminal, theme.
 5. **Bump `LAYOUT_VERSION`** (`frontend/src/types/layout.ts`) whenever the
    default dock layout changes. A saved layout that references a removed panel
    is how returning users get a broken window.
 6. **`aa-get` / `aa-fetch` are interactive.** They are composed and handed to
-   the PTY terminal, never driven headlessly. Do not "improve" this.
+   the PTY terminal, never driven headlessly. Do not "improve" this. **This rule
+   is about those tools, not about terminals in general**: `aa-recipe` (Brett's
+   recipe manager) is a genuine batch CLI and its terminal handoff is a stopgap,
+   not a constraint — see the Recipes section and TODO 28.
 7. **The terminal is arbitrary code execution by design.** The security boundary
    is the loopback check, not the command. Mirror the `AASI_ALLOW_REMOTE_*`
    guard in any new route that touches the machine (fs, terminal, environment,
@@ -120,10 +124,13 @@ cd backend  && ruff check . && pytest
   `components/layout/SideBar.tsx`, rendered twice in AppShell either side of
   `<DockLayout/>`. See their own section below.
 - **Left window (data sources):** NCEI (real content, fronts on load) · Files ·
-  Derived · OMAO. Recipes REMOVED. FileBrowser + WorkflowExplorer previously REMOVED.
+  Derived · OMAO. (An earlier Recipes placeholder was REMOVED from this group; the real
+  Recipes feature now lives in the *center*, beside Pipelines — see its own section.)
+  FileBrowser + WorkflowExplorer previously REMOVED.
   **The tab strip is hidden** — the left icon strip is its tab strip. The four
   panels are still one Dockview group, just chrome-less.
-- **Center (ONE group):** Pipelines, plus one tab per open file. The center is not split —
+- **Center (ONE group):** Pipelines · Recipes (tabs, Pipelines fronted on a fresh install),
+  plus one tab per open file. The center is not split —
   Echogram used to own the right half. Sv panel REMOVED earlier (the aa-sv *pipeline stage*
   remains in pipelineDefinitions — different thing).
 - **Workspace REMOVED** (user: "we don't use it"). It was a placeholder showing the app name,
@@ -150,7 +157,7 @@ cd backend  && ruff check . && pytest
   fitted cos-lat projection + graticule. Coords come from the mapTrack store
   (state/mapTrack.ts), published by useNceiSearch — today they are MOCK positions on each file
   (RawFile.lat/lon, filled by the mock generator's per-survey random walk; apiNceiSource omits them).
-- BuiltinPanelId union: pipelines, editor, ncei, files, derived, omao, metadata,
+- BuiltinPanelId union: pipelines, recipes, editor, ncei, files, derived, omao, metadata,
   configuration, calibration, processingQueue, terminal, log, progress, console, map.
   (`'echogram'` and `'workspace'` removed; `'files'` and `'editor'` added. Keep this union in
   step with the registry — `PanelId` has a `(string & {})` escape hatch, so a typo'd id passes
@@ -162,7 +169,9 @@ cd backend  && ruff check . && pytest
 - NCEI file rows use pl:1.25 / pr:1 (they were flush against the panel edge).
 - **Terminal defaults 260px (horizontal) / 280px (vertical).** Raised from 200/220 because the
   first thing anyone did on opening the app was drag it taller.
-- **LAYOUT_VERSION is 14.** Bumped from 13 for the terminal heights — a *size* change, which the
+- **LAYOUT_VERSION is 15.** Bumped from 14 for the Recipes tab — a panel added to the default
+  layout in both builders, i.e. exactly the structural change the rule exists for.
+- **LAYOUT_VERSION 14 note.** Bumped from 13 for the terminal heights — a *size* change, which the
   "bump for structure, not chrome" rule would normally leave alone. Deliberate exception: a new
   default that only a persisted-layout-free install ever sees is not a new default. The cost is
   that one reload discards saved arrangements; Reset Layout was the alternative and would have
@@ -481,6 +490,83 @@ user-created pipelines are appended, so ALWAYS resolve via `getPipeline(state,id
   gives stage 0 the injectable input param regardless of which tool it is — UNIT-TESTED.
   `createPipeline()` seeds a Default config so Configuration works immediately.
 
+## Recipes feature — Brett Layman's aa-recipe-manager, integrated as a PEER
+Center tab beside Pipelines. `components/panels/recipes/` + `state/recipes.ts` +
+`state/configurationFocus.ts` + backend `api/recipes.py`. The two systems answer the same
+question — "how do I run a workflow?" — with different primitives, and the integration keeps
+the difference visible instead of papering over it:
+
+|                    | Pipelines (this repo)        | Recipes (aa-recipe-manager)      |
+|--------------------|------------------------------|----------------------------------|
+| source of truth    | TS definitions in the app    | YAML files on disk               |
+| unit               | console-tool chain           | declarative DAG of ops           |
+| configure          | per-stage flags              | pipeline-level `inputs:` block   |
+| compose            | `buildCommand()` → shell     | `aa-recipe <verb> file.yaml`     |
+| validation         | the definitions here         | **`aa-recipe dry-run`**          |
+
+- **The Workbench reads recipes; it never rewrites, re-encodes, or re-validates them.**
+  Backend `GET /api/recipes` parses each YAML *for display only* (name, description, `inputs:`,
+  step list incl. `include:` steps) with `yaml.safe_load`, mirroring only the shape his
+  `yaml_reader._flatten_recipe_yaml` accepts. Anything authoritative stays with the `aa-recipe`
+  CLI, which the UI invokes — `dry-run` is offered as the first verb precisely because this app
+  refuses to be a second validator. Verified against his real example_recipes: all 18 recipes
+  parse; the `.config.yaml` beside them is correctly skipped.
+- **The CLI is the integration point, not the library.** His README installs into a dedicated
+  Conda env (`recipe-manager`); the Workbench runs in `venv313`. `import aa_recipe_manager`
+  may therefore fail where `aa-recipe` on a shell's PATH works — so the backend never imports
+  it and the frontend hands commands to the terminal.
+- **`aa-recipe` is a genuine batch CLI** — click-based, no prompts, meaningful exit codes,
+  errors to stderr (verified by installing and running it). **The "never headless" rule that
+  protects `aa-get`/`aa-fetch` does NOT apply here.** The terminal handoff is a v1 convenience
+  while no job runner exists; this tool is the *first candidate* for the environment.py
+  job-runner pattern (TODO below).
+- **Discovery:** `AASI_RECIPES_DIR`, else the first existing of
+  `~/AA-SI_recipe_manager/example_recipes` (where his README clones it) and `~/recipes`.
+  Depth ≤ 2, hidden dirs and symlinked dirs skipped, 512 kB/file and 200-recipe caps. The
+  filter is `recipe:` mapping + `steps:` list — which excludes the three other YAML species
+  that live beside recipes in the wild: per-user `*.config.yaml` run configs, the older
+  section-style workshop configs in AA-SI_Full_Pipeline_Example, and his registry spec files
+  (`op:` at top level). Broken YAML is listed *with an error* only when its text carries a
+  top-level `recipe:` key (the author meant it as a recipe); other broken YAML is not this
+  panel's business. Never raises — error payloads like `/api/derived`. Loopback guard:
+  `AASI_ALLOW_REMOTE_RECIPES`.
+- **Cards** (RecipeCard): the YAML's own name/description/steps. Step chips distinguish op
+  steps from `include:` steps (dashed/italic) — an include is a whole sub-recipe folded in and
+  his modular examples lean on that. **No checkbox multi-select**: `aa-recipe` takes one
+  recipe per invocation, so a multi-run UI would compose commands his CLI doesn't accept.
+  **No "Create new recipe" card** where Pipelines has one: authoring his format in a
+  half-faithful builder would fork it; Open YAML in the editor is the honest affordance.
+- **Configuration** = the recipe's `inputs:` block → form → `--input NAME=VALUE` overrides.
+  `--input` is emitted only for values that DIFFER from the recipe's own default (the file
+  already carries its defaults; repeating them would claim overrides that didn't happen —
+  tested). `dataset`/`echodata` inputs render as a read-only "wired by a parent recipe" row:
+  they exist for composition via `input_overrides` and cannot be expressed as `--input`, so
+  Run is blocked on sub-recipes with an explanation (Validate/Generate still work). A
+  declared default makes an input optional whatever `required` says, mirroring his
+  `InputDeclaration.set_required_from_default` (tested both sides).
+- **One Configuration tab, two systems behind it.** `state/configurationFocus.ts` holds
+  'pipelines' | 'recipes'; **only DockLayout writes it**, from whichever store's active id
+  changed last — the chrome knows about both systems, the systems never import each other.
+  `ConfigurationPanel` branches on it at the top; everything below the branch is the untouched
+  pipeline renderer. RecipesPanel never calls `openPanel` itself.
+- **Data seam** mirrors nceiService: `recipesSource` = `apiRecipesSource` when
+  `VITE_AASI_USE_API==='true'`, else `mockRecipesSource` whose entries are transcribed (not
+  invented) from his real example_recipes, incl. one broken entry to exercise the error card.
+  `capabilities.filesOnDisk` gates Run-in-Terminal and Open YAML — mock paths are fictions and
+  a button against them would produce an honest-looking error.
+- `quote()` moved to `panels/shellQuote.ts` (shared with recipes); `ncei/combineOptions`
+  imports + re-exports it, so its callers didn't move.
+- Store split follows the systems: `state/recipes.ts` holds only what the *session* adds
+  (listing, focus, typed overrides, verb, extra flags). No named saved configurations like
+  pipelines has — for recipes the YAML file is the saved configuration, and "saving" means
+  editing it, which is the editor's job.
+- **Verified**: backend parses all 18 of his real example recipes (run in this sandbox against
+  his repo); `aa-recipe --help`/`dry-run`/`schema` exercised against the installed package;
+  frontend logic covered in `tests/recipes.test.ts` (18) and backend in `test_recipes.py` (9).
+  **Not verified**: the panels have never rendered in a browser (nothing here can), and
+  `aa-recipe run` has never been executed end-to-end (his built-in specs need aa-si-utils /
+  aa-si-calibration, not installed here).
+
 ## Calibration panel (right dock) — SCAFFOLD, content not settled
 `components/panels/calibration/{calibrationSchema.ts,CalibrationPanel.tsx}` +
 `state/calibration.ts`. Declared with the SAME ParamDef schema and rendered through the shared
@@ -720,10 +806,10 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | Check | Command | Result |
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
-| Frontend tests | `npm test` | **121 passed** (7 files) |
-| Frontend build | `npm run build` | clean — **1,125.32 kB / 314.16 kB gzip** |
+| Frontend tests | `npm test` | **140 passed** (8 files) |
+| Frontend build | `npm run build` | clean — **1,142.36 kB / 318.66 kB gzip** |
 | Backend lint | `ruff check .` | clean |
-| Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
+| Backend tests | `pytest` | **86 passed, 1 skipped** (87 collected) |
 
 - Bundle grew **1,088.95 → 1,121.92 kB** (+33 kB raw, +11 kB gzip) across all the work above,
   nearly all of it the editor; removing the toolbar gave a little back. That number is the
@@ -732,7 +818,7 @@ Everything below was run from a clean extract, in this order, at the end of the 
   suite runs as a user whose privileges ignore the write bit (root in a container). It skips
   itself rather than passing vacuously.
 - Backend tests by file: `test_files.py` **46**, `test_derived.py` 16,
-  `test_environment.py` 15, `test_smoke.py` 1.
+  `test_environment.py` 15, `test_recipes.py` 9, `test_smoke.py` 1.
 - Frontend tests (`frontend/tests/`, Vitest) cover **pure logic only** — no DOM, no jsdom:
   - `highlight.test.ts` (20) — HTML-escaping across 7 languages × 5 hostile inputs, the
     every-`<`-opens-our-own-span invariant, text preservation round-trips, oversized files.
@@ -740,6 +826,10 @@ Everything below was run from a clean extract, in this order, at the end of the 
     round-trip stability, nbformat validity when a cell's type changes, cell operations.
   - `language.test.ts` (21) — path helpers incl. dotfiles and root-level files, language
     lookup, and the open/don't-open routing for the acoustic binaries.
+  - `recipes.test.ts` (18) — `buildRecipeCommand` (verbs, default-equal values suppressed,
+    quoting, wired inputs never emitted, extra flags), the required/wired input rules, the
+    control-kind mapping for every input type his examples use, the focus arbiter, and mock
+    fidelity (every mock input renders; one broken entry present; paths declared not-on-disk).
   - `theme.test.ts` (37) — palette registry completeness both directions, every palette
     declaring a light/dark base, token-shape parity against dark, **CSS custom-property
     parity** (a palette emitting a variable another lacks would leave one stale colour behind
@@ -798,7 +888,9 @@ now that Vitest is here, porting those node checks is cheap and worth doing.
 5. **Node-free deploy**: build UI once → copy `frontend/dist` into
    `backend/src/aa_si_workbench/_frontend/`, ship a wheel (launcher auto-detects it).
 6. **OMAO tab**: aa-find has a stubbed OMAO branch; could mirror the NCEI drill-down later.
-7. Confirm whether **Recipes** belongs in the left data-source group (user hasn't decided).
+7. ~~Confirm whether **Recipes** belongs in the left data-source group~~ **RESOLVED** — the
+   user decided: Recipes is a *center* tab beside Pipelines, integrating Brett Layman's
+   aa-recipe-manager as a distinct peer system. See the Recipes section.
 8. **Pipelines are UI-only.** Definitions are seed data in pipelineDefinitions.ts and saved
    configurations live in memory (lost on reload). To make real: serve user-saved pipelines +
    configs from the backend (GET/PUT), and add a run endpoint that executes the composed
@@ -871,6 +963,29 @@ now that Vitest is here, porting those node checks is cheap and worth doing.
    would fix it and is a small change to `PersistedLayout`; nobody has asked yet.
 23. ~~**Band heights in the vertical layout are guesses.**~~ **GONE** — the portrait
    band-stack was replaced by a full-width-tools arrangement; there are no bands to size.
+24. **Root `package.json` has a broken `lint` script** — `"lint": "cd frontend && npm run lint"`,
+   and the frontend has no `lint` script (verified: dev/build/preview/typecheck/test only).
+   `make lint` was fixed to call `typecheck`; this one wasn't. One line.
+25. **The favicon can't follow the in-app theme toggle.** The browser paints the tab outside
+   the page, so `public/favicon.svg` follows `prefers-color-scheme` instead. Regenerating it as
+   a data URI on theme change would track the toggle exactly; nobody has asked.
+26. **The terminal's ANSI palette is still xterm's**, apart from `white`/`brightWhite`
+   (`color.terminalAnsi`). The rest assume a dark background and were left alone because they
+   are dark enough to survive both. If coloured output reads badly in a light-based theme,
+   that is the place to look.
+27. **`NoaaMark.tsx` and `public/favicon.svg` repeat the same path data.** A static favicon
+   can't import a component. Both files carry a comment pointing at the other; a change to the
+   shape belongs in both.
+28. **Run `aa-recipe` through a job runner, not the terminal.** Unlike `aa-fetch`, `aa-recipe`
+   is a genuine batch CLI (no prompts, exit codes, stderr) — the terminal handoff is only a
+   stopgap while no run endpoint exists. The environment.py pattern (single-flight,
+   cursor-paged log, cancel, loopback guard) fits it exactly, and its `[N/M] step ... ok`
+   progress lines are ready-made for the Processing Queue / Progress panels. Same mechanism a
+   pipeline run endpoint needs (TODO 8/13) — build one, use it for both.
+29. **`aa-recipe run` has never been executed end-to-end.** His built-in specs resolve to
+   aa-si-utils / aa-si-calibration callables not installed in this sandbox; `dry-run`,
+   `--help` and `schema` were exercised against the installed package, `run` was not. First
+   real run on the workstation: `aa-recipe dry-run` then `run` on `processing_lvl_1.yaml`.
 
 ## Open design questions
 Not bugs and not TODOs — places where a reasonable person could pick differently, recorded so

@@ -16,6 +16,7 @@ import {
   ListAltOutlined,
   TimelapseOutlined,
   CodeOutlined,
+  MenuBookOutlined,
 } from '@mui/icons-material';
 
 import type { PanelDefinition, PanelId } from '../../types';
@@ -24,6 +25,7 @@ import { FilesPanel } from './FilesPanel';
 import { EditorPanel } from './editor/EditorPanel';
 import { MapPanel } from './MapPanel';
 import { PipelinesPanel } from './pipelines/PipelinesPanel';
+import { RecipesPanel } from './recipes/RecipesPanel';
 import { ConfigurationPanel } from './pipelines/ConfigurationPanel';
 import { CalibrationPanel } from './calibration/CalibrationPanel';
 import { MetadataPanel } from './MetadataPanel';
@@ -51,6 +53,14 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: 'Saved console-tool pipelines, with run controls.',
     region: 'center',
     component: PipelinesPanel,
+  },
+  {
+    id: 'recipes',
+    title: 'Recipes',
+    icon: MenuBookOutlined,
+    description: "aa-recipe-manager's YAML workflow recipes, discovered from disk.",
+    region: 'center',
+    component: RecipesPanel,
   },
   {
     id: 'editor',
@@ -109,7 +119,7 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     id: 'configuration',
     title: 'Configuration',
     icon: SettingsOutlined,
-    description: 'Full configuration for the selected pipeline.',
+    description: 'Full configuration for the selected pipeline or recipe.',
     region: 'right',
     component: ConfigurationPanel,
   },
