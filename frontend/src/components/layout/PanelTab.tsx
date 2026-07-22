@@ -15,6 +15,9 @@ import { tabPresentation } from './tabPresentation';
  * only thing telling one file apart from another. `tabPresentation` holds the
  * rule and the reasoning — this file is just the surface.
  *
+ * Both kinds share one shape — label slot, then close button — so the only
+ * difference between them is what fills the slot.
+ *
  * Nothing here computes active state. Dockview sets `color` on the `.tab`
  * element for all four combinations of (group focused?) x (panel fronted?), so
  * an icon drawn in `currentColor` picks up the same full-strength-against-muted
@@ -25,8 +28,18 @@ import { tabPresentation } from './tabPresentation';
  * the moment you clicked into a file.
  */
 
-/** Width of an icon tab. Narrow enough that five of them read as one strip. */
-const ICON_TAB_WIDTH = 40;
+/**
+ * Width of the icon's slot in an icon tab. The icon is centred in it, and the
+ * close button follows — the same two-part shape as a text tab, so both kinds
+ * put their close control in the same place.
+ *
+ * An earlier version floated the close button over the icon, revealed on hover,
+ * to keep icon tabs as narrow as possible. It read as a detached artefact
+ * rather than part of the tab, and it made the two tab kinds behave
+ * differently for no reason a user could see. A tab that is a few pixels wider
+ * is the cheaper trade.
+ */
+const ICON_LABEL_WIDTH = 24;
 
 function useTitle(api: IDockviewPanelHeaderProps['api']): string {
   const [title, setTitle] = useState(api.title ?? '');
@@ -104,41 +117,31 @@ export function PanelTab({ api }: IDockviewPanelHeaderProps) {
         <Box
           aria-label={definition.title}
           sx={{
-            position: 'relative',
             boxSizing: 'border-box',
-            width: ICON_TAB_WIDTH,
             height: '100%',
-            // Explicit zeroes: the glyph is centred by this box and nothing
-            // else, so any padding or line-height inherited from the tab strip
-            // would shift it off-centre by a few unaccountable pixels.
-            p: 0,
-            lineHeight: 0,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            gap: 0.75,
+            pl: 1.25,
+            pr: 0.75,
             color: 'inherit',
-            // The close affordance is revealed on hover and overlaid rather
-            // than laid out, so the strip never reflows under the pointer and
-            // the icons stay where the eye left them.
-            '&:hover .aa-tab-close, &:focus-within .aa-tab-close': { opacity: 1 },
           }}
         >
-          <Icon sx={{ fontSize: 17, display: 'block' }} />
+          {/* The icon occupies the label's slot and is centred in it, so it
+              sits where a title would rather than hugging the leading edge. */}
           <Box
-            className="aa-tab-close"
             sx={{
-              position: 'absolute',
-              top: 1,
-              right: 1,
-              opacity: 0,
-              transition: 'opacity .12s',
-              backgroundColor: theme.aa.color.bg.chrome,
-              borderRadius: `${theme.aa.radius.sm}px`,
-              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+              flex: 1,
+              minWidth: ICON_LABEL_WIDTH,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 0,
             }}
           >
-            {closeButton}
+            <Icon sx={{ fontSize: 17, display: 'block' }} />
           </Box>
+          {closeButton}
         </Box>
       </Tooltip>
     );

@@ -107,7 +107,7 @@ cd backend  && ruff check . && pytest
   no Node/proxy/CORS at runtime. `_paths.py` resolves dist (override env → bundled
   `aa_si_workbench/_frontend/` → source `frontend/dist`).
 
-## Current layout (defaultLayout.ts, LAYOUT_VERSION = 13)
+## Current layout (defaultLayout.ts, LAYOUT_VERSION = 14)
 ```
 ┌──┬──────────┬───────────────────────┬──────────┬──┐
 │A │  LEFT    │  CENTER: Pipelines +  │  RIGHT   │I │
@@ -160,7 +160,14 @@ cd backend  && ruff check . && pytest
   registered as Dockview components but excluded from the Window menu, the default layout, and
   the activity bar — "open an editor" isn't a thing to pick from a list, you open a *file*.
 - NCEI file rows use pl:1.25 / pr:1 (they were flush against the panel edge).
-- **LAYOUT_VERSION is 13.** Bumped from 12 when the vertical layout changed shape (regions
+- **Terminal defaults 260px (horizontal) / 280px (vertical).** Raised from 200/220 because the
+  first thing anyone did on opening the app was drag it taller.
+- **LAYOUT_VERSION is 14.** Bumped from 13 for the terminal heights — a *size* change, which the
+  "bump for structure, not chrome" rule would normally leave alone. Deliberate exception: a new
+  default that only a persisted-layout-free install ever sees is not a new default. The cost is
+  that one reload discards saved arrangements; Reset Layout was the alternative and would have
+  required every existing user to know to run it.
+- **LAYOUT_VERSION 13 note.** Bumped from 12 when the vertical layout changed shape (regions
   moved, so a persisted v12 record would restore the old portrait stack). A persisted older layout
   references a panel that no longer exists, so it is discarded and rebuilt. (It was
   deliberately *not* bumped for the hidden sidebar tabs or the vertical layout — neither
@@ -232,6 +239,13 @@ holds the mode; `MenuBar` ticks it with the same machinery as the layout variant
   (`dockview-theme-dark|light`), for the defaults we don't override.
 - `document.documentElement.style.colorScheme` is set too — without it a light theme still gets
   dark native select dropdowns and a dark scrollbar gutter.
+- **Anything drawing outside MUI must be handed the palette explicitly.** The terminal is a
+  canvas, so no context reaches it: it built its xterm colours from the static `tokens` export
+  (which is *dark*, always) and rendered near-white text on a white panel in light mode. It now
+  takes `theme.aa` and repaints in place via `term.options.theme` — session, scrollback and
+  cursor survive the switch. `color.terminalAnsi` carries the two ANSI slots (`white`,
+  `brightWhite`) whose xterm defaults assume a dark background. **If another canvas/WebGL
+  surface is ever added, it has the same problem.**
 - **Not seen in a browser.** The light palette's contrast was reasoned about, not measured, and
   the syntax colours in particular have never been read against a white editor.
 
@@ -676,7 +690,7 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
 | Frontend tests | `npm test` | **84 passed** (6 files) |
-| Frontend build | `npm run build` | clean — **1,123.23 kB / 313.57 kB gzip** |
+| Frontend build | `npm run build` | clean — **1,123.43 kB / 313.58 kB gzip** |
 | Backend lint | `ruff check .` | clean |
 | Backend tests | `pytest` | **77 passed, 1 skipped** (78 collected) |
 

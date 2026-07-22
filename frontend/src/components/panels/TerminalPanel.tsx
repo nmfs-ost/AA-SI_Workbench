@@ -23,6 +23,7 @@ import '@xterm/xterm/css/xterm.css';
 import { clearTerminalRequest, useTerminalRequest } from '../../state/terminal';
 import { terminalApi, terminalSocketUrl } from '../../services/terminalApi';
 import type { TerminalInfo } from '../../services/terminalApi';
+import type { AaTokens } from '../../theme';
 import { tokens } from '../../theme';
 
 type Status = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
@@ -40,8 +41,35 @@ type Status = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
  * outside it silently cannot see them, so the environment is chosen up front
  * and activated by the server when the session starts.
  */
+/**
+ * xterm's colours, from the active palette.
+ *
+ * This used to read the static `tokens` export — which is the *dark* palette,
+ * always — so switching to the light theme left near-white text on a white
+ * panel. Anything drawing outside MUI has to be handed the live palette
+ * explicitly; there is no context reaching into a canvas.
+ */
+function xtermTheme(t: AaTokens) {
+  return {
+    background: t.color.bg.panel,
+    foreground: t.color.text.primary,
+    cursor: t.color.accent.main,
+    cursorAccent: t.color.bg.panel,
+    selectionBackground: t.color.accent.soft,
+    white: t.color.terminalAnsi.white,
+    brightWhite: t.color.terminalAnsi.brightWhite,
+  };
+}
+
 export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
+
+  /* The terminal is created once and lives for the panel's lifetime, so the
+     construction effect must not depend on the palette — re-running it would
+     drop the session and the scrollback. A ref carries the current palette in,
+     and the effect below repaints the live instance instead. */
+  const themeRef = useRef(theme.aa);
+  themeRef.current = theme.aa;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -71,6 +99,14 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
     }
   }, []);
 
+  /* Repaint a running terminal when the theme changes. xterm redraws from
+     `options.theme` in place, so the session, scrollback and cursor position
+     all survive the switch. */
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.theme = xtermTheme(theme.aa);
+  }, [theme.aa]);
+
   useEffect(() => {
     void loadInfo();
   }, [loadInfo]);
@@ -84,11 +120,7 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
       fontSize: 12.5,
       cursorBlink: true,
       scrollback: 5000,
-      theme: {
-        background: tokens.color.bg.panel,
-        foreground: tokens.color.text.primary,
-        cursor: tokens.color.accent.main,
-      },
+      theme: xtermTheme(themeRef.current),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

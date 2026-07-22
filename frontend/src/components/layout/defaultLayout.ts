@@ -102,7 +102,7 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     component: 'terminal',
     title: 'Terminal',
     position: { referencePanel: 'pipelines', direction: 'below' },
-    initialHeight: 200,
+    initialHeight: 260,
   });
   api.addPanel({
     id: 'log',
@@ -187,7 +187,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
     component: 'terminal',
     title: 'Terminal',
     position: { referencePanel: 'pipelines', direction: 'below' },
-    initialHeight: 220,
+    initialHeight: 280,
   });
   for (const [id, title] of [
     ['log', 'Log'],

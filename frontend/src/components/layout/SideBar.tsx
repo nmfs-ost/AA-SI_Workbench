@@ -165,9 +165,14 @@ export function SideBar({ side }: { side: DockSide }) {
         flexShrink: 0,
         display: 'flex',
         alignItems: 'stretch',
-        // No padding on the leading edge: the first icon sits flush with the
-        // start of the dock beside it, so strip and panel share one baseline.
-        ...(vertical ? { pt: 0, pb: 0.5 } : { pl: 0, pr: 0.5 }),
+        /* A vertical strip starts flush with the top of the dock beside it, so
+           strip and panel share one baseline. The horizontal one has no such
+           edge to agree with — it spans the whole shell — so its icons are
+           centred instead, which is also the only arrangement that stays put
+           when the docks either side of it are resized. */
+        ...(vertical
+          ? { pt: 0, pb: 0.5, justifyContent: 'flex-start' }
+          : { px: 0.5, justifyContent: 'center' }),
         backgroundColor: theme.aa.color.bg.base,
         [vertical ? (side === 'left' ? 'borderRight' : 'borderLeft') : 'borderTop']:
           `1px solid ${theme.aa.color.border.strong}`,

@@ -76,6 +76,16 @@ const dark = {
       thumbHover: '#4a515c',
     },
 
+    /* The two ANSI slots that break when the terminal background changes.
+       xterm's built-in palette assumes a dark background, so `white` and
+       `brightWhite` — what a shell reaches for to make text stand out — are
+       near-white and vanish on a light panel. Everything else in the ANSI set
+       is dark enough to survive both. */
+    terminalAnsi: {
+      white: '#c8ced8',
+      brightWhite: '#f0f3f7',
+    },
+
     /* Semantic colours. Defined for future log levels / status; used sparingly. */
     status: {
       success: '#3fb950',
@@ -185,6 +195,11 @@ const light: AaTokens = {
     scrollbar: {
       thumb: '#c3c9d2',
       thumbHover: '#adb4bf',
+    },
+
+    terminalAnsi: {
+      white: '#4a5261',
+      brightWhite: '#1b1f27',
     },
 
     status: {
