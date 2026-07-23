@@ -521,7 +521,10 @@ the difference visible instead of papering over it:
   while no job runner exists; this tool is the *first candidate* for the environment.py
   job-runner pattern (TODO below).
 - **Discovery:** `AASI_RECIPES_DIR`, else the first existing of
-  `~/AA-SI_recipe_manager/example_recipes` (where his README clones it) and `~/recipes`.
+  `~/AA-SI_recipe_manager/example_recipes` (where his README clones it) and `~/recipes`,
+  else the **bundled snapshot** (below) so the panel is never empty out of the box. An
+  explicit `AASI_RECIPES_DIR` pointing somewhere broken errors loudly rather than quietly
+  serving the bundle — silent fallback would hide the misconfiguration (tested).
   Depth ≤ 2, hidden dirs and symlinked dirs skipped, 512 kB/file and 200-recipe caps. The
   filter is `recipe:` mapping + `steps:` list — which excludes the three other YAML species
   that live beside recipes in the wild: per-user `*.config.yaml` run configs, the older
@@ -554,6 +557,34 @@ the difference visible instead of papering over it:
   invented) from his real example_recipes, incl. one broken entry to exercise the error card.
   `capabilities.filesOnDisk` gates Run-in-Terminal and Open YAML — mock paths are fictions and
   a button against them would produce an honest-looking error.
+- **Bundled snapshot** = `backend/src/aa_si_workbench/builtin_recipes/`: **verbatim copies**
+  of his example_recipes @ `60fcb66` (every recipe YAML, `run_gcs.sh`, the
+  `*.config.yaml` his CLI auto-discovers beside its recipe, plus `calibration_files/` and
+  `line_files/` because the HB1603 recipes' relative-path defaults point at them). His
+  LICENSE + NOTICE are copied alongside per Apache-2.0, and the folder README states
+  provenance and the rule: **do not edit these files here** — update by re-copying and
+  bumping the recorded hash. `raw_file_inputs/` was deliberately excluded: those are
+  *outputs* of the recipes' own query/download steps. Shipped as setuptools package-data;
+  a built wheel was inspected and carries all 29 files. `RecipesResponse.builtin` flags
+  the fallback and the panel labels it "bundled examples". The include graph and the
+  cal/line data presence are pinned by `test_recipes.py`.
+- **The mock is now GENERATED, not transcribed.** Four bundle files run through the
+  backend's own `summarize_recipe` and dumped into `recipeService.ts` (the hand-written
+  versions had silently trimmed inputs and steps — processing_lvl_1 has 7 inputs, not 6;
+  machine_learning has 8 steps, not 4). The synthetic `broken_example` entry stays so the
+  error card is exercised. Regenerate after updating the bundle:
+  ```bash
+  cd backend && python -c "
+  import json
+  from aa_si_workbench.api.recipes import builtin_recipes_root, summarize_recipe
+  root = builtin_recipes_root()
+  for n in ['processing_lvl_1.yaml','hb1603_survey_pipeline_modular.yaml',
+            'machine_learning.yaml','visualization.yaml']:
+      d = summarize_recipe(root/n, root).model_dump(exclude_none=True)
+      d['path'] = f'/home/user/AA-SI_recipe_manager/example_recipes/{n}'
+      print(json.dumps(d, indent=2), ',')
+  "   # paste into MOCK_RECIPES, keep the broken entry
+  ```
 - `quote()` moved to `panels/shellQuote.ts` (shared with recipes); `ncei/combineOptions`
   imports + re-exports it, so its callers didn't move.
 - Store split follows the systems: `state/recipes.ts` holds only what the *session* adds
@@ -807,9 +838,9 @@ Everything below was run from a clean extract, in this order, at the end of the 
 | --- | --- | --- |
 | Frontend types | `npm run typecheck` | clean |
 | Frontend tests | `npm test` | **140 passed** (8 files) |
-| Frontend build | `npm run build` | clean — **1,142.36 kB / 318.66 kB gzip** |
+| Frontend build | `npm run build` | clean — **1,144.34 kB / 319.22 kB gzip** |
 | Backend lint | `ruff check .` | clean |
-| Backend tests | `pytest` | **86 passed, 1 skipped** (87 collected) |
+| Backend tests | `pytest` | **88 passed, 1 skipped** (89 collected) |
 
 - Bundle grew **1,088.95 → 1,121.92 kB** (+33 kB raw, +11 kB gzip) across all the work above,
   nearly all of it the editor; removing the toolbar gave a little back. That number is the
@@ -818,7 +849,7 @@ Everything below was run from a clean extract, in this order, at the end of the 
   suite runs as a user whose privileges ignore the write bit (root in a container). It skips
   itself rather than passing vacuously.
 - Backend tests by file: `test_files.py` **46**, `test_derived.py` 16,
-  `test_environment.py` 15, `test_recipes.py` 9, `test_smoke.py` 1.
+  `test_environment.py` 15, `test_recipes.py` 11, `test_smoke.py` 1.
 - Frontend tests (`frontend/tests/`, Vitest) cover **pure logic only** — no DOM, no jsdom:
   - `highlight.test.ts` (20) — HTML-escaping across 7 languages × 5 hostile inputs, the
     every-`<`-opens-our-own-span invariant, text preservation round-trips, oversized files.

@@ -181,12 +181,59 @@ def test_missing_directory_reports_instead_of_raising(tmp_path, monkeypatch):
     assert result.error is not None and "does not exist" in result.error
 
 
-def test_no_directory_configured_reports_instead_of_raising(monkeypatch, tmp_path):
+def test_no_user_directory_falls_back_to_the_bundled_snapshot(monkeypatch, tmp_path):
     monkeypatch.setenv("AASI_RECIPES_DIR", "")
-    monkeypatch.setenv("HOME", str(tmp_path))  # no default candidates exist
+    monkeypatch.setenv("HOME", str(tmp_path))  # no user candidates exist
+    result = recipes.list_recipes()
+    assert result.error is None
+    assert result.builtin is True
+    assert result.root == str(recipes.builtin_recipes_root())
+    # The bundled snapshot is aa-recipe-manager's example_recipes, verbatim:
+    # 18 recipes parse and the per-recipe run config beside them is skipped.
+    names = {r.fileName for r in result.recipes}
+    assert len(result.recipes) == 18
+    assert "processing_lvl_1.yaml" in names
+    assert "hb1603_survey_pipeline_modular.yaml" in names
+    assert "processing_levels_pipeline_gcs.config.yaml" not in names
+    # The include graph survived the copy — the modular example still names
+    # its three sub-recipes, and each of those files is itself in the bundle.
+    modular = next(
+        r for r in result.recipes if r.fileName == "hb1603_survey_pipeline_modular.yaml"
+    )
+    included = {s.include for s in modular.steps if s.include}
+    assert included == {
+        "processing_lvls_1_to_3.yaml",
+        "visualization.yaml",
+        "machine_learning.yaml",
+    }
+    assert included <= names
+    # The HB1603 recipes' relative-path defaults point at data that is
+    # actually bundled beside them.
+    root = recipes.builtin_recipes_root()
+    assert (root / "calibration_files" / "HB201607_cal").is_dir()
+    assert any((root / "line_files").iterdir())
+
+
+def test_user_directory_wins_over_the_bundled_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setenv("AASI_RECIPES_DIR", "")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    user_dir = tmp_path / "AA-SI_recipe_manager" / "example_recipes"
+    user_dir.mkdir(parents=True)
+    (user_dir / "mine.yaml").write_text(RECIPE_YAML)
+    result = recipes.list_recipes()
+    assert result.builtin is False
+    assert result.root == str(user_dir)
+    assert [r.fileName for r in result.recipes] == ["mine.yaml"]
+
+
+def test_explicit_override_never_falls_back(monkeypatch, tmp_path):
+    # An override pointing somewhere broken must error loudly, not quietly
+    # serve the bundle — silent fallback would hide the misconfiguration.
+    monkeypatch.setenv("AASI_RECIPES_DIR", str(tmp_path / "nope"))
     result = recipes.list_recipes()
     assert result.recipes == []
-    assert result.error is not None and "AASI_RECIPES_DIR" in result.error
+    assert result.builtin is False
+    assert result.error is not None and "does not exist" in result.error
 
 
 def test_oversized_file_is_skipped(recipe_dir):

@@ -56,6 +56,20 @@ Repository = "https://github.com/nmfs-ost/AA-SI_Workbench"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The bundled recipe examples (verbatim copies of aa-recipe-manager's
+# example_recipes — see builtin_recipes/README.md for provenance/license) and
+# everything they reference by relative path.
+aa_si_workbench = [
+  "builtin_recipes/*.yaml",
+  "builtin_recipes/*.sh",
+  "builtin_recipes/README.md",
+  "builtin_recipes/LICENSE",
+  "builtin_recipes/NOTICE",
+  "builtin_recipes/calibration_files/**/*",
+  "builtin_recipes/line_files/*",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"

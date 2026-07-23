@@ -111,6 +111,7 @@ export const RecipesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           }}
         >
           {state.root}
+          {state.builtin && ' · bundled examples (aa-recipe-manager)'}
           {!state.filesOnDisk && ' · mock data'}
         </Typography>
       )}

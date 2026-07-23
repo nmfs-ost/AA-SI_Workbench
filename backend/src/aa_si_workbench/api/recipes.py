@@ -94,6 +94,9 @@ class RecipeModel(BaseModel):
 
 class RecipesResponse(BaseModel):
     root: str | None = None
+    """True when `root` is the bundled snapshot rather than a user folder —
+    the panel labels it so nobody edits "their" recipes inside site-packages."""
+    builtin: bool = False
     recipes: list[RecipeModel] = []
     """A reason the listing itself is unavailable (no directory, unreadable).
     Like /api/derived, this endpoint never raises: the panel needs something
@@ -101,24 +104,42 @@ class RecipesResponse(BaseModel):
     error: str | None = None
 
 
-def recipes_root() -> Path | None:
-    """The directory recipes are discovered in.
+def builtin_recipes_root() -> Path:
+    """The example recipes bundled with the Workbench.
 
-    `AASI_RECIPES_DIR` wins when set. Otherwise the first existing of the
-    places recipes actually land on a workstation: the example_recipes folder
-    of a home-directory clone of aa-recipe-manager (where its README installs
-    it), then `~/recipes` as the neutral choice for a user's own files.
+    Verbatim copies of aa-recipe-manager's example_recipes (see the README,
+    LICENSE and NOTICE in that folder for provenance and terms), shipped as
+    package data so a fresh install has real recipes to show. A snapshot, not
+    a source: the live checkout supersedes it the moment one exists.
+    """
+    return Path(__file__).resolve().parent.parent / "builtin_recipes"
+
+
+def recipes_root() -> tuple[Path, bool] | None:
+    """The directory recipes are discovered in, and whether it is the bundled
+    snapshot.
+
+    `AASI_RECIPES_DIR` wins when set — including when it points somewhere
+    broken, because an explicit override that silently fell back to the bundle
+    would hide the misconfiguration. Otherwise the first existing of the places
+    recipes actually land on a workstation: the example_recipes folder of a
+    home-directory clone of aa-recipe-manager (where its README installs it),
+    then `~/recipes` for a user's own files, then the bundled snapshot so the
+    panel is never empty out of the box.
     """
     override = os.environ.get("AASI_RECIPES_DIR", "").strip()
     if override:
-        return Path(override).expanduser()
+        return Path(override).expanduser(), False
     home = Path.home()
     for candidate in (
         home / "AA-SI_recipe_manager" / "example_recipes",
         home / "recipes",
     ):
         if candidate.is_dir():
-            return candidate
+            return candidate, False
+    builtin = builtin_recipes_root()
+    if builtin.is_dir():
+        return builtin, True
     return None
 
 
@@ -262,8 +283,8 @@ def summarize_recipe(path: Path, root: Path) -> RecipeModel | None:
 
 
 def list_recipes() -> RecipesResponse:
-    root = recipes_root()
-    if root is None:
+    resolved = recipes_root()
+    if resolved is None:
         return RecipesResponse(
             error=(
                 "No recipes directory found. Set AASI_RECIPES_DIR, or clone "
@@ -271,6 +292,7 @@ def list_recipes() -> RecipesResponse:
                 "example_recipes folder is discovered automatically)."
             )
         )
+    root, builtin = resolved
     if not root.is_dir():
         return RecipesResponse(
             root=str(root),
@@ -284,7 +306,7 @@ def list_recipes() -> RecipesResponse:
             recipes.append(summary)
             if len(recipes) >= MAX_RECIPES:
                 break
-    return RecipesResponse(root=str(root), recipes=recipes)
+    return RecipesResponse(root=str(root), builtin=builtin, recipes=recipes)
 
 
 def _remote_blocked() -> bool:

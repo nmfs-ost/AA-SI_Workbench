@@ -61,6 +61,10 @@ export interface RecipeSummary {
 
 export interface RecipesListing {
   root: string | null;
+  /** True when `root` is the snapshot bundled with the Workbench rather than
+      a user folder — labelled in the panel so nobody edits "their" recipes
+      inside site-packages. */
+  builtin?: boolean;
   recipes: RecipeSummary[];
   error: string | null;
 }

@@ -1,0 +1,148 @@
+# Machine Learning Sub-Recipe
+#
+# Dataset-agnostic ML pipeline: reshape MVBS for ML, normalize, plot,
+# run HDBSCAN clustering, embed results back, and produce a clustering
+# report. Upstream datasets are supplied by the parent recipe via
+# input_overrides.
+
+recipe:
+  name: "machine_learning"
+  description: "ML reshape, normalization, and HDBSCAN clustering."
+  version: "1.0"
+  author: "<Your Name>"
+  schema_version: "1"
+
+inputs:
+  mvbs_with_lines:
+    type: dataset
+    description: "MVBS dataset with line overlay variables added."
+  echodata:
+    type: echodata
+    description: "EchoData object used for auxiliary ML features."
+  overlay_line_var:
+    type: str
+    default: "overlay_line"
+    description: "Line variable to overlay on the clustering report plot."
+  sv_clean_unmasked:
+    type: dataset
+    description: >
+      Pre-sparse-mask Sv used for per-cell statistics and as the backdrop /
+      ping-index reference for ML and cluster echogram plots.
+  range_bin:
+    type: str
+    default: "20m"
+    description: "Range bin size shared with sparse masking and MVBS generation."
+  ping_time_bin:
+    type: str
+    default: "20s"
+    description: "Ping-time bin size shared with sparse masking and MVBS generation."
+
+steps:
+
+  - id: compute_cell_stats
+    op: compute_per_cell_statistics
+    inputs:
+      ds_Sv: ${inputs.sv_clean_unmasked}
+    params:
+      range_bin: ${inputs.range_bin}
+      ping_time_bin: ${inputs.ping_time_bin}
+      statistics:
+        - cv
+
+  - id: reshape_ml
+    op: reshape_for_ml
+    inputs:
+      ds_MVBS: ${inputs.mvbs_with_lines}
+    params:
+      data_var: "Sv"
+      dataset_name: "ml_dataset"
+      feature_strategy: "mean_centered"
+      baseline_channel: 0
+
+  - id: add_aux_features
+    op: add_auxiliary_features
+    inputs:
+      ds_ml: ${reshape_ml.ds_ml_ready}
+      echodata: ${inputs.echodata}
+      ds_sv: ${compute_cell_stats.ds_Sv}
+    params:
+      dataset_name: "ml_dataset"
+      features:
+        - cell_cv
+        # - depth
+
+  - id: normalize_ml
+    op: normalize_ml_data
+    checkpoint: always
+    inputs:
+      ds_ml: ${add_aux_features.ds_ml_ready}
+    params:
+      method: "flatten"
+      dataset_name: "ml_dataset"
+      normalization_name: "normalized_flatten_mean_centered"
+      shift_positive: false
+
+  - id: plot_normalized_ml
+    op: plot_ml_echogram
+    inputs:
+      ds_normalized: ${normalize_ml.ds_normalized}
+      ds_Sv: ${inputs.sv_clean_unmasked}
+    params:
+      dataset_name: "ml_dataset"
+      normalization_name: "normalized_flatten_mean_centered"
+      min_depth: 0
+      max_depth: 1800
+      ping_min: 0
+      ping_max: 515
+      x_axis_units: "seconds"
+      y_axis_units: "meters"
+
+  - id: run_hdbscan
+    op: run_hdbscan
+    inputs:
+      ds_normalized: ${normalize_ml.ds_normalized}
+    params:
+      dataset_name: "ml_dataset"
+      normalization_name: "normalized_flatten_mean_centered"
+      ml_result_name: "hdbscan_results"
+      min_cluster_size_fraction: 0.02
+      min_samples: 30
+      sample_size: 1000000
+      cluster_selection_method: "eom"
+      use_hdbscan: true
+      # soft_membership_threshold: .6
+
+  - id: embed_results
+    op: embed_clustering_results
+    inputs:
+      ds_normalized: ${normalize_ml.ds_normalized}
+      clustering_results: ${run_hdbscan.clustering_results}
+    params:
+      dataset_name: "ml_dataset"
+      ml_result_name: "hdbscan_results"
+
+  - id: plot_clustering_report
+    op: plot_clustering_report
+    inputs:
+      ds_normalized: ${embed_results.ds_normalized}
+      clustering_results: ${run_hdbscan.clustering_results}
+      clustering_model: ${run_hdbscan.clustering_model}
+      ds_Sv: ${inputs.sv_clean_unmasked}
+    params:
+      dataset_name: "ml_dataset"
+      ml_result_name: "hdbscan_results"
+      plot_window: [0, 1800, 0, 515]
+      overlay_line_var: ${inputs.overlay_line_var}
+      cluster_colors:
+        - "#9D00FF"
+        - "#35E200"
+        - "#FF0000"
+        - "#2F00FF"
+        - "#FF8800"
+        - "#FFFB1C"
+        - "#FF44E9"
+        - "#00BE8BCA"
+        - "#00FFE5"
+        - "#3D8D00FF"
+        - "#9C67FFFF"
+      cluster_stats_sv_data_var: "Sv"

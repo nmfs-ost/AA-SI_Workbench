@@ -30,6 +30,8 @@ export type RecipesStatus = 'idle' | 'loading' | 'ready' | 'error';
 interface RecipesState {
   status: RecipesStatus;
   root: string | null;
+  /** The listing came from the snapshot bundled with the Workbench. */
+  builtin: boolean;
   recipes: RecipeSummary[];
   /** A listing-level problem (no directory, endpoint refused, …). */
   listError: string | null;
@@ -47,6 +49,7 @@ interface RecipesState {
 let state: RecipesState = {
   status: 'idle',
   root: null,
+  builtin: false,
   recipes: [],
   listError: null,
   activeRecipeId: null,
@@ -95,6 +98,7 @@ export async function loadRecipes(): Promise<void> {
       ...state,
       status: 'ready',
       root: listing.root,
+      builtin: listing.builtin ?? false,
       recipes: listing.recipes,
       listError: listing.error,
       // A vanished recipe should not leave a dangling focus.
