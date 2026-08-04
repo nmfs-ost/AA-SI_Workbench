@@ -265,6 +265,40 @@ export interface CellOutput {
   imageUrl?: string;
 }
 
+/**
+ * Image mime types worth rendering, richest first.
+ *
+ * Ordered rather than searched: a matplotlib figure is commonly stored as
+ * several representations of the same plot in one output, so "the first of
+ * these that exists" has to mean "the best", not "whichever the dict happened
+ * to list first". PNG leads because it is matplotlib's default and the one
+ * every backend produces.
+ */
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml'] as const;
+
+/**
+ * Turn one stored image representation into a data URL.
+ *
+ * PNG and JPEG are stored base64-encoded and go straight into the URL. SVG is
+ * stored as *text* (often split across lines, like every other multiline value
+ * in nbformat), so it is percent-encoded instead — `btoa` would throw on the
+ * first non-Latin-1 character, and glyphs in axis labels are exactly where
+ * those turn up.
+ *
+ * Both forms are rendered through `<img src>`, which is also what keeps this
+ * safe: an SVG loaded as an image cannot run script, so nothing here needs
+ * `dangerouslySetInnerHTML` and no sanitizer has to be trusted.
+ */
+function imageUrlFor(mime: string, value: unknown): string | null {
+  if (mime === 'image/svg+xml') {
+    const svg = joinSource(value);
+    return svg.trim() ? `data:image/svg+xml,${encodeURIComponent(svg)}` : null;
+  }
+  if (typeof value !== 'string') return null;
+  const base64 = value.replace(/\s/g, '');
+  return base64 ? `data:${mime};base64,${base64}` : null;
+}
+
 /** Flatten a code cell's stored outputs into something displayable. */
 export function cellOutputs(cell: NotebookCell): CellOutput[] {
   const raw = cell.raw.outputs;
@@ -286,16 +320,16 @@ export function cellOutputs(cell: NotebookCell): CellOutput[] {
     }
     if (type === 'execute_result' || type === 'display_data') {
       const data = (output.data ?? {}) as Record<string, unknown>;
-      const png = data['image/png'];
-      if (typeof png === 'string') {
-        return [
-          {
-            kind: 'image',
-            text: '',
-            imageUrl: `data:image/png;base64,${png.replace(/\s/g, '')}`,
-          },
-        ];
+      for (const mime of IMAGE_TYPES) {
+        if (!(mime in data)) continue;
+        const imageUrl = imageUrlFor(mime, data[mime]);
+        if (imageUrl) return [{ kind: 'image', text: '', imageUrl }];
       }
+      /* No image, so fall back to the plain-text representation. `text/html`
+         is deliberately not rendered: a DataFrame's HTML would look better
+         than its text form, but rendering stored HTML from a file means
+         trusting it, and nothing here can. The text/plain that pandas writes
+         alongside it says the same thing safely. */
       return [{ kind: 'result', text: joinSource(data['text/plain']) }];
     }
     return [];

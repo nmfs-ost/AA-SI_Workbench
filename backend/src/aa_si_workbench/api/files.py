@@ -86,6 +86,27 @@ TEXT_KINDS = frozenset({"python", "notebook", "markdown", "text", "table", "regi
 #: by a mis-click should fail fast with a reason rather than freeze the tab.
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 
+#: Notebooks get their own, larger ceiling, and are never truncated.
+#:
+#: Two facts pull in the same direction here. A notebook's size is mostly its
+#: *outputs* — a base64 PNG inflates by a third, and a handful of echograms
+#: clears 2 MB without the source being long at all — and those outputs are
+#: precisely the content someone opens the file to look at. Truncating to the
+#: text ceiling therefore discards the interesting part of exactly the files
+#: where it matters most.
+#:
+#: The second fact is sharper: a truncated notebook is not a degraded notebook,
+#: it is a syntax error. JSON cut mid-structure will not parse, so the editor
+#: gets nothing at all — whereas a truncated .py or .csv is still perfectly
+#: readable. That asymmetry is why `read_document` refuses an oversized
+#: notebook outright instead of returning a prefix of one: a clear refusal is
+#: strictly more useful than a payload that cannot be opened.
+#:
+#: 32 MB matches MAX_RAW_BYTES. Above that the browser is the constraint, not
+#: this limit — the JSON is parsed and held in memory, then re-serialized on
+#: save.
+MAX_NOTEBOOK_BYTES = 32 * 1024 * 1024
+
 #: Ceiling on an inline binary preview (images). Larger files get a reason.
 MAX_RAW_BYTES = 32 * 1024 * 1024
 
@@ -430,18 +451,36 @@ def read_file(path: str = Query(...)) -> FsDocument:
         base.detail = f"{kind} files aren't text — nothing to edit here."
         return base
 
-    if stat.st_size > MAX_TEXT_BYTES:
+    # Notebooks are structured, so the ceiling and the over-limit behaviour
+    # both differ from plain text. See MAX_NOTEBOOK_BYTES.
+    is_notebook = kind == "notebook"
+    limit = MAX_NOTEBOOK_BYTES if is_notebook else MAX_TEXT_BYTES
+
+    if stat.st_size > limit:
+        if is_notebook:
+            # Refuse outright. A prefix of a JSON document is a syntax error,
+            # not a partial view, so returning one would leave the editor with
+            # nothing it can render and no way to say why.
+            base.binary = True
+            base.detail = (
+                f"This notebook is {stat.st_size // (1024 * 1024)} MB, over the "
+                f"{limit // (1024 * 1024)} MB limit. It isn't shown in part "
+                "because a partly-read notebook can't be parsed at all. Most of "
+                "the size is usually stored output — clearing it in Jupyter "
+                "(Cell ▸ All Output ▸ Clear) will bring it back under."
+            )
+            return base
         base.binary = False
         base.truncated = True
         base.detail = (
-            f"Showing the first {MAX_TEXT_BYTES // (1024 * 1024)} MB of "
+            f"Showing the first {limit // (1024 * 1024)} MB of "
             f"{stat.st_size // (1024 * 1024)} MB. Saving is disabled so the rest "
             f"of the file can't be lost."
         )
 
     try:
         with target.open("rb") as handle:
-            payload = handle.read(MAX_TEXT_BYTES)
+            payload = handle.read(limit)
     except PermissionError as exc:
         raise HTTPException(
             status_code=403, detail=f"Permission denied: {target}"

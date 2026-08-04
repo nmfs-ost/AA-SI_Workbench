@@ -201,3 +201,135 @@ describe('splitSource', () => {
     expect(splitSource('')).toEqual([]);
   });
 });
+
+/**
+ * Output rendering — the graphics path.
+ *
+ * A notebook is opened to look at its figures, so the representation chosen
+ * for an output is the whole feature. These pin the two things that are easy
+ * to get wrong: picking the *best* available representation rather than the
+ * first one enumerated, and encoding SVG in a way that survives a non-ASCII
+ * axis label.
+ */
+describe('cellOutputs', () => {
+  const codeCell = (outputs: unknown[]) =>
+    parseOrThrow(
+      JSON.stringify({
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {},
+        cells: [
+          { cell_type: 'code', id: 'a', source: 'plot()', metadata: {}, execution_count: 1, outputs },
+        ],
+      }),
+    ).cells[0];
+
+  it('renders a PNG figure as an inline data URL', () => {
+    const [out] = cellOutputs(
+      codeCell([{ output_type: 'display_data', data: { 'image/png': 'iVBORw0KGgo=' }, metadata: {} }]),
+    );
+    expect(out.kind).toBe('image');
+    expect(out.imageUrl).toBe('data:image/png;base64,iVBORw0KGgo=');
+  });
+
+  it('strips the newlines Jupyter wraps base64 payloads at', () => {
+    const [out] = cellOutputs(
+      codeCell([
+        { output_type: 'display_data', data: { 'image/png': 'iVBOR\nw0KG\ngo=' }, metadata: {} },
+      ]),
+    );
+    expect(out.imageUrl).toBe('data:image/png;base64,iVBORw0KGgo=');
+  });
+
+  it('prefers the image over the text/plain that accompanies it', () => {
+    // matplotlib writes both. Showing "<Figure size 640x480>" instead of the
+    // figure is the failure this guards against.
+    const outs = cellOutputs(
+      codeCell([
+        {
+          output_type: 'execute_result',
+          data: { 'text/plain': '<Figure size 640x480 with 1 Axes>', 'image/png': 'iVBORw0=' },
+          metadata: {},
+        },
+      ]),
+    );
+    expect(outs).toHaveLength(1);
+    expect(outs[0].kind).toBe('image');
+  });
+
+  it('prefers PNG when several image representations are stored', () => {
+    const [out] = cellOutputs(
+      codeCell([
+        {
+          output_type: 'display_data',
+          data: { 'image/svg+xml': '<svg/>', 'image/jpeg': '/9j/4AA=', 'image/png': 'iVBORw0=' },
+          metadata: {},
+        },
+      ]),
+    );
+    expect(out.imageUrl?.startsWith('data:image/png;base64,')).toBe(true);
+  });
+
+  it('percent-encodes SVG, which is stored as text rather than base64', () => {
+    const [out] = cellOutputs(
+      codeCell([
+        {
+          output_type: 'display_data',
+          data: { 'image/svg+xml': ['<svg>', '<text>Sv (dB)</text>', '</svg>'] },
+          metadata: {},
+        },
+      ]),
+    );
+    expect(out.kind).toBe('image');
+    expect(out.imageUrl?.startsWith('data:image/svg+xml,')).toBe(true);
+    expect(decodeURIComponent(out.imageUrl!.slice('data:image/svg+xml,'.length))).toContain(
+      'Sv (dB)',
+    );
+  });
+
+  it('survives a non-Latin-1 glyph in an SVG label', () => {
+    // btoa() throws here. Axis units are exactly where degrees and micro signs
+    // turn up, so this is the realistic case rather than an exotic one.
+    const [out] = cellOutputs(
+      codeCell([
+        { output_type: 'display_data', data: { 'image/svg+xml': '<text>°C ± 2 µm</text>' }, metadata: {} },
+      ]),
+    );
+    expect(out.imageUrl).toBeDefined();
+    expect(decodeURIComponent(out.imageUrl!.slice('data:image/svg+xml,'.length))).toContain('°C');
+  });
+
+  it('does not render stored HTML', () => {
+    // A DataFrame's HTML would look better than its text form, but rendering
+    // markup out of a file means trusting it. The text/plain says the same
+    // thing safely.
+    const [out] = cellOutputs(
+      codeCell([
+        {
+          output_type: 'execute_result',
+          data: { 'text/html': '<table><tr><td>1</td></tr></table>', 'text/plain': '   a\n0  1' },
+          metadata: {},
+        },
+      ]),
+    );
+    expect(out.kind).toBe('result');
+    expect(out.text).toContain('a');
+    expect(out.imageUrl).toBeUndefined();
+  });
+
+  it('keeps streams and errors distinct from results', () => {
+    const outs = cellOutputs(
+      codeCell([
+        { output_type: 'stream', name: 'stdout', text: ['loading\n', 'done\n'] },
+        { output_type: 'error', ename: 'ValueError', evalue: 'bad', traceback: ['line 1', 'line 2'] },
+      ]),
+    );
+    expect(outs.map((o) => o.kind)).toEqual(['stream', 'error']);
+    expect(outs[0].text).toBe('loading\ndone\n');
+    expect(outs[1].text).toBe('line 1\nline 2');
+  });
+
+  it('ignores malformed output entries rather than throwing', () => {
+    expect(cellOutputs(codeCell([null, 'nonsense', { output_type: 'unknown' }]))).toEqual([]);
+  });
+});
