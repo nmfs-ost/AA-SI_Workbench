@@ -15,6 +15,8 @@
  * Adding a tool or a flag means editing a definition — never a component.
  */
 
+import type { LayerKind } from '../../../types/layers';
+
 /** Parameter kinds, each mapped to a specific control by ParamControl.tsx. */
 export type ParamType =
   | 'string' // free text          -> TextField
@@ -48,10 +50,27 @@ export interface ParamDef {
    */
   primary?: boolean;
   /**
-   * Marks the stage input that the left-window file selection is injected into.
-   * Such params are auto-filled and shown read-only with an "injected" hint.
+   * What part this parameter plays in the stage's inputs.
+   *
+   * A single `'input'` was enough while every stage read one thing. It is not
+   * enough now: several tools take *two* inputs with different mechanics, and
+   * conflating them produces a command line with two candidate inputs and
+   * nothing to say which the tool would read.
+   *
+   *   'input'     — arrives on the pipe. Auto-filled from the left-window
+   *                 selection, shown read-only with an "injected" hint.
+   *   'reference' — a sparse sidecar passed as an *argument* while the array
+   *                 lineage arrives on stdin: `aa-mask regions.parquet`,
+   *                 `aa-regrid bottom.parquet`.
+   *   'target'    — the inverted case. The stage names its own subject as an
+   *                 argument and whatever flows on the pipe is the modifier:
+   *                 `aa-extract store.zarr` with regions on stdin, or
+   *                 `aa-evr regions.evr` which starts a chain outright.
+   *
+   * The distinction is what stops `makeStage` from injecting the workspace
+   * selection into a stage that already names its input.
    */
-  role?: 'input';
+  role?: 'input' | 'reference' | 'target';
 }
 
 export interface StageDef {
@@ -100,8 +119,17 @@ export interface PipelineDefinition {
   description: string;
   /** Short tags rendered as chips on the card. */
   tags: readonly string[];
-  /** What this pipeline expects as input; drives the injection hint. */
-  inputKind: 'raw' | 'nc' | 'none';
+  /**
+   * What this pipeline expects as input; drives the injection hint and the
+   * composition check.
+   *
+   * Was `'raw' | 'nc' | 'none'` and read by nothing. It now carries the shared
+   * `LayerKind`, so it means the same thing here as it does in `toolCatalog`
+   * and in a handle. Note `'nc'` is gone: the converted layer is `'l1'` and
+   * NetCDF is an export (`'netcdf'`), which are two facts the old spelling
+   * folded into one.
+   */
+  inputKind: LayerKind;
   stages: readonly StageDef[];
   author: string;
   updatedAt: string; // ISO 8601

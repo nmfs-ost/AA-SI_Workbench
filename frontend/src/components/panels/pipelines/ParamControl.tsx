@@ -10,6 +10,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import AltRouteOutlined from '@mui/icons-material/AltRouteOutlined';
 import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined';
 import InputOutlined from '@mui/icons-material/InputOutlined';
 
@@ -31,6 +32,10 @@ interface Props {
  *   string  → text field        path    → text field with a browse affordance
  *   file    → file selector (auto-filled from the left-window selection)
  *
+ * `role` overrides `type` for the two-input tools: a `reference` or `target`
+ * param is an *argument*, never the injected selection, and is rendered
+ * separately so the two cannot be confused at a glance.
+ *
  * Every pipeline gets consistent, type-appropriate controls with no
  * per-pipeline UI code. Used by the Configuration panel, which is the single
  * place a setting is edited.
@@ -41,6 +46,48 @@ export function ParamControl({ param, value, onChange, injectedInput }: Props) {
   const monoInputSx = {
     '& .MuiInputBase-input': { fontFamily: theme.aa.font.mono, fontSize: 12 },
   };
+
+  /* ---------------- reference / target (the second input) ----------------
+     Two-input tools take the array lineage on the pipe and the sparse sidecar
+     as an argument — `aa-mask regions.parquet`. `aa-extract` inverts it: the
+     store is the argument and the regions arrive on the pipe.
+
+     Rendered before the injectable branch and never auto-filled, because this
+     is precisely the input the workspace selection must NOT be written into.
+     The helper text says which side of the pipe the value sits on, since that
+     is the one thing the command line does not make obvious. */
+  if (param.role === 'reference' || param.role === 'target') {
+    const isTarget = param.role === 'target';
+    return (
+      <TextField
+        size="small"
+        fullWidth
+        label={param.label}
+        value={String(value ?? '')}
+        placeholder={param.placeholder ?? (isTarget ? 'store or file' : 'sidecar file')}
+        onChange={(e) => onChange(e.target.value)}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <Tooltip
+                title={
+                  isTarget
+                    ? 'Passed as an argument. This stage names its own subject; the pipe carries the modifier.'
+                    : 'Passed as an argument. The array lineage arrives on the pipe.'
+                }
+              >
+                <AltRouteOutlined
+                  sx={{ fontSize: 15, color: theme.aa.color.text.secondary }}
+                />
+              </Tooltip>
+            </InputAdornment>
+          ),
+        }}
+        helperText={param.help ?? 'Given as an argument, not taken from the pipe.'}
+        sx={{ ...fieldSx, ...monoInputSx }}
+      />
+    );
+  }
 
   /* ---------------- file (injectable input) ---------------- */
   if (param.type === 'file' || param.role === 'input') {

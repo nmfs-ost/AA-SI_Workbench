@@ -140,7 +140,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
     description:
       'Compute volume backscattering strength from a converted file and render an echogram image.',
     tags: ['Sv', 'echogram', 'plot'],
-    inputKind: 'nc',
+    inputKind: 'l1',
     author: 'aa-si',
     updatedAt: '2026-06-02T15:41:00Z',
     stages: [
@@ -436,7 +436,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
     description:
       'Cluster Sv values into acoustic classes — the graphical form of aa-find’s KMeans operation.',
     tags: ['classify', 'experimental'],
-    inputKind: 'nc',
+    inputKind: 'l1',
     author: 'aa-si',
     updatedAt: '2026-04-09T09:55:00Z',
     stages: [
@@ -592,7 +592,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
     description:
       'Calibrate volume backscattering strength from an EchoData NetCDF. Produces the Sv product the echogram and most analyses read.',
     tags: ['Sv', 'calibration'],
-    inputKind: 'nc',
+    inputKind: 'l1',
     author: 'aa-si',
     updatedAt: '2026-07-20T00:00:00Z',
     stages: [
@@ -637,9 +637,14 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
     id: 'seabed-detection',
     name: 'Seabed detection',
     description:
-      'Detect the seabed line in an Sv product and write it as a mask, so bottom returns can be excluded downstream. The tool name is unverified \u2014 see toolCatalog.ts.',
-    tags: ['seabed', 'mask', 'unverified tool'],
-    inputKind: 'nc',
+      'Detect the seabed line in an Sv product, so bottom returns can be excluded downstream. The tool name is unverified \u2014 see toolCatalog.ts.',
+    tags: ['seabed', 'lines', 'unverified tool'],
+    /* Was `'nc'`, i.e. L1 — which contradicted this pipeline's own description
+       ("in an Sv product") and its threshold help ("Sv above this is treated
+       as a candidate bottom return"). Nothing read `inputKind`, so the
+       contradiction sat here unnoticed; the composition check in
+       `types/layers.ts` surfaced it on its first run. The prose was right. */
+    inputKind: 'sv',
     author: 'aa-si',
     updatedAt: '2026-07-20T00:00:00Z',
     stages: [
@@ -647,11 +652,11 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
         id: 'seabed',
         tool: 'aa-seabed',
         label: 'Detect seabed',
-        description: 'Find the bottom echo and emit a seabed mask.',
+        description: 'Find the bottom echo and emit a bottom line.',
         params: [
           {
             id: 'input',
-            label: 'Input .nc',
+            label: 'Input Sv store',
             type: 'file',
             role: 'input',
             default: '',
@@ -682,11 +687,14 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             help: 'Ignore returns shallower than this, excluding surface noise.',
           },
           {
+            /* Lines, not masks. A bottom line is one depth per ping; the
+               rasterized form on the Sv grid is what `aa-mask` makes from it,
+               and that is a separate stage. */
             id: 'outputDir',
             label: 'Output directory',
             type: 'path',
             flag: '-o',
-            default: './masks',
+            default: './lines',
           },
         ],
       },

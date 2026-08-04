@@ -39,6 +39,7 @@ import {
   withFormatExtension,
 } from './combineOptions';
 import type { OptionDef, OptionValues, OutputFormat, Stage } from './combineOptions';
+import { findSeams, formatGap } from './seams';
 
 interface Props {
   controller: NceiSearchController;
@@ -224,7 +225,8 @@ function OptionControl({
 export function NceiActions({ controller }: Props) {
   const theme = useTheme();
   const { openPanel } = useLayout();
-  const { targetFiles, totalTargetBytes, context, dateFrom, dateTo, selected } = controller;
+  const { targetFiles, totalTargetBytes, context, dateFrom, dateTo, selected, selectOnly } =
+    controller;
   const count = targetFiles.length;
 
   const surveyName = context.survey?.name ?? 'survey';
@@ -318,6 +320,17 @@ export function NceiActions({ controller }: Props) {
 
   const tooFew = workflow === 'combine' && count < MIN_COMBINE_FILES;
   const blocked = count === 0 || tooFew;
+
+  /* Transit gaps in the selection. Only meaningful for Combine — downloading
+     files across a gap is fine, it is *merging* them onto one ping axis that
+     lets a later MVBS pass average across the discontinuity and produce
+     something plausible and wrong. Computed from timestamps the panel already
+     holds, so this costs nothing and needs no tool. */
+  const seamReport = useMemo(
+    () => (workflow === 'combine' ? findSeams(targetFiles) : null),
+    [workflow, targetFiles],
+  );
+  const seams = seamReport?.seams ?? [];
 
   const run = useCallback(() => {
     openPanel('terminal');
@@ -418,6 +431,86 @@ export function NceiActions({ controller }: Props) {
           </Typography>
           <StageStrip stages={stages} skipped={skippedStages} />
         </Box>
+
+        {/* Transit gaps.
+            Placed after the steps and before the options, because it changes
+            what you should be doing rather than how you should configure it —
+            and because the only cheap moment to catch this is before the
+            command exists. Nothing downstream can detect a store that was
+            combined across a gap; by then the discontinuity is indistinguishable
+            from quiet water. */}
+        {seamReport && seams.length > 0 && (
+          <Box
+            sx={{
+              p: 1,
+              borderRadius: `${theme.aa.radius.sm}px`,
+              border: `1px dashed ${theme.aa.color.status.warning}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.75,
+            }}
+          >
+            <Typography sx={{ fontSize: 11.5, color: theme.aa.color.status.warning }}>
+              {seams.length === 1
+                ? 'This selection spans a transit gap.'
+                : `This selection spans ${seams.length} transit gaps.`}{' '}
+              Combining across one puts both sides on a single ping axis, and a
+              later MVBS pass will bin across the gap and produce plausible data
+              that is not real.
+            </Typography>
+
+            {seams.map((seam) => (
+              <Typography
+                key={seam.before}
+                sx={{
+                  fontSize: 10.5,
+                  fontFamily: theme.aa.font.mono,
+                  color: theme.aa.color.text.secondary,
+                  wordBreak: 'break-all',
+                }}
+              >
+                {formatGap(seam.seconds)} ({Math.round(seam.factor)}× the usual{' '}
+                {formatGap(seamReport.medianSeconds)}) between {seam.before} and{' '}
+                {seam.after}
+              </Typography>
+            ))}
+
+            {/* Actionable, not merely advisory: each group is a selection the
+                user can adopt in one click and then combine safely. */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
+              <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
+                Combine one run at a time:
+              </Typography>
+              {seamReport.groups.map((group, index) => (
+                <Button
+                  key={`group-${index}`}
+                  size="small"
+                  variant="outlined"
+                  onClick={() => selectOnly(group.map((f) => f.name))}
+                  sx={{ fontSize: 10.5, textTransform: 'none', py: 0, minWidth: 0 }}
+                >
+                  Run {index + 1} ({group.length})
+                </Button>
+              ))}
+            </Box>
+
+            <Typography sx={{ fontSize: 10, color: theme.aa.color.text.muted }}>
+              Only gaps in time are found here. A calibration change or a
+              channel-config change is inside the files and is aa-combine’s own
+              QC pass to report — a clean result here does not mean the
+              selection is safe to combine.
+            </Typography>
+          </Box>
+        )}
+
+        {seamReport && seamReport.undated.length > 0 && (
+          <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
+            {seamReport.undated.length} file
+            {seamReport.undated.length === 1 ? '' : 's'} had no readable
+            acquisition time and {seamReport.undated.length === 1 ? 'was' : 'were'}{' '}
+            left out of the gap check.
+          </Typography>
+        )}
 
         {/* Primary options inline; the rest behind a disclosure */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>

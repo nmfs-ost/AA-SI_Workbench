@@ -56,6 +56,8 @@ export interface NceiSearchController {
   setDateFrom: (value: string) => void;
   setDateTo: (value: string) => void;
   toggleFile: (name: string) => void;
+  /** Replace the selection with exactly these files. */
+  selectOnly: (names: readonly string[]) => void;
   toggleAll: () => void;
   clearSelection: () => void;
   identifyFile: (file: RawFile) => void;
@@ -264,6 +266,20 @@ export function useNceiSearch(): NceiSearchController {
 
   const clearSelection = useCallback(() => setSelected(new Set()), []);
 
+  /**
+   * Replace the selection outright with a named set.
+   *
+   * `clearSelection()` followed by a run of `toggleFile()` calls would land in
+   * the same place, but as N+1 state updates whose correctness depends on
+   * every one of them being a functional update. One assignment is both
+   * cheaper and impossible to half-apply. Added for the seam warning's
+   * "select this group" action, which is exactly the case where the caller
+   * knows the whole set it wants.
+   */
+  const selectOnly = useCallback((names: readonly string[]) => {
+    setSelected(new Set(names));
+  }, []);
+
   const identifyFile = useCallback(
     (file: RawFile) => {
       setActiveFileName(file.name);
@@ -355,6 +371,7 @@ export function useNceiSearch(): NceiSearchController {
     setDateFrom,
     setDateTo,
     toggleFile,
+    selectOnly,
     toggleAll,
     clearSelection,
     identifyFile,

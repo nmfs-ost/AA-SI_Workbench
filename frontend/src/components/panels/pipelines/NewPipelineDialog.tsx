@@ -21,6 +21,7 @@ import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined';
 
 import { toolCatalog, makeStage, type ToolTemplate } from './toolCatalog';
 import { buildCommand, type PipelineDefinition } from './pipelineTypes';
+import { chainIssues, layerLabel } from '../../../types/layers';
 
 interface Props {
   open: boolean;
@@ -65,6 +66,19 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
     [next[index], next[target]] = [next[target], next[index]];
     setTools(next);
   };
+
+  /* Does each step's input come from somewhere?
+     Reported, never enforced. Several catalogue entries are unverified
+     proposals, so a composition this flags may well be right — and a dialog
+     that refused to build it would be wrong in a way the user could not work
+     around. The freeform stage declares `any` on both sides and therefore
+     never trips this. */
+  const issues = chainIssues(tools, 'any');
+
+  /* Tools whose name or flags were never checked against an installed
+     environment. Said once for the whole chain rather than badged per step:
+     the honest claim is about the catalogue, not about any one entry. */
+  const unverified = tools.filter((t) => t.verified !== true);
 
   // Preview the command using the composed stages and their defaults.
   const previewPipeline: PipelineDefinition | null =
@@ -221,7 +235,17 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
                   </Typography>
                   <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
                     {template.label}
-                    {index === 0 ? ' · receives the selected file' : ''}
+                    {/* The layer transition, so the chain reads as a chain
+                        rather than as an ordered list of unrelated commands.
+                        This is the same `consumes`/`produces` the warning
+                        below is computed from — one source, two readings. */}
+                    {!template.freeform && (
+                      <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
+                        {' · '}
+                        {layerLabel(template.consumes)} → {layerLabel(template.produces)}
+                      </Box>
+                    )}
+                    {template.verified !== true && ' · unverified'}
                   </Typography>
                 </Box>
                 <IconButton
@@ -247,6 +271,57 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
               </Box>
             ))}
           </Box>
+        )}
+
+        {/* Composition warnings. Grouped into one block rather than sprinkled
+            through the list, for the same reason combineOptions groups its
+            unverified flags: the whole thing is provisional, and saying so once
+            is clearer than saying it six times. */}
+        {issues.length > 0 && (
+          <Box
+            sx={{
+              mt: 1.5,
+              p: 1,
+              borderRadius: `${theme.aa.radius.sm}px`,
+              border: `1px dashed ${theme.aa.color.status.warning}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.5,
+            }}
+          >
+            <Typography sx={{ fontSize: 11, color: theme.aa.color.status.warning }}>
+              {issues.length === 1
+                ? 'One step has no source for its input.'
+                : `${issues.length} steps have no source for their input.`}{' '}
+              The pipeline can still be created — the catalogue is incomplete, so
+              this may be the catalogue being wrong rather than the chain.
+            </Typography>
+            {issues.map((issue) => (
+              <Typography
+                key={`${issue.tool}-${issue.index}`}
+                sx={{
+                  fontSize: 10.5,
+                  fontFamily: theme.aa.font.mono,
+                  color: theme.aa.color.text.secondary,
+                }}
+              >
+                {issue.index + 1}. {issue.message}
+              </Typography>
+            ))}
+          </Box>
+        )}
+
+        {unverified.length > 0 && (
+          <Typography
+            sx={{ mt: 1, fontSize: 10.5, color: theme.aa.color.text.muted }}
+          >
+            Unverified against an installed environment:{' '}
+            <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
+              {[...new Set(unverified.map((t) => t.tool))].join(', ')}
+            </Box>
+            . Confirm with <code>ls $VIRTUAL_ENV/bin/aa-*</code>, then correct
+            toolCatalog.ts.
+          </Typography>
         )}
 
         {tools.length > 0 && (
