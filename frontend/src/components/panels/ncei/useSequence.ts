@@ -22,7 +22,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { startJob, useJobs } from '../../../state/jobs';
-import { loadEnvironment, useEnvironment } from '../../../state/environment';
 import { toolsApi } from '../../../services/toolsApi';
 import type { JobStatus } from '../../../services/jobsApi';
 import { sendToTerminal } from '../../../state/terminal';
@@ -31,6 +30,7 @@ import {
   defaultMode,
   findMode,
   resolveSequence,
+  type DiscoveredTool,
   type ResolvedStage,
   type StageMode,
 } from './sequence';
@@ -156,10 +156,11 @@ export interface SequenceRuntime {
 }
 
 export function useSequence(ctx: SequenceContext): SequenceRuntime {
-  const environment = useEnvironment();
   const jobsState = useJobs();
 
-  const [described, setDescribed] = useState<ReadonlySet<string>>(new Set());
+  const [discovered, setDiscovered] = useState<ReadonlyMap<string, DiscoveredTool>>(
+    new Map(),
+  );
   const [error, setError] = useState('');
   const [probing, setProbing] = useState(true);
   const [modes, setModes] = useState<Record<string, string>>(() =>
@@ -169,22 +170,31 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
   const [started, setStarted] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    void loadEnvironment();
     let cancelled = false;
     toolsApi
       .describeAll()
       .then((catalog) => {
         if (cancelled) return;
-        setDescribed(
-          new Set(catalog.tools.filter((t) => t.supported).map((t) => t.name)),
+        setDiscovered(
+          new Map(
+            catalog.tools.map((tool) => [
+              tool.name,
+              {
+                name: tool.name,
+                version: tool.version,
+                discovery: tool.discovery,
+                paramCount: tool.params.length,
+              },
+            ]),
+          ),
         );
       })
       .catch((e: Error) => {
         if (cancelled) return;
-        // A failed probe is not a failed panel. Every stage simply drops to
-        // "flags unconfirmed", which is the honest reading when nothing has
-        // told us otherwise.
-        setError(e.message);
+        // A failed scan is not a failed panel — every stage simply reads as
+        // not installed, which is the honest answer when nothing could be
+        // asked. The message says the scan failed, not that the tools are gone.
+        setError(`Could not scan the environment for aa-* tools: ${e.message}`);
       })
       .finally(() => !cancelled && setProbing(false));
     return () => {
@@ -192,10 +202,7 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
     };
   }, []);
 
-  const stages = useMemo(
-    () => resolveSequence(environment.info?.tools ?? [], described),
-    [environment.info, described],
-  );
+  const stages = useMemo(() => resolveSequence(discovered), [discovered]);
 
   const jobs = useMemo(() => {
     const byStage: Record<string, JobStatus | null> = {};
@@ -282,7 +289,7 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
     blocked,
     run,
     preview,
-    loading: probing || environment.infoLoading,
+    loading: probing,
     error: error || jobsState.error,
   };
 }

@@ -294,3 +294,114 @@ def test_listing_a_store_prefix_answers_with_the_store_itself() -> None:
     assert listing.entries[0].kind == "zarr"
     # No list_blobs call was made at all.
     assert provider._client.calls == []
+
+
+# --------------------------------------------------------------------------- #
+# Automatic discovery
+# --------------------------------------------------------------------------- #
+SAMPLE_TOOL = '''
+import argparse
+def build():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("inputs", nargs="*")
+    p.add_argument("-o", "--output_path", "--output", dest="output_path", default=None,
+                   help="Where to write it.")
+    p.add_argument("--sort", choices=["time", "given", "name"], default="time")
+    p.add_argument("--chunk-pings", "--chunk_pings", dest="chunk_pings",
+                   type=int, default=None)
+    p.add_argument("--strict", action="store_true")
+    p.add_argument("--consolidated", action="store_true", default=True)
+    p.add_argument("--no-consolidated", dest="consolidated", action="store_false")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument("--debug", action="store_true")
+    return p
+'''
+
+
+def _params(tmp_path: Path, source: str = SAMPLE_TOOL) -> dict:
+    from aa_si_workbench.api.tools import params_from_source
+
+    module = tmp_path / "sample_tool.py"
+    module.write_text(source)
+    return {p.id: p for p in params_from_source(module)}
+
+
+def test_flags_are_read_from_source_without_running_anything(tmp_path: Path) -> None:
+    """The whole point: no --describe, no --help, no subprocess."""
+    params = _params(tmp_path)
+    assert "output_path" in params
+    assert params["output_path"].flags == ["-o", "--output_path", "--output"]
+    assert params["output_path"].help == "Where to write it."
+
+
+def test_a_parser_built_inline_is_still_read(tmp_path: Path) -> None:
+    """Most of these tools build the parser halfway down main(), not in a helper."""
+    inline = (
+        "import argparse\n"
+        "def main():\n"
+        "    p = argparse.ArgumentParser()\n"
+        '    p.add_argument("--inline-flag", default="x")\n'
+    )
+    params = _params(tmp_path, inline)
+    assert "inline_flag" in params
+
+
+def test_choices_and_types_come_through(tmp_path: Path) -> None:
+    params = _params(tmp_path)
+    assert params["sort"].type == "enum"
+    assert params["sort"].choices == ["time", "given", "name"]
+    assert params["sort"].default == "time"
+    assert params["chunk_pings"].type == "number"
+    assert params["strict"].type == "boolean"
+
+
+def test_two_spellings_of_one_dest_merge_into_one_parameter(tmp_path: Path) -> None:
+    params = _params(tmp_path)
+    assert "--chunk-pings" in params["chunk_pings"].flags
+    assert "--chunk_pings" in params["chunk_pings"].flags
+    # --consolidated / --no-consolidated share a dest: one parameter, not two.
+    assert "--no-consolidated" in params["consolidated"].flags
+
+
+def test_plumbing_flags_are_not_offered_as_parameters(tmp_path: Path) -> None:
+    """Every tool has --quiet and --debug; listing them buries the real ones."""
+    params = _params(tmp_path)
+    assert "quiet" not in params
+    assert "debug" not in params
+
+
+def test_unparseable_source_yields_nothing_rather_than_raising(tmp_path: Path) -> None:
+    from aa_si_workbench.api.tools import params_from_source
+
+    broken = tmp_path / "broken.py"
+    broken.write_text("def main(:\n    pass")
+    assert params_from_source(broken) == []
+
+
+HELP_TEXT = """
+    Usage: aa-thing [OPTIONS] STORE
+
+    Does a thing to a store.
+
+    Output:
+      -o, --output_path PATH    Where the result lands.
+                                Defaults to beside the input.
+      --strict                  Refuse rather than warn.
+
+    Machine interfaces:
+      --json                    Emit a handle on stdout.
+"""
+
+
+def test_help_text_supplies_prose_and_sections() -> None:
+    from aa_si_workbench.api.tools import parse_help
+
+    summary, entries = parse_help(HELP_TEXT)
+    assert "Does a thing" in summary
+    section, description = entries["--output_path"]
+    assert section == "Output"
+    # The continuation line is folded into the description.
+    assert "Defaults to beside the input." in description
+    assert entries["--json"][0] == "Machine interfaces"
+    # Both spellings of the same entry are recorded.
+    assert "-o" in entries

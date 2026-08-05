@@ -43,15 +43,10 @@ const CONFIDENCE: Record<
   StageConfidence,
   { label: string; tone: 'ok' | 'warn' | 'bad'; help: string }
 > = {
-  described: {
-    label: 'self-described',
+  ready: {
+    label: 'ready',
     tone: 'ok',
-    help: 'Flags read off the tool’s own parser, so they cannot disagree with what it accepts.',
-  },
-  installed: {
-    label: 'flags unconfirmed',
-    tone: 'warn',
-    help: 'The tool is installed, but its flags come from this repo rather than from the tool.',
+    help: 'Installed, and its flags were read from the tool itself.',
   },
   unresolved: {
     label: 'open question',
@@ -98,7 +93,7 @@ function Outcome({ job }: { job: JobStatus | null }) {
 function ConfidenceChip({ confidence, note }: { confidence: StageConfidence; note: string }) {
   const theme = useTheme();
   const meta = CONFIDENCE[confidence];
-  if (confidence === 'described') return null; // The good case needs no badge.
+  if (confidence === 'ready') return null; // The ordinary case needs no badge.
 
   const colour =
     meta.tone === 'bad' ? theme.aa.color.status.error : theme.aa.color.status.warning;

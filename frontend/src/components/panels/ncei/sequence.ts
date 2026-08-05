@@ -48,7 +48,14 @@
  * queued, watched and resumed like everything else.
  */
 
-import type { ToolInfo } from '../../../services/environmentApi';
+/** What discovery knows about one installed tool. */
+export interface DiscoveredTool {
+  name: string;
+  version: string;
+  /** describe | source | help — which layer read its flags. */
+  discovery: string;
+  paramCount: number;
+}
 
 /** How a stage is invoked. */
 export type RunVia = 'job' | 'terminal';
@@ -286,15 +293,24 @@ export const FIRST_TIER: readonly SequenceStage[] = [
 /* Live resolution                                                     */
 /* ------------------------------------------------------------------ */
 
-/** How much this Workbench can honestly claim about a stage. */
+/**
+ * How much this Workbench can honestly claim about a stage.
+ *
+ * This used to have an "installed but flags unconfirmed" value, and it was the
+ * commonest one — because discovery only understood `--describe` and almost no
+ * tool has it. It showed the user a badge whose only meaning was "go run
+ * --help and correct a TypeScript file yourself", which is not a state a UI
+ * should have.
+ *
+ * Discovery now reads every tool's flags out of its own source. So the only
+ * question left is whether the tool is here at all.
+ */
 export type StageConfidence =
-  /** Installed, and it describes its own flags. Nothing here is a guess. */
-  | 'described'
-  /** Installed, but its flags come from this repo rather than from the tool. */
-  | 'installed'
+  /** Installed, and its flags were read from the tool itself. */
+  | 'ready'
   /** Not present in this environment. */
   | 'missing'
-  /** Present or not, the command line is an open question. */
+  /** Present, but something about how it is invoked is undecided. */
   | 'unresolved';
 
 export interface ResolvedStage {
@@ -307,26 +323,26 @@ export interface ResolvedStage {
   note: string;
   /** False when firing this stage could only produce an error. */
   runnable: boolean;
+  /** Which layer the flags came from: describe | source | help. */
+  discovery: string;
+  /** How many flags discovery found for this tool. */
+  paramCount: number;
 }
 
 /**
- * Resolve one stage against the installed environment.
+ * Resolve one stage against what discovery found.
  *
- * `describedTools` is the set that answered `--describe` (from
- * `/api/tools/describe`). It is deliberately a separate input from the
- * installed list: being present and being self-describing are two different
- * claims, and collapsing them is how a hand-written flag set gets to wear the
- * same badge as one read off the tool's own parser.
+ * `discovered` is keyed by tool name and comes from `/api/tools/describe`,
+ * which reads each tool's flags out of its own source. A tool that is present
+ * is therefore a tool whose command line is known — there is no longer a
+ * middle state where it is installed but its flags are a guess.
  */
 export function resolveStage(
   stage: SequenceStage,
-  tools: readonly ToolInfo[],
-  describedTools: ReadonlySet<string>,
+  discovered: ReadonlyMap<string, DiscoveredTool>,
 ): ResolvedStage {
   const names = [stage.tool, ...(stage.aliases ?? [])];
-  const found = names
-    .map((name) => tools.find((tool) => tool.name === name))
-    .find(Boolean);
+  const found = names.map((name) => discovered.get(name)).find(Boolean);
 
   if (!found) {
     return {
@@ -339,50 +355,34 @@ export function resolveStage(
           ? `None of ${names.join(', ')} is installed in this environment.`
           : `${stage.tool} is not installed in this environment.`,
       runnable: false,
+      discovery: 'none',
+      paramCount: 0,
     };
   }
 
-  if (stage.unresolved) {
-    return {
-      stage,
-      confidence: 'unresolved',
-      resolvedTool: found.name,
-      version: found.version,
-      // The tool is here; what it takes is the open part. Say which, because
-      // "unverified" without the question attached is how the last set of
-      // guesses survived three files.
-      note: stage.unresolved,
-      runnable: true,
-    };
-  }
-
-  if (describedTools.has(found.name)) {
-    return {
-      stage,
-      confidence: 'described',
-      resolvedTool: found.name,
-      version: found.version,
-      note: '',
-      runnable: true,
-    };
-  }
-
-  return {
+  const base = {
     stage,
-    confidence: 'installed',
     resolvedTool: found.name,
     version: found.version,
-    note: `${found.name} is installed but does not answer --describe, so these flags come from this repo rather than from the tool. Check with \`${found.name} --help\`.`,
     runnable: true,
+    discovery: found.discovery,
+    paramCount: found.paramCount,
   };
+
+  // An open question is about how the *sequence* invokes the tool, not about
+  // what flags the tool has — discovery answers the second, never the first.
+  if (stage.unresolved) {
+    return { ...base, confidence: 'unresolved', note: stage.unresolved };
+  }
+
+  return { ...base, confidence: 'ready', note: '' };
 }
 
 export function resolveSequence(
-  tools: readonly ToolInfo[],
-  describedTools: ReadonlySet<string>,
+  discovered: ReadonlyMap<string, DiscoveredTool>,
   stages: readonly SequenceStage[] = FIRST_TIER,
 ): ResolvedStage[] {
-  return stages.map((stage) => resolveStage(stage, tools, describedTools));
+  return stages.map((stage) => resolveStage(stage, discovered));
 }
 
 /** The default mode for a stage: the first declared. */

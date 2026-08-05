@@ -9,11 +9,17 @@ import {
   stopsSequence,
 } from '../src/components/panels/ncei/sequence';
 import { buildArgs, type SequenceContext } from '../src/components/panels/ncei/useSequence';
-import type { ToolInfo } from '../src/services/environmentApi';
+import type { DiscoveredTool } from '../src/components/panels/ncei/sequence';
 
-function tool(name: string, version = '0.2.0'): ToolInfo {
-  return { name, path: `/venv/bin/${name}`, distribution: name, version };
+/** What /api/tools/describe reports for one installed tool. */
+function found(
+  name: string,
+  discovery = 'source',
+  paramCount = 12,
+): [string, DiscoveredTool] {
+  return [name, { name, version: '0.4.1', discovery, paramCount }];
 }
+const NOTHING = new Map<string, DiscoveredTool>();
 
 const CTX: SequenceContext = {
   vesselId: 'Alaska_Knight',
@@ -35,37 +41,38 @@ const stageById = (id: string) => FIRST_TIER.find((s) => s.id === id)!;
 
 describe('stage resolution against the installed environment', () => {
   it('reports a tool that is not installed rather than offering to run it', () => {
-    const resolved = resolveStage(stageById('assemble'), [], new Set());
+    const resolved = resolveStage(stageById('assemble'), NOTHING);
     expect(resolved.confidence).toBe('missing');
     expect(resolved.runnable).toBe(false);
     expect(resolved.note).toContain('not installed');
   });
 
-  it('separates "installed" from "self-describing"', () => {
-    const installed = [tool('aa-combine')];
-    expect(resolveStage(stageById('assemble'), installed, new Set()).confidence).toBe(
-      'installed',
-    );
-    expect(
-      resolveStage(stageById('assemble'), installed, new Set(['aa-combine'])).confidence,
-    ).toBe('described');
+  it('an installed tool is ready — there is no "unconfirmed" middle state', () => {
+    // This is the state that used to exist and used to be the commonest one:
+    // installed, but flags guessed, so the UI showed a badge meaning "go run
+    // --help yourself". Discovery reads the flags from source, so it is gone.
+    for (const layer of ['source', 'help', 'describe']) {
+      const resolved = resolveStage(
+        stageById('assemble'),
+        new Map([found('aa-combine', layer)]),
+      );
+      expect(resolved.confidence).toBe('ready');
+      expect(resolved.note).toBe('');
+    }
   });
 
-  it('a self-describing tool carries no caveat, an installed one does', () => {
-    const described = resolveStage(
+  it('carries which layer answered, so the source of a fact is knowable', () => {
+    const resolved = resolveStage(
       stageById('assemble'),
-      [tool('aa-combine')],
-      new Set(['aa-combine']),
+      new Map([found('aa-combine', 'describe', 21)]),
     );
-    expect(described.note).toBe('');
-
-    const guessed = resolveStage(stageById('assemble'), [tool('aa-combine')], new Set());
-    expect(guessed.note).toContain('--help');
+    expect(resolved.discovery).toBe('describe');
+    expect(resolved.paramCount).toBe(21);
   });
 
   it('accepts an alias, and reports the name actually found', () => {
-    // The converter was rendered as aa-raw; the notes call it aa-ed/aa-nc.
-    const resolved = resolveStage(stageById('convert'), [tool('aa-nc')], new Set());
+    // The converter was rendered as aa-raw; the tools call it aa-ed / aa-nc.
+    const resolved = resolveStage(stageById('convert'), new Map([found('aa-nc')]));
     expect(resolved.resolvedTool).toBe('aa-nc');
     expect(resolved.runnable).toBe(true);
   });
@@ -81,7 +88,7 @@ describe('stage resolution against the installed environment', () => {
   });
 
   it('resolves every stage without throwing on an empty environment', () => {
-    const resolved = resolveSequence([], new Set());
+    const resolved = resolveSequence(NOTHING);
     expect(resolved).toHaveLength(FIRST_TIER.length);
     expect(resolved.every((item) => item.confidence === 'missing')).toBe(true);
   });
