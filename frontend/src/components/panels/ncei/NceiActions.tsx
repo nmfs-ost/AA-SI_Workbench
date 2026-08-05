@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Autocomplete,
   Box,
@@ -28,8 +28,6 @@ import { sendToTerminal } from '../../../state/terminal';
 import { formatBytes } from './nceiService';
 import type { NceiSearchController } from './useNceiSearch';
 import {
-  COMBINE_STAGES,
-  DOWNLOAD_STAGES,
   OUTPUT_FORMATS,
   buildFlags,
   combineOptions,
@@ -38,8 +36,11 @@ import {
   quote,
   withFormatExtension,
 } from './combineOptions';
-import type { OptionDef, OptionValues, OutputFormat, Stage } from './combineOptions';
+import type { OptionDef, OptionValues, OutputFormat } from './combineOptions';
 import { findSeams, formatGap } from './seams';
+import { SequenceStrip } from './SequenceStrip';
+import { useSequence, type SequenceContext } from './useSequence';
+import { startPolling, stopPolling } from '../../../state/jobs';
 
 interface Props {
   controller: NceiSearchController;
@@ -48,61 +49,6 @@ interface Props {
 type Workflow = 'download' | 'combine';
 
 const MIN_COMBINE_FILES = 2; // echopype.combine_echodata needs at least two
-
-/**
- * What this operation will do, step by step.
- *
- * The tools chain together, and the chain is not obvious from a single command
- * line — "combine" quietly implies fetching and converting first. Showing the
- * steps means the panel explains the operation instead of assuming it's known.
- */
-function StageStrip({ stages, skipped }: { stages: readonly Stage[]; skipped: Set<string> }) {
-  const theme = useTheme();
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0.5, flexWrap: 'wrap' }}>
-      {stages.map((stage, index) => {
-        const off = skipped.has(stage.id);
-        return (
-          <Tooltip key={stage.id} title={stage.description}>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                px: 0.75,
-                py: 0.35,
-                borderRadius: `${theme.aa.radius.sm}px`,
-                border: `1px solid ${
-                  off ? theme.aa.color.border.subtle : theme.aa.color.accent.main
-                }`,
-                opacity: off ? 0.45 : 1,
-                cursor: 'help',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: 10.5,
-                  color: off ? theme.aa.color.text.muted : theme.aa.color.text.primary,
-                }}
-              >
-                {index + 1}. {stage.label}
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: 10,
-                  fontFamily: theme.aa.font.mono,
-                  color: theme.aa.color.text.muted,
-                }}
-              >
-                {stage.tool}
-              </Typography>
-            </Box>
-          </Tooltip>
-        );
-      })}
-    </Box>
-  );
-}
 
 /** One control, chosen by the option's declared type. */
 function OptionControl({
@@ -247,15 +193,6 @@ export function NceiActions({ controller }: Props) {
   }));
 
   const formatInfo = OUTPUT_FORMATS.find((f) => f.id === format);
-  const stages = workflow === 'download' ? DOWNLOAD_STAGES : COMBINE_STAGES;
-  // Upload only happens when a destination was given — show that, don't imply it.
-  const skippedStages = useMemo(() => {
-    const skipped = new Set<string>();
-    if (workflow === 'combine' && !String(combineValues.destination ?? '').trim()) {
-      skipped.add('upload');
-    }
-    return skipped;
-  }, [workflow, combineValues.destination]);
 
   const defs = workflow === 'download' ? downloadOptions : combineOptions;
   const values = workflow === 'download' ? downloadValues : combineValues;
@@ -317,6 +254,49 @@ export function NceiActions({ controller }: Props) {
     surveyName,
     sonarName,
   ]);
+
+  /* The first-tier sequence: acquire -> convert -> assemble -> verify.
+
+     The options form above still owns the aa-combine flags; the sequence owns
+     the *order* and the running. Handing the flags across rather than letting
+     the sequence re-derive them keeps one place where a combine option is
+     spelled, which is the property the old single-command path had and the one
+     thing about it worth keeping. */
+  const sequenceCtx: SequenceContext = useMemo(() => {
+    const workdir = String(downloadValues.destination ?? '').trim() ||
+      `${vesselId}_${surveyName}_${sonarName}_NCEI`;
+    return {
+      vesselId,
+      surveyName,
+      sonarName,
+      fileNames: targetFiles.map((f) => f.name),
+      dateFrom,
+      dateTo,
+      workdir,
+      output: String(combineValues.output ?? '').trim() ||
+        `combined_${surveyName}_${sonarName}${format === 'zarr' ? '.zarr' : '.nc'}`,
+      combineFlags: [
+        ...buildFlags(combineOptions, combineValues, format).filter(
+          // -o is contributed by the stage, which knows whether its mode writes.
+          (_, index, all) => all[index - 1] !== '-o' && all[index] !== '-o',
+        ),
+        ...(extraFlags.trim() ? extraFlags.trim().split(/\s+/) : []),
+      ],
+      requestPath: `${vesselId}_${surveyName}_request.yaml`,
+    };
+  }, [
+    vesselId, surveyName, sonarName, targetFiles, dateFrom, dateTo,
+    downloadValues.destination, combineValues, format, extraFlags,
+  ]);
+
+  const sequence = useSequence(sequenceCtx);
+
+  /* The queue only polls while something is live, so a panel that can start a
+     job is a panel that has to switch it on. */
+  useEffect(() => {
+    startPolling();
+    return () => stopPolling();
+  }, []);
 
   const tooFew = workflow === 'combine' && count < MIN_COMBINE_FILES;
   const blocked = count === 0 || tooFew;
@@ -424,12 +404,33 @@ export function NceiActions({ controller }: Props) {
           </Box>
         )}
 
-        {/* What is actually going to happen */}
+        {/* The sequence. Every row runs something or says why it cannot —
+            the previous strip drew four numbered stages and executed one. */}
         <Box>
-          <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted, mb: 0.5 }}>
-            Steps
-          </Typography>
-          <StageStrip stages={stages} skipped={skippedStages} />
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, mb: 0.5 }}>
+            <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
+              Steps
+            </Typography>
+            <Typography sx={{ fontSize: 10, color: theme.aa.color.text.muted }}>
+              {sequence.loading
+                ? 'checking which tools are installed…'
+                : 'each step runs on its own; a step waits for the one before it'}
+            </Typography>
+          </Box>
+          <SequenceStrip
+            stages={sequence.stages}
+            modes={sequence.modes}
+            onModeChange={sequence.setMode}
+            jobs={sequence.jobs}
+            onRun={sequence.run}
+            preview={sequence.preview}
+            blocked={sequence.blocked}
+          />
+          {sequence.error && (
+            <Typography sx={{ fontSize: 10, color: theme.aa.color.status.warning, mt: 0.5 }}>
+              {sequence.error}
+            </Typography>
+          )}
         </Box>
 
         {/* Transit gaps.
