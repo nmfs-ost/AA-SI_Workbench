@@ -53,6 +53,7 @@ import re
 import subprocess
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from importlib.metadata import Distribution, distributions
 from pathlib import Path
@@ -137,7 +138,7 @@ def _module_file(dist: Distribution, module: str) -> Path | None:
     try:
         files = dist.files or []
     except Exception:  # noqa: BLE001 - a broken dist must not stop the scan
-        return None
+        files = []
     for entry in files:
         text = str(entry).replace("\\", "/")
         if text in candidates or text.endswith(f"/{candidates[0]}"):
@@ -147,6 +148,18 @@ def _module_file(dist: Distribution, module: str) -> Path | None:
                 continue
             if located.is_file():
                 return located
+
+    # Editable installs record a `__editable__` finder rather than the real
+    # files, so the list above comes back without them and the tool would fall
+    # through to a subprocess. The source directory is on sys.path either way,
+    # so look there — still a filesystem lookup, still no import.
+    for root in sys.path:
+        if not root:
+            continue
+        for candidate in candidates:
+            found = Path(root) / candidate
+            if found.is_file():
+                return found
     return None
 
 
@@ -263,6 +276,67 @@ def params_from_source(path: Path) -> list[ParamInfo]:
     return list(merged.values())
 
 
+def help_text_from_source(path: Path) -> str:
+    """The tool's own help string, read out of the file.
+
+    The house style is a hand-written ``print_help()`` holding one long literal.
+    That literal is right there in the source, so reading it costs a file read
+    instead of an interpreter start — and `aa-nc` imports echopype at module
+    level, so *its* interpreter start is an echopype import. Multiply that by
+    every tool in the environment and the scan is the slowest thing the panel
+    does.
+
+    Picks the longest string literal that looks like help: long, and mentioning
+    a usage line, a section heading, or a flag. Wrong-guess risk is low and the
+    cost of a wrong guess is a description that does not match, so the test for
+    "looks like help" is deliberately narrow.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError):
+        return ""
+    best = ""
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        text = node.value
+        # 120 rather than something rounder: aa-nc's whole help is 912 chars
+        # and a terser tool could reasonably be a fifth of that. The length is
+        # a cheap pre-filter; `looks_like_help` below is what actually decides,
+        # and it is specific enough that a docstring will not pass it.
+        if len(text) < 120 or len(text) <= len(best):
+            continue
+        looks_like_help = (
+            "sage:" in text or "Options:" in text or "\n  --" in text
+        )
+        if looks_like_help:
+            best = text
+    return best
+
+
+def supports_describe(path: Path) -> bool:
+    """Whether the tool declares a ``--describe`` flag.
+
+    Read statically so the probe is only ever run against a tool that has one.
+    Firing ``--describe`` at the twenty-odd that do not is twenty-odd
+    interpreter starts to be told "unrecognised argument".
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError):
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "add_argument"):
+            continue
+        for arg in node.args:
+            if _literal(arg) == "--describe":
+                return True
+    return False
+
+
 # --------------------------------------------------------------------------- #
 # Layer 3 — the hand-written help text
 # --------------------------------------------------------------------------- #
@@ -345,28 +419,37 @@ def discover_tool(
     module: str,
     dist: Distribution | None,
 ) -> ToolInfo:
+    """Everything knowable about one tool, preferring reads over runs.
+
+    Ordered by cost, not by authority. A file read is microseconds; an
+    interpreter start is tens of milliseconds at best and, for a tool that
+    imports echopype at module level, seconds. So the source answers first and
+    a subprocess runs only when the source could not.
+    """
     info = ToolInfo(name=name, path=path, distribution=dist_name, version=version)
+    source = _module_file(dist, module) if (dist is not None and module) else None
 
-    # Layer 2 first — free, and the layer that gets flags exactly right. Help
-    # text is prose *about* flags; the source *is* the flags.
-    if dist is not None and module:
-        source = _module_file(dist, module)
-        if source is not None:
-            info.sourceFile = str(source)
-            params = params_from_source(source)
-            if params:
-                info.params = params
-                info.discovery = "source"
-
-    # Layer 3 — prose and sections, laid over whatever layer 2 found.
+    # Layers 2 and 3, both static.
     help_text = ""
-    try:
-        _, out, err = _run(path, ["--help"], HELP_TIMEOUT_SECONDS)
-        # Help goes to stdout in most of these and to stderr in at least one,
-        # so take whichever is longer rather than picking one and being wrong.
-        help_text = out if len(out) >= len(err) else err
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        info.detail = f"--help did not return ({type(exc).__name__})."
+    if source is not None:
+        info.sourceFile = str(source)
+        params = params_from_source(source)
+        if params:
+            info.params = params
+            info.discovery = "source"
+        help_text = help_text_from_source(source)
+
+    # Fall back to running --help only when the source could not be reached or
+    # held no help string. On a normal install this never happens.
+    if not help_text:
+        try:
+            _, out, err = _run(path, ["--help"], HELP_TIMEOUT_SECONDS)
+            # Help goes to stdout in most of these and stderr in at least one,
+            # so take whichever is longer rather than picking one and being
+            # wrong.
+            help_text = out if len(out) >= len(err) else err
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            info.detail = f"--help did not return ({type(exc).__name__})."
 
     if help_text.strip():
         summary, entries = parse_help(help_text)
@@ -397,22 +480,24 @@ def discover_tool(
             if info.params:
                 info.discovery = "help"
 
-    # Layer 1 — authoritative where it exists, so it goes on top.
-    try:
-        code, out, _ = _run(path, ["--describe"], HELP_TIMEOUT_SECONDS)
-        if code == 0 and out.strip().startswith("{"):
-            payload = json.loads(out)
-            if isinstance(payload, dict):
-                info.describe = payload
-                info.discovery = "describe"
-                schema = str(payload.get("schema") or "")
-                if schema not in KNOWN_DESCRIBE_SCHEMAS:
-                    info.detail = (
-                        f"reports schema {schema or '(none)'}, which this build "
-                        "does not know; the source read stands."
-                    )
-    except Exception:  # noqa: BLE001 - no --describe is the normal case
-        pass
+    # Layer 1 — authoritative, so it goes on top. The only subprocess this
+    # function normally runs, and only for a tool the source says has the flag.
+    if source is None or supports_describe(source):
+        try:
+            code, out, _ = _run(path, ["--describe"], HELP_TIMEOUT_SECONDS)
+            if code == 0 and out.strip().startswith("{"):
+                payload = json.loads(out)
+                if isinstance(payload, dict):
+                    info.describe = payload
+                    info.discovery = "describe"
+                    schema = str(payload.get("schema") or "")
+                    if schema not in KNOWN_DESCRIBE_SCHEMAS:
+                        info.detail = (
+                            f"reports schema {schema or '(none)'}, which this "
+                            "build does not know; the source read stands."
+                        )
+        except Exception:  # noqa: BLE001 - no --describe is the normal case
+            pass
 
     if not info.params and not info.describe and not info.detail:
         info.detail = (
@@ -423,7 +508,14 @@ def discover_tool(
 
 
 def build_catalog() -> ToolCatalog:
-    tools: list[ToolInfo] = []
+    """Scan the whole environment.
+
+    Discovery is static for every tool that can be read, so this is normally a
+    few dozen file reads. The stragglers — a tool with no readable source, or
+    one that really does have `--describe` — are probed in parallel, because
+    the slow part of a probe is waiting for someone else's imports.
+    """
+    jobs: list[tuple] = []
     bin_dir = Path(sys.executable).parent
 
     for dist in distributions():
@@ -440,8 +532,8 @@ def build_catalog() -> ToolCatalog:
                 continue
             path = bin_dir / entry.name
             module = getattr(entry, "module", "") or entry.value.split(":")[0]
-            tools.append(
-                discover_tool(
+            jobs.append(
+                (
                     entry.name,
                     str(path) if path.exists() else entry.name,
                     dist_name,
@@ -450,6 +542,20 @@ def build_catalog() -> ToolCatalog:
                     dist,
                 )
             )
+
+    # One console script can be exposed by more than one installed
+    # distribution — a stale copy alongside an editable one, most often. The
+    # name is what gets run, so it is one tool, and probing it three times is
+    # three interpreter starts for one answer.
+    unique: dict[str, tuple] = {}
+    for job in jobs:
+        unique.setdefault(job[0], job)
+
+    if unique:
+        with ThreadPoolExecutor(max_workers=min(8, len(unique))) as pool:
+            tools = list(pool.map(lambda args: discover_tool(*args), unique.values()))
+    else:
+        tools = []
 
     tools.sort(key=lambda tool: tool.name)
     by_layer: dict[str, int] = {}

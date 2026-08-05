@@ -405,3 +405,71 @@ def test_help_text_supplies_prose_and_sections() -> None:
     assert entries["--json"][0] == "Machine interfaces"
     # Both spellings of the same entry are recorded.
     assert "-o" in entries
+
+
+HELPFUL_TOOL = '''
+import argparse
+
+def print_help():
+    help_text = """
+    Usage: aa-thing [OPTIONS] STORE
+
+    Does a thing to a store.
+
+    Output:
+      -o, --output_path PATH    Where the result lands.
+      --strict                  Refuse rather than warn.
+    """
+    print(help_text)
+
+def main():
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("-o", "--output_path", default=None)
+    p.add_argument("--strict", action="store_true")
+'''
+
+
+def test_help_text_is_read_from_source_not_by_running_the_tool(tmp_path: Path) -> None:
+    """The expensive part of discovery was one interpreter start per tool.
+
+    `aa-nc` imports echopype at module level, so *its* interpreter start is an
+    echopype import; across an environment that is the whole cost of a scan.
+    The help string is a literal sitting in the file.
+    """
+    from aa_si_workbench.api.tools import help_text_from_source, parse_help
+
+    module = tmp_path / "helpful.py"
+    module.write_text(HELPFUL_TOOL)
+
+    text = help_text_from_source(module)
+    assert "Does a thing to a store." in text
+
+    _, entries = parse_help(text)
+    assert entries["--output_path"][0] == "Output"
+
+
+def test_a_short_string_is_not_mistaken_for_help(tmp_path: Path) -> None:
+    from aa_si_workbench.api.tools import help_text_from_source
+
+    module = tmp_path / "terse.py"
+    module.write_text('X = "Options: not really"\nY = "short"\n')
+    assert help_text_from_source(module) == ""
+
+
+def test_describe_support_is_detected_before_it_is_probed(tmp_path: Path) -> None:
+    """Firing --describe at a tool that lacks it is an interpreter start to be
+    told 'unrecognised argument'. Only one of these tools has the flag."""
+    from aa_si_workbench.api.tools import supports_describe
+
+    with_flag = tmp_path / "with.py"
+    with_flag.write_text(
+        'import argparse\np = argparse.ArgumentParser()\n'
+        'p.add_argument("--describe", action="store_true")\n'
+    )
+    without = tmp_path / "without.py"
+    without.write_text(
+        'import argparse\np = argparse.ArgumentParser()\n'
+        'p.add_argument("--json", action="store_true")\n'
+    )
+    assert supports_describe(with_flag) is True
+    assert supports_describe(without) is False

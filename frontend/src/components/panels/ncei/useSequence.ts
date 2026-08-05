@@ -24,12 +24,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { startJob, useJobs } from '../../../state/jobs';
 import { toolsApi } from '../../../services/toolsApi';
 import type { JobStatus } from '../../../services/jobsApi';
+import type { FlagValue, FlagValues } from './StageFlags';
 import { sendToTerminal } from '../../../state/terminal';
 import {
   FIRST_TIER,
   defaultMode,
   findMode,
   resolveSequence,
+  type DiscoveredParam,
   type DiscoveredTool,
   type ResolvedStage,
   type StageMode,
@@ -142,6 +144,66 @@ export function buildArgs(
   }
 }
 
+/**
+ * The user's per-stage flags, as argv.
+ *
+ * Uses the *first* spelling discovery found, which is the tool's own primary
+ * one — `-o` where a tool declares `-o, --output_path, --output`. A boolean is
+ * the flag alone or nothing at all; there is no `--flag false`, because
+ * `store_true` has no such spelling and sending one would be a parse error.
+ */
+export function flagArgs(
+  values: FlagValues,
+  params: readonly DiscoveredParam[],
+  owns: ReadonlySet<string>,
+): string[] {
+  const out: string[] = [];
+  for (const param of params) {
+    if (owns.has(param.id) || param.positional) continue;
+    const value = values[param.id];
+    if (value === undefined || value === '') continue;
+    const flag = param.flags[0];
+    if (!flag) continue;
+    if (param.type === 'boolean') {
+      if (value === true) out.push(flag);
+      continue;
+    }
+    out.push(flag, String(value));
+  }
+  return out;
+}
+
+/** Everything the sequence sets for a stage, for the locked rows in the form. */
+export function ownedValues(stageId: string, ctx: SequenceContext): Record<string, string> {
+  switch (stageId) {
+    case 'request':
+      return {
+        vessel: ctx.vesselId,
+        survey: ctx.surveyName,
+        instrument: ctx.sonarName,
+        start: ctx.dateFrom,
+        end: ctx.dateTo,
+        output_path: ctx.requestPath,
+      };
+    case 'fetch':
+      return {
+        yaml_path: ctx.requestPath,
+        output_root: ctx.downloadRoot,
+        download_dir_name: ctx.runName,
+      };
+    case 'convert':
+      return { file_name: ctx.workdir };
+    case 'assemble':
+      return { workdir: ctx.workdir, output_path: ctx.output };
+    case 'verify':
+      return { args: ctx.output };
+    case 'publish':
+      return { path: ctx.output, destination_prefix: ctx.destinationPrefix };
+    default:
+      return {};
+  }
+}
+
 export interface SequenceRuntime {
   stages: ResolvedStage[];
   modes: Record<string, string>;
@@ -150,6 +212,14 @@ export interface SequenceRuntime {
   blocked: ReadonlySet<string>;
   run: (stageId: string, mode: StageMode) => void;
   preview: (stageId: string, mode: StageMode) => string;
+  /** stageId -> paramId -> value the user set. */
+  flags: Record<string, FlagValues>;
+  setFlag: (stageId: string, paramId: string, next: FlagValue | undefined) => void;
+  owned: (stageId: string) => Record<string, string>;
+  /** Run every stage that is not already done, in order. */
+  runAll: () => void;
+  /** The whole sequence as one shell pipeline, for the preview. */
+  fullCommand: string;
   /** True while the environment and describe probe are still loading. */
   loading: boolean;
   error: string;
@@ -168,6 +238,8 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
   );
   /** stageId -> job id started from this panel. */
   const [started, setStarted] = useState<Record<string, string>>({});
+  /** stageId -> paramId -> the value the user typed or ticked. */
+  const [flags, setFlags] = useState<Record<string, FlagValues>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -183,7 +255,7 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
                 name: tool.name,
                 version: tool.version,
                 discovery: tool.discovery,
-                paramCount: tool.params.length,
+                params: tool.params,
               },
             ]),
           ),
@@ -245,22 +317,61 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
     setModes((current) => ({ ...current, [stageId]: modeId }));
   }, []);
 
+  const argvFor = useCallback(
+    (stageId: string, mode: StageMode) => {
+      const resolved = stages.find((item) => item.stage.id === stageId);
+      const owns = new Set(resolved?.stage.owns ?? []);
+      return [
+        ...buildArgs(stageId, mode, ctx),
+        ...flagArgs(flags[stageId] ?? {}, resolved?.params ?? [], owns),
+      ];
+    },
+    [stages, ctx, flags],
+  );
+
   const preview = useCallback(
     (stageId: string, mode: StageMode) => {
       const resolved = stages.find((item) => item.stage.id === stageId);
       const tool = resolved?.resolvedTool ?? stageId;
-      return [tool, ...buildArgs(stageId, mode, ctx)]
+      return [tool, ...argvFor(stageId, mode)]
         .map((part) => (/[\s"']/.test(part) ? `"${part}"` : part))
         .join(' ');
     },
-    [stages, ctx],
+    [stages, argvFor],
+  );
+
+  const setFlag = useCallback(
+    (stageId: string, paramId: string, next: FlagValue | undefined) => {
+      setFlags((current) => {
+        const stageFlags = { ...(current[stageId] ?? {}) };
+        if (next === undefined) delete stageFlags[paramId];
+        else stageFlags[paramId] = next;
+        return { ...current, [stageId]: stageFlags };
+      });
+    },
+    [],
+  );
+
+  const owned = useCallback((stageId: string) => ownedValues(stageId, ctx), [ctx]);
+
+  /* Every stage on one line, in order. Not a pipeline: these compose by each
+     printing a path the next one is given, and the sequence passes those paths
+     explicitly rather than relying on stdin. Shown with `&&` because that is
+     what it means — each step runs only if the one before it succeeded. */
+  const fullCommand = useMemo(
+    () =>
+      stages
+        .filter((item) => item.runnable && !item.stage.optional)
+        .map((item) => preview(item.stage.id, findMode(item.stage, modes[item.stage.id] ?? '')))
+        .join(' \\\n  && '),
+    [stages, modes, preview],
   );
 
   const run = useCallback(
     (stageId: string, mode: StageMode) => {
       const resolved = stages.find((item) => item.stage.id === stageId);
       if (!resolved || !resolved.runnable) return;
-      const args = buildArgs(stageId, mode, ctx);
+      const args = argvFor(stageId, mode);
 
       if (resolved.stage.runsVia === 'terminal') {
         sendToTerminal(preview(stageId, mode), { origin: 'NCEI', execute: true });
@@ -273,16 +384,36 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
         tool: resolved.resolvedTool,
         args,
         label: `${resolved.stage.label} — ${mode.label}`,
-        cwd: ctx.workdir,
+        cwd: ctx.downloadRoot,
       }).then((job) => {
         if (job) setStarted((current) => ({ ...current, [stageId]: job.id }));
       });
     },
-    [stages, ctx, preview],
+    [stages, ctx, preview, argvFor],
   );
+
+  /* Run the first stage that is neither done nor optional. The gate does the
+     rest: as each job succeeds the next unblocks, so "Run all" is repeated
+     presses of one button that the sequence itself sequences. Fired blind, it
+     would queue six jobs whose inputs do not exist yet. */
+  const runAll = useCallback(() => {
+    for (const item of stages) {
+      if (item.stage.optional || !item.runnable) continue;
+      const job = jobs[item.stage.id];
+      if (job?.state === 'succeeded') continue;
+      if (job?.state === 'running' || job?.state === 'queued') return;
+      run(item.stage.id, findMode(item.stage, modes[item.stage.id] ?? ''));
+      return;
+    }
+  }, [stages, jobs, modes, run]);
 
   return {
     stages,
+    flags,
+    setFlag,
+    owned,
+    runAll,
+    fullCommand,
     modes,
     setMode,
     jobs,

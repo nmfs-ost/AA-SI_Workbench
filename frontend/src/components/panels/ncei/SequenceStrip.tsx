@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Box,
   Button,
@@ -132,6 +133,14 @@ export interface SequenceStripProps {
   preview: (stageId: string, mode: StageMode) => string;
   /** Stages that cannot run yet because an earlier one has not succeeded. */
   blocked: ReadonlySet<string>;
+  /**
+   * The stage's own flag controls, generated from what discovery read off the
+   * tool. Passed in rather than rendered here so the strip stays about state
+   * and order, and knows nothing about form controls.
+   */
+  renderFlags: (resolved: ResolvedStage) => ReactNode;
+  /** Open a finished stage's log in the Processing Queue. */
+  onOpenJob: (jobId: string) => void;
 }
 
 export function SequenceStrip({
@@ -142,6 +151,8 @@ export function SequenceStrip({
   onRun,
   preview,
   blocked,
+  renderFlags,
+  onOpenJob,
 }: SequenceStripProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -164,6 +175,8 @@ export function SequenceStrip({
           onModeChange={(modeId) => onModeChange(resolved.stage.id, modeId)}
           onRun={(mode) => onRun(resolved.stage.id, mode)}
           preview={(mode) => preview(resolved.stage.id, mode)}
+          renderFlags={() => renderFlags(resolved)}
+          onOpenJob={onOpenJob}
         />
       ))}
     </Box>
@@ -181,6 +194,8 @@ function StageRow({
   onModeChange,
   onRun,
   preview,
+  renderFlags,
+  onOpenJob,
 }: {
   index: number;
   resolved: ResolvedStage;
@@ -192,6 +207,8 @@ function StageRow({
   onModeChange: (modeId: string) => void;
   onRun: (mode: StageMode) => void;
   preview: (mode: StageMode) => string;
+  renderFlags: () => ReactNode;
+  onOpenJob: (jobId: string) => void;
 }) {
   const theme = useTheme();
   const { stage, confidence, resolvedTool, version, note, runnable } = resolved;
@@ -265,7 +282,17 @@ function StageRow({
         )}
 
         <Box sx={{ flex: 1, minWidth: 0 }} />
-        <Outcome job={job} />
+        {/* The outcome is the way into the log. A stage that finished badly is
+            exactly the moment someone wants stderr, and making them find the
+            job by name in another panel is the seam this closes. */}
+        <Tooltip title={job ? 'Open this step’s log in the Processing Queue' : ''}>
+          <Box
+            onClick={() => job && onOpenJob(job.id)}
+            sx={{ display: 'flex', cursor: job ? 'pointer' : 'default' }}
+          >
+            <Outcome job={job} />
+          </Box>
+        </Tooltip>
 
         <Tooltip title={disabledReason}>
           <span style={{ display: 'flex' }}>
@@ -358,7 +385,7 @@ function StageRow({
           color: theme.aa.color.text.muted,
         }}
       >
-        {open ? 'Hide command' : 'Command'}
+        {open ? 'Hide settings' : 'Settings & command'}
       </Button>
 
       {open && (
@@ -382,6 +409,8 @@ function StageRow({
           </Typography>
         </Box>
       )}
+
+      {open && <Box sx={{ mt: 0.75 }}>{renderFlags()}</Box>}
     </Box>
   );
 }

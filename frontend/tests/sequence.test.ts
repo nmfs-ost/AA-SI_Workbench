@@ -8,16 +8,39 @@ import {
   resolveStage,
   stopsSequence,
 } from '../src/components/panels/ncei/sequence';
-import { buildArgs, type SequenceContext } from '../src/components/panels/ncei/useSequence';
-import type { DiscoveredTool } from '../src/components/panels/ncei/sequence';
+import {
+  buildArgs,
+  flagArgs,
+  type SequenceContext,
+} from '../src/components/panels/ncei/useSequence';
+import type {
+  DiscoveredParam,
+  DiscoveredTool,
+} from '../src/components/panels/ncei/sequence';
 
 /** What /api/tools/describe reports for one installed tool. */
+function param(id: string, over: Partial<DiscoveredParam> = {}): DiscoveredParam {
+  return {
+    id,
+    flags: [`--${id.replace(/_/g, '-')}`],
+    positional: false,
+    type: 'string',
+    default: null,
+    choices: [],
+    required: false,
+    help: '',
+    section: '',
+    origin: 'source',
+    ...over,
+  };
+}
+
 function found(
   name: string,
   discovery = 'source',
-  paramCount = 12,
+  params: DiscoveredParam[] = [param('strict', { type: 'boolean' })],
 ): [string, DiscoveredTool] {
-  return [name, { name, version: '0.4.1', discovery, paramCount }];
+  return [name, { name, version: '0.4.1', discovery, params }];
 }
 const NOTHING = new Map<string, DiscoveredTool>();
 
@@ -64,10 +87,10 @@ describe('stage resolution against the installed environment', () => {
   it('carries which layer answered, so the source of a fact is knowable', () => {
     const resolved = resolveStage(
       stageById('assemble'),
-      new Map([found('aa-combine', 'describe', 21)]),
+      new Map([found('aa-combine', 'describe', [param('sort'), param('strict')])]),
     );
     expect(resolved.discovery).toBe('describe');
-    expect(resolved.paramCount).toBe(21);
+    expect(resolved.params.map((p) => p.id)).toEqual(['sort', 'strict']);
   });
 
   it('accepts an alias, and reports the name actually found', () => {
@@ -245,5 +268,45 @@ describe('the chain composes by path passing', () => {
     expect(FIRST_TIER.find((s) => s.id === 'publish')!.optional).toBe(true);
     // And it is last, so there is nothing after it to gate anyway.
     expect(FIRST_TIER[FIRST_TIER.length - 1].id).toBe('publish');
+  });
+});
+
+describe('per-stage flags', () => {
+  const params: DiscoveredParam[] = [
+    param('strict', { type: 'boolean' }),
+    param('sort', { type: 'enum', choices: ['time', 'given'], default: 'time' }),
+    param('chunk_pings', { type: 'number', flags: ['--chunk-pings', '--chunk_pings'] }),
+    param('workdir'),
+  ];
+  const owns = new Set(['workdir']);
+
+  it('sends nothing for a flag left alone', () => {
+    expect(flagArgs({}, params, owns)).toEqual([]);
+  });
+
+  it('a boolean is the flag alone, never --flag false', () => {
+    // store_true has no `--flag false` spelling; sending one is a parse error.
+    expect(flagArgs({ strict: true }, params, owns)).toEqual(['--strict']);
+    expect(flagArgs({ strict: false }, params, owns)).toEqual([]);
+  });
+
+  it('uses the tool’s primary spelling when there are several', () => {
+    expect(flagArgs({ chunk_pings: 500 }, params, owns)).toEqual(['--chunk-pings', '500']);
+  });
+
+  it('never emits a flag the sequence owns', () => {
+    // The chain is what connects one stage to the next; letting the form retype
+    // --workdir would break it silently, and emit it twice besides.
+    expect(flagArgs({ workdir: '/somewhere/else' }, params, owns)).toEqual([]);
+  });
+
+  it('every owned id is a flag the tool actually has', () => {
+    // A typo in `owns` would silently unlock a field the sequence sets.
+    const ids = new Set(params.map((p) => p.id));
+    for (const id of owns) expect(ids.has(id)).toBe(true);
+  });
+
+  it('an empty string is "unset", not an empty argument', () => {
+    expect(flagArgs({ sort: '' }, params, owns)).toEqual([]);
   });
 });

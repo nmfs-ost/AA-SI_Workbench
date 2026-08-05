@@ -17,9 +17,9 @@ import {
   useTheme,
 } from '@mui/material';
 import {
-  DownloadOutlined,
   ExpandLessOutlined,
   ExpandMoreOutlined,
+  PlayArrowOutlined,
   TerminalOutlined,
 } from '@mui/icons-material';
 
@@ -29,18 +29,18 @@ import { formatBytes } from './nceiService';
 import type { NceiSearchController } from './useNceiSearch';
 import {
   OUTPUT_FORMATS,
-  buildFlags,
   combineOptions,
   defaultsFor,
   downloadOptions,
-  quote,
   withFormatExtension,
 } from './combineOptions';
 import type { OptionDef, OptionValues, OutputFormat } from './combineOptions';
 import { findSeams, formatGap } from './seams';
 import { SequenceStrip } from './SequenceStrip';
 import { useSequence, type SequenceContext } from './useSequence';
-import { startPolling, stopPolling } from '../../../state/jobs';
+import { findMode } from './sequence';
+import { StageFlags } from './StageFlags';
+import { selectJob, startPolling, stopPolling } from '../../../state/jobs';
 
 interface Props {
   controller: NceiSearchController;
@@ -220,53 +220,16 @@ export function NceiActions({ controller }: Props) {
     [],
   );
 
-  /* The command, built from the schema. This is what the user sees and what
-     gets typed into the terminal — there is no second, hidden version. */
-  const command = useMemo(() => {
-    const names = targetFiles.map((f) => f.name);
-    if (workflow === 'download') {
-      const flags = buildFlags(downloadOptions, downloadValues, format);
-      return [
-        'aa-fetch',
-        '--ship_name',
-        quote(vesselId),
-        '--survey_name',
-        quote(surveyName),
-        '--sonar_model',
-        quote(sonarName),
-        ...(names.length === 1 ? ['--file_name', quote(names[0])] : []),
-        ...flags,
-        extraFlags.trim(),
-      ]
-        .filter(Boolean)
-        .join(' ');
-    }
-    const flags = buildFlags(combineOptions, combineValues, format);
-    return ['aa-combine', ...flags, extraFlags.trim()].filter(Boolean).join(' ');
-  }, [
-    workflow,
-    targetFiles,
-    downloadValues,
-    combineValues,
-    format,
-    extraFlags,
-    vesselId,
-    surveyName,
-    sonarName,
-  ]);
-
   /* The first-tier sequence: acquire -> convert -> assemble -> verify.
 
-     The options form above still owns the aa-combine flags; the sequence owns
-     the *order* and the running. Handing the flags across rather than letting
-     the sequence re-derive them keeps one place where a combine option is
-     spelled, which is the property the old single-command path had and the one
-     thing about it worth keeping. */
+     The combine options form below still owns aa-combine's flags; the sequence
+     owns the order, the flags of every *other* stage, and the running. */
   const sequenceCtx: SequenceContext = useMemo(() => {
-    /* aa-fetch creates `<output_root>/<download_dir_name>` and prints it. We
-       name both halves rather than letting it default to a timestamp, so the
+    /* aa-fetch creates `<output_root>/<download_dir_name>` and prints it. Both
+       halves are named rather than left to default to a timestamp, so the
        directory Convert and Assemble read is knowable before Fetch has run. */
-    const runName = String(downloadValues.destination ?? '').trim() ||
+    const runName =
+      String(downloadValues.destination ?? '').trim() ||
       `${vesselId}_${surveyName}_${sonarName}_NCEI`;
     const downloadRoot = '.';
     return {
@@ -279,21 +242,24 @@ export function NceiActions({ controller }: Props) {
       downloadRoot,
       runName,
       workdir: `${downloadRoot}/${runName}`,
-      output: String(combineValues.output ?? '').trim() ||
+      output:
+        String(combineValues.output ?? '').trim() ||
         `combined_${surveyName}_${sonarName}${format === 'zarr' ? '.zarr' : '.nc'}`,
-      combineFlags: [
-        ...buildFlags(combineOptions, combineValues, format).filter(
-          // -o is contributed by the stage, which knows whether its mode writes.
-          (_, index, all) => all[index - 1] !== '-o' && all[index] !== '-o',
-        ),
-        ...(extraFlags.trim() ? extraFlags.trim().split(/\s+/) : []),
-      ],
+      combineFlags: extraFlags.trim() ? extraFlags.trim().split(/\s+/) : [],
       requestPath: `${vesselId}_${surveyName}_request.yaml`,
       destinationPrefix: `derived/${vesselId}/${surveyName}/${sonarName}`,
     };
   }, [
-    vesselId, surveyName, sonarName, targetFiles, dateFrom, dateTo,
-    downloadValues.destination, combineValues, format, extraFlags,
+    vesselId,
+    surveyName,
+    sonarName,
+    targetFiles,
+    dateFrom,
+    dateTo,
+    downloadValues.destination,
+    combineValues.output,
+    format,
+    extraFlags,
   ]);
 
   const sequence = useSequence(sequenceCtx);
@@ -305,8 +271,34 @@ export function NceiActions({ controller }: Props) {
     return () => stopPolling();
   }, []);
 
-  const tooFew = workflow === 'combine' && count < MIN_COMBINE_FILES;
-  const blocked = count === 0 || tooFew;
+  /* What Run would do next, and why it might not. The sequence gates itself,
+     so "next" is the first required stage that has not succeeded. */
+  const nextStage = sequence.stages.find(
+    (item) =>
+      !item.stage.optional &&
+      item.runnable &&
+      sequence.jobs[item.stage.id]?.state !== 'succeeded',
+  );
+  const sequenceDone =
+    sequence.stages.filter((i) => !i.stage.optional && i.runnable).length > 0 &&
+    !nextStage;
+  const busy = Object.values(sequence.jobs).some(
+    (job) => job?.state === 'running' || job?.state === 'queued',
+  );
+  const blockedReason = sequence.loading
+    ? 'Still scanning the environment for aa-* tools'
+    : busy
+      ? 'A step is already running'
+      : !nextStage
+        ? sequenceDone
+          ? 'Every step has finished'
+          : 'No tools resolved in this environment'
+        : count === 0
+          ? 'Select files first'
+          : count < MIN_COMBINE_FILES
+            ? `Combining needs at least ${MIN_COMBINE_FILES} files — widen the range or selection`
+            : '';
+
 
   /* Transit gaps in the selection. Only meaningful for Combine — downloading
      files across a gap is fine, it is *merging* them onto one ping axis that
@@ -318,11 +310,6 @@ export function NceiActions({ controller }: Props) {
     [workflow, targetFiles],
   );
   const seams = seamReport?.seams ?? [];
-
-  const run = useCallback(() => {
-    openPanel('terminal');
-    sendToTerminal(command, { origin: 'NCEI', execute: true });
-  }, [command, openPanel]);
 
   const scopeLabel =
     selected.size > 0 ? 'selected' : dateFrom || dateTo ? 'in range' : 'in view';
@@ -432,6 +419,20 @@ export function NceiActions({ controller }: Props) {
             onRun={sequence.run}
             preview={sequence.preview}
             blocked={sequence.blocked}
+            renderFlags={(resolved) => (
+              <StageFlags
+                resolved={resolved}
+                values={sequence.flags[resolved.stage.id] ?? {}}
+                ownedValues={sequence.owned(resolved.stage.id)}
+                onChange={(paramId, next) =>
+                  sequence.setFlag(resolved.stage.id, paramId, next)
+                }
+              />
+            )}
+            onOpenJob={(jobId) => {
+              selectJob(jobId);
+              openPanel('processingQueue');
+            }}
           />
           {sequence.error && (
             <Typography sx={{ fontSize: 10, color: theme.aa.color.status.warning, mt: 0.5 }}>
@@ -611,7 +612,51 @@ export function NceiActions({ controller }: Props) {
           </Box>
         </Collapse>
 
-        {/* The command, exactly as it will be typed */}
+        {/* One Run, and it drives the sequence above.
+
+            There used to be two: per-stage buttons in the strip, and this one,
+            which emitted a single `aa-fetch --ship_name … --survey_name …
+            --sonar_model … --file_name …` and typed it at the shell. Discovery
+            reports that aa-fetch accepts none of those four — its flags are
+            -o and -n and it takes the document positionally — so that command
+            had never been able to run. Two systems, one of them broken, in one
+            panel. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted, flex: 1 }}>
+            {sequenceDone
+              ? 'Every step finished.'
+              : nextStage
+                ? `Next: ${nextStage.stage.label} — ${
+                    findMode(nextStage.stage, sequence.modes[nextStage.stage.id] ?? '')
+                      .label
+                  }`
+                : 'Nothing to run — no tools resolved.'}
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => openPanel('processingQueue')}
+            sx={{ fontSize: 10.5, textTransform: 'none' }}
+          >
+            Queue
+          </Button>
+          <Tooltip title={blockedReason}>
+            <span style={{ display: 'flex' }}>
+              <Button
+                variant="contained"
+                size="small"
+                disabled={Boolean(blockedReason)}
+                startIcon={<PlayArrowOutlined sx={{ fontSize: 16 }} />}
+                onClick={sequence.runAll}
+                sx={{ textTransform: 'none' }}
+              >
+                {nextStage ? `Run ${nextStage.stage.label}` : 'Run'}
+              </Button>
+            </span>
+          </Tooltip>
+        </Box>
+
+        {/* The whole sequence, as it would be typed. `&&` rather than `|`
+            because these compose by passing paths, not by streaming. */}
         <Box
           sx={{
             p: 1,
@@ -619,50 +664,29 @@ export function NceiActions({ controller }: Props) {
             backgroundColor: theme.aa.color.bg.base,
             border: `1px solid ${theme.aa.color.border.subtle}`,
             fontFamily: theme.aa.font.mono,
-            fontSize: 11.5,
+            fontSize: 10.5,
             color: theme.aa.color.text.secondary,
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all',
           }}
         >
-          {command}
+          {sequence.fullCommand || 'No runnable steps.'}
         </Box>
-
-        <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
-          {workflow === 'download'
-            ? 'aa-fetch is interactive — it runs in the Terminal panel so you can answer its prompts.'
-            : 'Runs in the Terminal panel. Combining needs the raw files locally first.'}
-        </Typography>
-
-        <Tooltip
-          title={
-            tooFew
-              ? `Combining needs at least ${MIN_COMBINE_FILES} files — widen the range or selection`
-              : count === 0
-                ? 'Select files first'
-                : ''
-          }
+        <Button
+          size="small"
+          startIcon={<TerminalOutlined sx={{ fontSize: 14 }} />}
+          onClick={() => {
+            openPanel('terminal');
+            // Typed, not executed: this is the escape hatch for running the
+            // chain by hand, and a command that lands pre-run leaves nothing
+            // to inspect or edit first.
+            sendToTerminal(sequence.fullCommand, { origin: 'NCEI', execute: false });
+          }}
+          disabled={!sequence.fullCommand}
+          sx={{ alignSelf: 'flex-start', fontSize: 10.5, textTransform: 'none' }}
         >
-          <span>
-            <Button
-              fullWidth
-              variant="contained"
-              size="small"
-              disabled={blocked}
-              startIcon={
-                workflow === 'download' ? (
-                  <DownloadOutlined sx={{ fontSize: 16 }} />
-                ) : (
-                  <TerminalOutlined sx={{ fontSize: 16 }} />
-                )
-              }
-              onClick={run}
-              sx={{ textTransform: 'none' }}
-            >
-              Run in terminal
-            </Button>
-          </span>
-        </Tooltip>
+          Send to terminal
+        </Button>
       </Box>
     </Box>
   );

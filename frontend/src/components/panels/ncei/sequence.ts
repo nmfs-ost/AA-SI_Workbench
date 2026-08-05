@@ -48,13 +48,27 @@
  * queued, watched and resumed like everything else.
  */
 
+/** One flag, as discovery read it out of the tool. */
+export interface DiscoveredParam {
+  id: string;
+  flags: string[];
+  positional: boolean;
+  type: 'boolean' | 'number' | 'string' | 'enum';
+  default: string | number | boolean | null;
+  choices: string[];
+  required: boolean;
+  help: string;
+  section: string;
+  origin: string;
+}
+
 /** What discovery knows about one installed tool. */
 export interface DiscoveredTool {
   name: string;
   version: string;
   /** describe | source | help — which layer read its flags. */
   discovery: string;
-  paramCount: number;
+  params: DiscoveredParam[];
 }
 
 /** How a stage is invoked. */
@@ -123,6 +137,14 @@ export interface SequenceStage {
    * to a bucket.
    */
   optional?: boolean;
+  /**
+   * Parameter ids the sequence sets itself, from the selection and from the
+   * stage before it. They are shown in the form but not editable: the whole
+   * point of a sequence is that the output of one stage addresses the next, and
+   * a form that lets you retype `--workdir` is a form that lets you break that
+   * without being told.
+   */
+  owns?: readonly string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,6 +154,7 @@ export interface SequenceStage {
 export const FIRST_TIER: readonly SequenceStage[] = [
   {
     id: 'request',
+    owns: ['vessel', 'survey', 'instrument', 'start', 'end', 'output_path'],
     label: 'Request',
     tool: 'aa-request',
     description:
@@ -158,6 +181,7 @@ export const FIRST_TIER: readonly SequenceStage[] = [
   },
   {
     id: 'fetch',
+    owns: ['yaml_path', 'output_root', 'download_dir_name'],
     label: 'Fetch',
     tool: 'aa-fetch',
     description:
@@ -180,6 +204,7 @@ export const FIRST_TIER: readonly SequenceStage[] = [
   },
   {
     id: 'convert',
+    owns: ['file_name'],
     label: 'Convert',
     tool: 'aa-ed',
     // aa-nc is the single-file, --sonar_model-required form; aa-raw was the
@@ -202,6 +227,7 @@ export const FIRST_TIER: readonly SequenceStage[] = [
   },
   {
     id: 'assemble',
+    owns: ['workdir', 'output_path'],
     label: 'Assemble',
     tool: 'aa-combine',
     description:
@@ -236,6 +262,7 @@ export const FIRST_TIER: readonly SequenceStage[] = [
   },
   {
     id: 'verify',
+    owns: ['args'],
     label: 'Verify',
     tool: 'aa-store',
     description:
@@ -263,6 +290,7 @@ export const FIRST_TIER: readonly SequenceStage[] = [
   },
   {
     id: 'publish',
+    owns: ['path', 'destination_prefix', 'as_is', 'dry_run'],
     label: 'Publish',
     tool: 'aa-upload',
     description:
@@ -325,8 +353,14 @@ export interface ResolvedStage {
   runnable: boolean;
   /** Which layer the flags came from: describe | source | help. */
   discovery: string;
-  /** How many flags discovery found for this tool. */
-  paramCount: number;
+  /**
+   * Every flag the tool takes, read from the tool. Empty when it is missing.
+   *
+   * This is what lets a stage render its own controls instead of the panel
+   * carrying a hand-written option list per tool — the list that had
+   * `aa-fetch` taking `--ship_name`, which it does not.
+   */
+  params: DiscoveredParam[];
 }
 
 /**
@@ -356,7 +390,7 @@ export function resolveStage(
           : `${stage.tool} is not installed in this environment.`,
       runnable: false,
       discovery: 'none',
-      paramCount: 0,
+      params: [],
     };
   }
 
@@ -366,7 +400,7 @@ export function resolveStage(
     version: found.version,
     runnable: true,
     discovery: found.discovery,
-    paramCount: found.paramCount,
+    params: found.params,
   };
 
   // An open question is about how the *sequence* invokes the tool, not about
