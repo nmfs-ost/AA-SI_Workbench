@@ -16,7 +16,40 @@
  * favicon at public/favicon.svg repeats this geometry — a static file can't
  * import a component — so a change to the shape belongs in both.
  */
+import { useState } from 'react';
+
+/**
+ * Where the official emblem goes, when there is one.
+ *
+ * Drop the real asset at `frontend/public/noaa-emblem.svg` (or .png) and it
+ * appears here and in the tab. Until then the drawn mark below is used.
+ *
+ * Deliberately a file rather than something reproduced in code: the NOAA
+ * emblem is an official agency insignia with its own usage guidance, and an
+ * approximation of it drawn from memory would be worse than an honest original
+ * mark — it would look like the real thing while not being it. The file is
+ * loaded at runtime and falls back silently when absent, so a build with no
+ * emblem is not a broken build.
+ */
+const EMBLEM_SRC = '/noaa-emblem.svg';
+
 export function NoaaMark({ size = 20 }: { size?: number }) {
+  const [emblemFailed, setEmblemFailed] = useState(false);
+
+  if (!emblemFailed) {
+    return (
+      <img
+        src={EMBLEM_SRC}
+        width={size}
+        height={size}
+        alt="NOAA"
+        // A missing file is the normal case, not an error worth logging.
+        onError={() => setEmblemFailed(true)}
+        style={{ display: 'block', objectFit: 'contain' }}
+      />
+    );
+  }
+
   return (
     <svg
       width={size}

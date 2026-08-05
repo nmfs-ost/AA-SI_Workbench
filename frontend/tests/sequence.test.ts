@@ -310,3 +310,51 @@ describe('per-stage flags', () => {
     expect(flagArgs({ sort: '' }, params, owns)).toEqual([]);
   });
 });
+
+describe('a checking mode must not look like it produced something', () => {
+  it('request omits -o when the mode does not write', () => {
+    // `aa-request --check` exits after validating, before the write. Passing -o
+    // anyway makes the tool report "0 problems" while writing nothing, and the
+    // next stage in an && chain is then handed a path to a file that does not
+    // exist. That is a real failure this produced at a terminal.
+    const args = buildArgs('request', findMode(stageById('request'), 'check'), CTX);
+    expect(args).toContain('--check');
+    expect(args).not.toContain('-o');
+    expect(args).not.toContain('req.yaml');
+  });
+
+  it('request names its output when the mode does write', () => {
+    const args = buildArgs('request', findMode(stageById('request'), 'build'), CTX);
+    expect(args).toContain('-o');
+    expect(args).toContain('req.yaml');
+  });
+
+  it('no stage emits an output path from a non-writing mode', () => {
+    // The general form of the bug above, asserted across every stage.
+    for (const stage of FIRST_TIER) {
+      for (const mode of stage.modes) {
+        if (mode.writes) continue;
+        const args = buildArgs(stage.id, mode, CTX);
+        expect(args).not.toContain('-o');
+      }
+    }
+  });
+});
+
+describe('mode flags and discovered flags cannot collide', () => {
+  it('a flag the mode supplies is not emitted twice by the form', () => {
+    // `--check` is both a mode and a discoverable boolean, so ticking it in the
+    // form used to append a second one.
+    const params: DiscoveredParam[] = [param('check', { type: 'boolean' })];
+    const out = flagArgs({ check: true }, params, new Set(), ['--check']);
+    expect(out).toEqual([]);
+  });
+
+  it('a flag the mode does not supply still comes through', () => {
+    const params: DiscoveredParam[] = [
+      param('merge_windows', { type: 'boolean', flags: ['--merge-windows'] }),
+    ];
+    const out = flagArgs({ merge_windows: true }, params, new Set(), ['--check']);
+    expect(out).toEqual(['--merge-windows']);
+  });
+});

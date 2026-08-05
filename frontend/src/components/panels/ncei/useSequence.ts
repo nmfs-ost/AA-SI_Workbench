@@ -96,8 +96,12 @@ export function buildArgs(
         ctx.sonarName,
         ...(ctx.dateFrom ? ['--from', ctx.dateFrom] : []),
         ...(ctx.dateTo ? ['--to', ctx.dateTo] : []),
-        '-o',
-        ctx.requestPath,
+        // Only when the mode writes. `aa-request --check` exits after
+        // validating, before it reaches the write, so `-o` in check mode is
+        // silently ignored — the tool reports "0 problems" and no document
+        // appears. Chained with &&, the next stage is then handed a path to a
+        // file that was never created.
+        ...(mode.writes ? ['-o', ctx.requestPath] : []),
       ];
 
     case 'fetch':
@@ -139,6 +143,9 @@ export function buildArgs(
     case 'publish':
       return [...flags, '--destination_prefix', ctx.destinationPrefix, ctx.output];
 
+    case 'fetchOnly':
+      return flags;
+
     default:
       return flags;
   }
@@ -156,10 +163,15 @@ export function flagArgs(
   values: FlagValues,
   params: readonly DiscoveredParam[],
   owns: ReadonlySet<string>,
+  modeFlags: readonly string[] = [],
 ): string[] {
+  const supplied = new Set(modeFlags);
   const out: string[] = [];
   for (const param of params) {
     if (owns.has(param.id) || param.positional) continue;
+    // The mode already contributes this one. `--check` is both a mode and a
+    // discoverable boolean, so without this it is emitted twice.
+    if (param.flags.some((flag) => supplied.has(flag))) continue;
     const value = values[param.id];
     if (value === undefined || value === '') continue;
     const flag = param.flags[0];
@@ -323,7 +335,7 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
       const owns = new Set(resolved?.stage.owns ?? []);
       return [
         ...buildArgs(stageId, mode, ctx),
-        ...flagArgs(flags[stageId] ?? {}, resolved?.params ?? [], owns),
+        ...flagArgs(flags[stageId] ?? {}, resolved?.params ?? [], owns, mode.flags),
       ];
     },
     [stages, ctx, flags],
@@ -354,17 +366,30 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
 
   const owned = useCallback((stageId: string) => ownedValues(stageId, ctx), [ctx]);
 
-  /* Every stage on one line, in order. Not a pipeline: these compose by each
-     printing a path the next one is given, and the sequence passes those paths
-     explicitly rather than relying on stdin. Shown with `&&` because that is
-     what it means — each step runs only if the one before it succeeded. */
+  /* Every stage on one line, in order.
+     
+     Not a pipeline: these compose by each printing a path the next one is
+     given, and the sequence passes those paths explicitly rather than relying
+     on stdin. `&&` is what it means — each step runs only if the one before
+     succeeded.
+     
+     Each stage is rendered in its *writing* mode, not whichever mode the
+     picker happens to be on. A chain is a request to produce the artifact, and
+     Request and Assemble both default to Check — so taking the selected modes
+     built `aa-request --check … && aa-fetch <file>`, where the check exits
+     before writing and the fetch is handed a path to a file that does not
+     exist. That is exactly the failure this produced in the terminal. A
+     checking mode is a thing you run on its own, from its own row. */
   const fullCommand = useMemo(
     () =>
       stages
         .filter((item) => item.runnable && !item.stage.optional)
-        .map((item) => preview(item.stage.id, findMode(item.stage, modes[item.stage.id] ?? '')))
+        .map((item) => {
+          const writing = item.stage.modes.find((m) => m.writes);
+          return preview(item.stage.id, writing ?? defaultMode(item.stage));
+        })
         .join(' \\\n  && '),
-    [stages, modes, preview],
+    [stages, preview],
   );
 
   const run = useCallback(

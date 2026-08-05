@@ -26,6 +26,7 @@ import {
 import { useLayout } from '../../../context/LayoutContext';
 import { sendToTerminal } from '../../../state/terminal';
 import { formatBytes } from './nceiService';
+import { compactFieldSx } from '../panelStyles';
 import type { NceiSearchController } from './useNceiSearch';
 import {
   OUTPUT_FORMATS,
@@ -183,6 +184,15 @@ export function NceiActions({ controller }: Props) {
   const [format, setFormat] = useState<OutputFormat>('nc');
   const [showAll, setShowAll] = useState(false);
   const [extraFlags, setExtraFlags] = useState('');
+  /* Where files land, and where they go afterwards.
+
+     Both were hardcoded — downloads to '.', the publish prefix derived from the
+     vessel and survey — which made them the two questions the panel could not
+     answer. They are the parent of aa-fetch's run directory (-o) and
+     aa-upload's --destination_prefix respectively, so they belong to the
+     sequence rather than to any one stage's flag form. */
+  const [downloadRoot, setDownloadRoot] = useState('.');
+  const [publishPrefix, setPublishPrefix] = useState('');
   const [downloadValues, setDownloadValues] = useState<OptionValues>(() => ({
     ...defaultsFor(downloadOptions),
     destination: `${vesselId}_${surveyName}_${sonarName}_NCEI`,
@@ -231,7 +241,6 @@ export function NceiActions({ controller }: Props) {
     const runName =
       String(downloadValues.destination ?? '').trim() ||
       `${vesselId}_${surveyName}_${sonarName}_NCEI`;
-    const downloadRoot = '.';
     return {
       vesselId,
       surveyName,
@@ -247,7 +256,8 @@ export function NceiActions({ controller }: Props) {
         `combined_${surveyName}_${sonarName}${format === 'zarr' ? '.zarr' : '.nc'}`,
       combineFlags: extraFlags.trim() ? extraFlags.trim().split(/\s+/) : [],
       requestPath: `${vesselId}_${surveyName}_request.yaml`,
-      destinationPrefix: `derived/${vesselId}/${surveyName}/${sonarName}`,
+      destinationPrefix:
+        publishPrefix.trim() || `derived/${vesselId}/${surveyName}/${sonarName}`,
     };
   }, [
     vesselId,
@@ -260,6 +270,8 @@ export function NceiActions({ controller }: Props) {
     combineValues.output,
     format,
     extraFlags,
+    downloadRoot,
+    publishPrefix,
   ]);
 
   const sequence = useSequence(sequenceCtx);
@@ -397,6 +409,39 @@ export function NceiActions({ controller }: Props) {
             )}
           </Box>
         )}
+
+        {/* Where files land, and where they are published to. Above the steps
+            because both are answered once for the whole run rather than per
+            stage, and because "where did my download go" is the first thing
+            anyone asks. */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+          <TextField
+            size="small"
+            fullWidth
+            label="Download to"
+            value={downloadRoot}
+            onChange={(e) => setDownloadRoot(e.target.value)}
+            placeholder="."
+            helperText={`Files land in ${sequenceCtx.workdir}`}
+            InputLabelProps={{ shrink: true }}
+            FormHelperTextProps={{
+              sx: { fontSize: 10, fontFamily: theme.aa.font.mono, mt: 0.25 },
+            }}
+            sx={compactFieldSx}
+          />
+          <TextField
+            size="small"
+            fullWidth
+            label="Publish to (optional)"
+            value={publishPrefix}
+            onChange={(e) => setPublishPrefix(e.target.value)}
+            placeholder={`derived/${vesselId}/${surveyName}/${sonarName}`}
+            helperText="Bucket-relative prefix for the Publish step. Leave empty for the default."
+            InputLabelProps={{ shrink: true }}
+            FormHelperTextProps={{ sx: { fontSize: 10, mt: 0.25 } }}
+            sx={compactFieldSx}
+          />
+        </Box>
 
         {/* The sequence. Every row runs something or says why it cannot —
             the previous strip drew four numbered stages and executed one. */}
