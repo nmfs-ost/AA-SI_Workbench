@@ -122,9 +122,13 @@ export function MenuBar() {
             alignItems: 'center',
             px: 1,
             mr: 0.5,
-            color: theme.aa.color.text.secondary,
-            transition: 'color .12s',
-            '&:hover': { color: theme.aa.color.accent.main },
+            /* No colour or hover recolour here any more: the mark carries its
+               own palette now, and a `&:hover { color }` on a parent that the
+               child ignores is a rule that looks live and is not. Opacity is
+               the acknowledgement that still works on a coloured emblem. */
+            opacity: 0.95,
+            transition: 'opacity .12s',
+            '&:hover': { opacity: 1 },
             '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
