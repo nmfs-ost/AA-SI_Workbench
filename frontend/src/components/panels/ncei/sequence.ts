@@ -60,6 +60,12 @@ export type RunVia = 'job' | 'terminal';
  * verb was chosen, not which flags were set — `aa-combine --check` and
  * `aa-combine -o out.zarr` are barely the same operation. Picking the mode
  * first and the flags second is the shape the tools already have.
+ *
+ * A mode is a *verb*, never a variant of one. `aa-ed --recursive` is the same
+ * operation over a wider glob, so it is a flag and belongs in the options form;
+ * making it a mode would put two writing entries in one picker and turn "which
+ * verb" into "which spelling". At most one mode per stage may write, and a test
+ * enforces it — that invariant is what keeps the picker meaning one thing.
  */
 export interface StageMode {
   id: string;
@@ -103,6 +109,13 @@ export interface SequenceStage {
   unresolved?: string;
   /** Alternative spellings to accept when checking whether it is installed. */
   aliases?: readonly string[];
+  /**
+   * An optional stage does not gate the ones after it and is not required for
+   * the sequence to be complete. Publishing is the case: a store that was
+   * combined and verified is a finished artifact whether or not it was copied
+   * to a bucket.
+   */
+  optional?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,29 +153,34 @@ export const FIRST_TIER: readonly SequenceStage[] = [
     id: 'fetch',
     label: 'Fetch',
     tool: 'aa-fetch',
-    description: 'Download the files the request names.',
-    // Interactive until proven otherwise. If it prompts, a queued job waits on
-    // a question nobody can answer, so this one is typed into the terminal and
-    // the sequence pauses here rather than pretending it continued.
-    runsVia: 'terminal',
+    description:
+      'Run the request document: build the query, download every matching file into one run directory, and print that directory on stdout.',
+    // Was `terminal`, on the assumption aa-fetch prompts. It does not — it
+    // takes the document positionally, falls back to a single line of stdin,
+    // and never asks a question. So it queues like everything else, and the
+    // sequence keeps its progress and its exit code instead of losing both to
+    // a shell. `aa-get` is the interactive one; aa-fetch is not.
+    runsVia: 'job',
     modes: [
       {
         id: 'run',
         label: 'Fetch',
         flags: [],
         writes: true,
-        description: 'Copy the raw files to this workstation.',
+        description: 'Download the files the request names.',
       },
     ],
-    unresolved:
-      'Does aa-fetch take the request document positionally, and does it still prompt when given one? `aa-fetch --help` settles both. Until then it runs in the Terminal where a prompt can be answered.',
   },
   {
     id: 'convert',
     label: 'Convert',
     tool: 'aa-ed',
+    // aa-nc is the single-file, --sonar_model-required form; aa-raw was the
+    // name this panel invented. Both accepted so a differently-provisioned
+    // environment still resolves, with the found name reported.
     aliases: ['aa-nc', 'aa-raw'],
-    description: 'Each raw file becomes a converted EchoData dataset.',
+    description:
+      'Convert every .raw in the run directory to a multi-group NetCDF EchoData file, in place. Given a directory, aa-ed prints the directory back — which is what makes the next stage a directory read rather than a file list.',
     runsVia: 'job',
     modes: [
       {
@@ -170,11 +188,10 @@ export const FIRST_TIER: readonly SequenceStage[] = [
         label: 'Convert',
         flags: [],
         writes: true,
-        description: 'Convert the downloaded raws.',
+        description:
+          'Batch mode: globs *.raw, converts each offline, passes through any .nc already there, and keeps going past a per-file failure.',
       },
     ],
-    unresolved:
-      'The converter was rendered here as `aa-raw`; the project notes call it `aa-ed` / `aa-nc`, and whether it writes .nc or .zarr decides whether its output pipes into Assemble at all. `aa-ed --help` settles it.',
   },
   {
     id: 'assemble',
@@ -234,6 +251,32 @@ export const FIRST_TIER: readonly SequenceStage[] = [
         writes: false,
         description:
           'Dims, chunk shape, codec, chunks written against expected, stored against logical bytes, and the lineage the producer recorded.',
+      },
+    ],
+  },
+  {
+    id: 'publish',
+    label: 'Publish',
+    tool: 'aa-upload',
+    description:
+      'Copy the verified store to the derived-assets bucket, as-is under a prefix. Optional — the sequence is complete without it.',
+    runsVia: 'job',
+    optional: true,
+    modes: [
+      {
+        id: 'dryRun',
+        label: 'Dry run',
+        flags: ['--as-is', '--dry-run'],
+        writes: false,
+        description: 'Show what would be uploaded and where, moving nothing.',
+      },
+      {
+        id: 'run',
+        label: 'Upload',
+        flags: ['--as-is'],
+        writes: true,
+        description:
+          'As-is mode, not echosounder mode: the canonical data/raw/<ship>/<survey>/<echosounder> tree is for raw files, and a combined store is a derived product that does not belong in it.',
       },
     ],
   },

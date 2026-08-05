@@ -263,8 +263,12 @@ export function NceiActions({ controller }: Props) {
      spelled, which is the property the old single-command path had and the one
      thing about it worth keeping. */
   const sequenceCtx: SequenceContext = useMemo(() => {
-    const workdir = String(downloadValues.destination ?? '').trim() ||
+    /* aa-fetch creates `<output_root>/<download_dir_name>` and prints it. We
+       name both halves rather than letting it default to a timestamp, so the
+       directory Convert and Assemble read is knowable before Fetch has run. */
+    const runName = String(downloadValues.destination ?? '').trim() ||
       `${vesselId}_${surveyName}_${sonarName}_NCEI`;
+    const downloadRoot = '.';
     return {
       vesselId,
       surveyName,
@@ -272,7 +276,9 @@ export function NceiActions({ controller }: Props) {
       fileNames: targetFiles.map((f) => f.name),
       dateFrom,
       dateTo,
-      workdir,
+      downloadRoot,
+      runName,
+      workdir: `${downloadRoot}/${runName}`,
       output: String(combineValues.output ?? '').trim() ||
         `combined_${surveyName}_${sonarName}${format === 'zarr' ? '.zarr' : '.nc'}`,
       combineFlags: [
@@ -283,6 +289,7 @@ export function NceiActions({ controller }: Props) {
         ...(extraFlags.trim() ? extraFlags.trim().split(/\s+/) : []),
       ],
       requestPath: `${vesselId}_${surveyName}_request.yaml`,
+      destinationPrefix: `derived/${vesselId}/${surveyName}/${sonarName}`,
     };
   }, [
     vesselId, surveyName, sonarName, targetFiles, dateFrom, dateTo,

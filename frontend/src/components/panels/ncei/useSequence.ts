@@ -44,7 +44,19 @@ export interface SequenceContext {
   fileNames: readonly string[];
   dateFrom: string;
   dateTo: string;
-  /** Where downloads land and conversions are looked for. */
+  /**
+   * aa-fetch's --output_root: the *parent* of the run directory.
+   */
+  downloadRoot: string;
+  /**
+   * aa-fetch's --download_dir_name. Always set explicitly, never left to
+   * default: without it aa-fetch names the directory `aa_fetch_<timestamp>`
+   * and the sequence has no way to tell the next stage where the files went
+   * short of parsing them back off stdout. Naming it is one flag and makes the
+   * whole chain addressable.
+   */
+  runName: string;
+  /** `downloadRoot/runName` — what Convert and Assemble read. */
   workdir: string;
   /** The combine output, e.g. `combined_HB1603_EK60.zarr`. */
   output: string;
@@ -52,6 +64,8 @@ export interface SequenceContext {
   combineFlags: readonly string[];
   /** The request document path. */
   requestPath: string;
+  /** Bucket-relative prefix for the optional publish stage. */
+  destinationPrefix: string;
 }
 
 /**
@@ -85,11 +99,24 @@ export function buildArgs(
       ];
 
     case 'fetch':
-      // Positional, on the assumption the document is what it takes. Flagged
-      // as an open question on the stage itself rather than asserted here.
-      return [...flags, ctx.requestPath];
+      // Positional YAML, confirmed against the tool: `yaml_path` is nargs="?"
+      // with a single-line stdin fallback. -n is mandatory here even though it
+      // is optional to the tool — see runName.
+      return [
+        ...flags,
+        ctx.requestPath,
+        '-o',
+        ctx.downloadRoot,
+        '-n',
+        ctx.runName,
+      ];
 
     case 'convert':
+      // A directory input puts aa-ed in batch mode, and batch mode prints the
+      // directory back rather than a list of .nc paths — which is exactly what
+      // Assemble wants, since aa-combine globs a workdir and its INPUT_SUFFIXES
+      // are {.nc, .netcdf4, .zarr}. The .raw files aa-ed leaves beside the .nc
+      // are ignored rather than mistaken for input.
       return [...flags, ctx.workdir];
 
     case 'assemble':
@@ -106,6 +133,9 @@ export function buildArgs(
     case 'verify':
       // `verify` / `info` are positional subcommands, already in mode.flags.
       return [...flags, ctx.output];
+
+    case 'publish':
+      return [...flags, '--destination_prefix', ctx.destinationPrefix, ctx.output];
 
     default:
       return flags;
@@ -197,7 +227,9 @@ export function useSequence(ctx: SequenceContext): SequenceRuntime {
         stage.runsVia === 'terminal'
           ? Boolean(started[stage.id])
           : job?.state === 'succeeded';
-      if (!satisfied) gate = true;
+      // An optional stage never closes the gate — Publish not having run is
+      // not a reason for anything after it to be unavailable.
+      if (!satisfied && !stage.optional) gate = true;
     }
     return set;
   }, [stages, jobs, started]);

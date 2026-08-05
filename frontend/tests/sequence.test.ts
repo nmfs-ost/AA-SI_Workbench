@@ -22,10 +22,13 @@ const CTX: SequenceContext = {
   fileNames: ['a.raw', 'b.raw'],
   dateFrom: '2012-08-13',
   dateTo: '2012-08-14',
-  workdir: './converted',
+  downloadRoot: '.',
+  runName: 'AK_CHS12AK_ES60_NCEI',
+  workdir: './AK_CHS12AK_ES60_NCEI',
   output: 'L1.zarr',
   combineFlags: ['--chunk-pings', '500'],
   requestPath: 'req.yaml',
+  destinationPrefix: 'derived/Alaska_Knight/CHS12AK/ES60',
 };
 
 const stageById = (id: string) => FIRST_TIER.find((s) => s.id === id)!;
@@ -67,16 +70,14 @@ describe('stage resolution against the installed environment', () => {
     expect(resolved.runnable).toBe(true);
   });
 
-  it('an open question outranks being self-describing', () => {
-    // Convert is installed AND describes itself, but which suffix it writes is
-    // still undecided — the badge must not claim otherwise.
-    const resolved = resolveStage(
-      stageById('convert'),
-      [tool('aa-ed')],
-      new Set(['aa-ed']),
-    );
-    expect(resolved.confidence).toBe('unresolved');
-    expect(resolved.note).toContain('--help');
+  it('no stage is left as an open question now the tools are known', () => {
+    // Fetch and Convert were both `unresolved` on guesses. aa-fetch takes the
+    // document positionally and never prompts; aa-ed writes .nc and prints the
+    // directory back in batch mode. Both are settled, and a regression here
+    // means someone reintroduced a guess.
+    for (const stage of FIRST_TIER) {
+      expect(stage.unresolved).toBeUndefined();
+    }
   });
 
   it('resolves every stage without throwing on an empty environment', () => {
@@ -181,6 +182,7 @@ describe('the stage order is the sector order', () => {
       'convert',
       'assemble',
       'verify',
+      'publish',
     ]);
   });
 
@@ -189,8 +191,52 @@ describe('the stage order is the sector order', () => {
     expect(ids.indexOf('verify')).toBeGreaterThan(ids.indexOf('assemble'));
   });
 
-  it('only the interactive stage runs in the terminal', () => {
-    const terminal = FIRST_TIER.filter((s) => s.runsVia === 'terminal');
-    expect(terminal.map((s) => s.id)).toEqual(['fetch']);
+  it('nothing needs a terminal — the whole tier is non-interactive', () => {
+    // aa-get prompts. aa-fetch does not, which is what lets the first tier be
+    // queued, watched and resumed rather than typed at a shell.
+    expect(FIRST_TIER.filter((s) => s.runsVia === 'terminal')).toEqual([]);
+  });
+});
+
+describe('the chain composes by path passing', () => {
+  it('fetch names its run directory instead of accepting a timestamp', () => {
+    const args = buildArgs('fetch', findMode(stageById('fetch'), 'run'), CTX);
+    // Without -n, aa-fetch invents `aa_fetch_<timestamp>` and nothing
+    // downstream can address it without parsing stdout.
+    expect(args).toContain('-n');
+    expect(args).toContain('AK_CHS12AK_ES60_NCEI');
+    expect(args).toContain('req.yaml');
+  });
+
+  it('convert reads the directory fetch created', () => {
+    const args = buildArgs('convert', findMode(stageById('convert'), 'run'), CTX);
+    expect(args).toEqual(['./AK_CHS12AK_ES60_NCEI']);
+  });
+
+  it('assemble reads the same directory as a workdir', () => {
+    const args = buildArgs('assemble', findMode(stageById('assemble'), 'run'), CTX);
+    expect(args).toContain('--workdir');
+    expect(args).toContain('./AK_CHS12AK_ES60_NCEI');
+  });
+
+  it('publish is as-is, not the canonical echosounder tree', () => {
+    const args = buildArgs('publish', findMode(stageById('publish'), 'run'), CTX);
+    expect(args).toContain('--as-is');
+    // Echosounder mode would need ship/survey/sonar and would file a derived
+    // store under data/raw/, which is where raw files live.
+    expect(args).not.toContain('--ship_name');
+    expect(args).toContain('derived/Alaska_Knight/CHS12AK/ES60');
+  });
+
+  it('publish leads with a dry run', () => {
+    const first = FIRST_TIER.find((s) => s.id === 'publish')!.modes[0];
+    expect(first.writes).toBe(false);
+    expect(first.flags).toContain('--dry-run');
+  });
+
+  it('publish is optional, so it gates nothing', () => {
+    expect(FIRST_TIER.find((s) => s.id === 'publish')!.optional).toBe(true);
+    // And it is last, so there is nothing after it to gate anyway.
+    expect(FIRST_TIER[FIRST_TIER.length - 1].id).toBe('publish');
   });
 });
