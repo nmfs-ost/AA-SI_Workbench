@@ -1,61 +1,55 @@
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
+import { Box, Typography, useTheme } from '@mui/material';
 import { DataObjectOutlined } from '@mui/icons-material';
-import { Box, Chip, Divider, Stack, Typography, useTheme } from '@mui/material';
 
 import { PanelPlaceholder } from './PanelPlaceholder';
-import { useActiveAsset } from '../../state/activeAsset';
-import { formatBytes, NCEI_BUCKET } from './ncei/nceiService';
-import { CopyPathButton } from './CopyPathButton';
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  const theme = useTheme();
-  return (
-    <Box sx={{ display: 'flex', gap: 1, py: 0.5, alignItems: 'baseline' }}>
-      <Typography
-        sx={{
-          fontSize: 11.5,
-          color: theme.aa.color.text.muted,
-          minWidth: 84,
-          flexShrink: 0,
-        }}
-      >
-        {label}
-      </Typography>
-      <Box sx={{ fontSize: 12.5, color: theme.aa.color.text.primary, minWidth: 0 }}>
-        {children}
-      </Box>
-    </Box>
-  );
-}
-
-function formatAcquired(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
-}
+import { AssetView } from './metadata/AssetView';
+import { StoreView } from './metadata/StoreView';
+import { useActiveSubject } from '../../state/activeSubject';
 
 /**
- * Metadata panel. Reflects the file currently identified in the NCEI panel via
- * the shared active-asset store; empty until a file is picked.
+ * Metadata panel — what the active subject *is*.
+ *
+ * This is now a router rather than a view, because "the active subject" stopped
+ * being one shape. Two things can be selected and they are described by
+ * different means:
+ *
+ *   NCEI file  → catalogue metadata, already in memory from the search.
+ *   Zarr store → `aa-store info --json`, one JSON line, read from the store.
+ *
+ * The second is the one that was missing. The Derived panel could already find
+ * a combined store — the artifact of the whole acquire → convert → assemble
+ * sector — and clicking it did nothing anywhere, because this panel could only
+ * be about an NCEI raw file. A store carries its own lineage in its root
+ * attributes precisely so it can be understood long after the handle that
+ * announced it was lost, and there was nothing here to read it.
+ *
+ * Routing on the subject rather than offering a source selector is deliberate:
+ * the user has already chosen, by clicking a row in the left dock. Asking again
+ * here would be a second control for a decision that was made.
  */
 export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
-  const asset = useActiveAsset();
+  const subject = useActiveSubject();
 
-  if (!asset) {
+  if (!subject) {
     return (
       <PanelPlaceholder
         icon={DataObjectOutlined}
         title="Metadata"
-        description="Select a file in the NCEI panel to view its metadata."
+        description="Select a file in NCEI, or a store in Derived or Files, to describe it."
       />
     );
   }
 
-  const mono = { fontFamily: theme.aa.font.mono, fontSize: 12, wordBreak: 'break-all' as const };
-  /* `s3Path` is a key within the archive bucket; the absolute address adds the
-     scheme and bucket back on. */
-  const s3Uri = `s3://${NCEI_BUCKET}/${asset.s3Path}`;
+  if (subject.inspectable) return <StoreView subject={subject} />;
+  if (subject.asset) return <AssetView asset={subject.asset} />;
 
+  /* Selected, but nothing here can describe it: a raw file on disk, a NetCDF
+     export, an object of some other kind. Saying so beats an empty panel that
+     looks broken, and naming what *would* be describable is the difference
+     between a dead end and an instruction. */
   return (
     <Box
       sx={{
@@ -65,53 +59,22 @@ export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
         backgroundColor: theme.aa.color.bg.panel,
       }}
     >
-      <Typography sx={{ ...mono, color: theme.aa.color.text.primary, mb: 0.5 }}>
-        {asset.fileName}
-      </Typography>
-      <Chip
-        label={asset.source}
-        size="small"
+      <Typography
         sx={{
-          height: 18,
-          fontSize: 10.5,
-          mb: 1,
-          backgroundColor: theme.aa.color.accent.soft,
-          color: theme.aa.color.accent.main,
+          fontFamily: theme.aa.font.mono,
+          fontSize: 12,
+          wordBreak: 'break-all',
+          color: theme.aa.color.text.primary,
+          mb: 0.75,
         }}
-      />
-      <Divider sx={{ mb: 1 }} />
-
-      <Row label="Vessel">{asset.vessel}</Row>
-      <Row label="Survey">{asset.survey}</Row>
-      <Row label="Sonar">{asset.sonar}</Row>
-      <Row label="Size">{formatBytes(asset.sizeBytes)}</Row>
-      <Row label="Acquired">{formatAcquired(asset.acquiredAt)}</Row>
-      <Row label="Channels">
-        {asset.channels.length > 0 ? (
-          <Stack direction="row" gap={0.5} flexWrap="wrap">
-            {asset.channels.map((c) => (
-              <Chip
-                key={c}
-                label={c}
-                size="small"
-                variant="outlined"
-                sx={{ height: 18, fontSize: 10.5 }}
-              />
-            ))}
-          </Stack>
-        ) : (
-          '—'
-        )}
-      </Row>
-      {/* Shown as a full URI rather than a bucket-relative key: this is the
-          value that can be pasted into the AWS CLI, boto3, or a message to a
-          colleague and still mean something. */}
-      <Row label="S3 URI">
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-          <Box sx={{ ...mono, color: theme.aa.color.text.secondary }}>{s3Uri}</Box>
-          <CopyPathButton value={s3Uri} label="Copy s3:// URI" alwaysVisible />
-        </Box>
-      </Row>
+      >
+        {subject.label}
+      </Typography>
+      <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted, lineHeight: 1.6 }}>
+        No description available for a <b>{subject.layer}</b> artifact. `aa-store` reads Zarr
+        stores; a NetCDF export is a handoff format that nothing downstream reads back, and a
+        raw file is described by the catalogue it came from.
+      </Typography>
     </Box>
   );
 };

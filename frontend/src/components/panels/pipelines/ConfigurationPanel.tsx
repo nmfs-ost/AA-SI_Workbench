@@ -43,6 +43,7 @@ import {
   usePipelines,
 } from '../../../state/pipelines';
 import { ParamControl } from './ParamControl';
+import { PlanControls } from './PlanControls';
 import type { PipelineValues, StageDef } from './pipelineTypes';
 import {
   COMMAND_OVERRIDE,
@@ -249,6 +250,16 @@ const PipelineConfiguration: FunctionComponent = () => {
         >
           {pipeline.description}
         </Typography>
+
+        {/* Plan / Check / Run. Above the form rather than pinned below it:
+            the two read-only modes exist to be used *before* the settings are
+            committed, and a control that has to be scrolled past a dozen
+            parameters to reach is a control nobody reaches for. */}
+        <PlanControls
+          pipeline={pipeline}
+          values={values}
+          injectedInput={injectedInput}
+        />
 
         {/* Configuration selector */}
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'flex-start', mb: 1.5 }}>

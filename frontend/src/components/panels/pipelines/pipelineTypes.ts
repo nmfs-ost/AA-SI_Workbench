@@ -264,6 +264,64 @@ export function generatedCommand(
 }
 
 /**
+ * The same command as an **argv list**, for actually running it.
+ *
+ * `generatedCommand` produces a string for display, with shell quoting applied
+ * so it can be pasted into a terminal. That string is the wrong thing to run
+ * from: the job runner uses `shell=False`, so it needs the arguments already
+ * separated, and recovering them by parsing the quoting back out in the browser
+ * would be a re-implementation of a shell lexer — the bug where a survey named
+ * `Dyson's Bank` becomes two arguments, discovered six months later.
+ *
+ * So both spellings are generated from the schema, side by side, and neither is
+ * derived from the other. The only asymmetry is quoting, which exists solely
+ * for the display form.
+ *
+ * Returns null for a stage the user has taken over with a hand-written command:
+ * that is a shell string by definition — it may contain pipes and redirections —
+ * and it belongs in the Terminal, not in an argv the runner would execute
+ * literally. Refusing is the honest answer; running `aa-sv f.nc | grep -v WARN`
+ * as a single program named `aa-sv` with an argument called `|` is not.
+ */
+export function buildArgv(
+  stage: StageDef,
+  values: PipelineValues,
+  injectedInput: string | null,
+): { tool: string; args: string[] } | null {
+  const override = values[stage.id]?.[COMMAND_OVERRIDE];
+  if (typeof override === 'string' && override.trim()) return null;
+  if (stage.freeform) return null;
+
+  const args: string[] = [];
+  for (const param of stage.params) {
+    const raw = values[stage.id]?.[param.id] ?? param.default;
+
+    if (param.role === 'input') {
+      const resolved = injectedInput ?? (typeof raw === 'string' ? raw : '');
+      if (resolved) args.push(resolved);
+      continue;
+    }
+    if (param.type === 'boolean') {
+      if (raw === true && param.flag) args.push(param.flag);
+      continue;
+    }
+    if (param.type === 'multi') {
+      const list = Array.isArray(raw) ? raw : [];
+      if (list.length > 0) {
+        if (param.flag) args.push(param.flag);
+        args.push(list.join(','));
+      }
+      continue;
+    }
+    const text = String(raw ?? '').trim();
+    if (!text) continue;
+    if (param.flag) args.push(param.flag);
+    args.push(text);
+  }
+  return { tool: stage.tool, args };
+}
+
+/**
  * The same command with the input replaced by its token — the starting point
  * when someone opens the editor, so the placeholder is discoverable by example
  * rather than by reading documentation.

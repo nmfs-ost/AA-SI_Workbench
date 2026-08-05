@@ -29,6 +29,7 @@ import {
 import { CopyPathButton } from './CopyPathButton';
 import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
+import { setActiveArtifact } from '../../state/activeSubject';
 import { panelDensity } from './panelStyles';
 
 const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
@@ -284,7 +285,23 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                   title={entry.uri}
                   onClick={() => {
                     setSelected(entry.path);
-                    if (entry.isDir) toggle(entry);
+                    if (entry.isDir) {
+                      toggle(entry);
+                      return;
+                    }
+                    /* Publish to the right dock. A store selected here is the
+                       artifact of the entire acquire → convert → assemble
+                       sector, and until this line existed clicking it changed
+                       nothing anywhere — the Metadata panel could only ever be
+                       about an NCEI raw file. The URI, not the path: a bare
+                       path resolves against whatever directory the reader
+                       happens to be standing in. */
+                    setActiveArtifact({
+                      uri: entry.uri,
+                      label: entry.name,
+                      origin: 'Derived',
+                      kind: entry.kind,
+                    });
                   }}
                   sx={{
                     display: 'flex',

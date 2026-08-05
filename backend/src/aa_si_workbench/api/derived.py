@@ -109,6 +109,26 @@ def _kind_for(name: str) -> str:
     return "object"
 
 
+def _parent_of(prefix: str) -> str:
+    """The prefix one level up, or "" at the root."""
+    if not prefix:
+        return ""
+    trimmed = prefix.rstrip("/")
+    return trimmed.rsplit("/", 1)[0] + "/" if "/" in trimmed else ""
+
+
+# The metadata document at the root of a store, at both Zarr versions. Their
+# presence is what distinguishes a store from a folder that merely contains
+# one, and probing for them is two HEAD requests rather than a listing.
+ZARR_ROOT_MARKERS = ("zarr.json", ".zgroup", ".zarray")
+
+# Whether a prefix is a store is a property of the bucket, not of the client
+# object that happened to ask, so the answer is cached here rather than on the
+# provider. It also cannot change while the panel is open — a store does not
+# stop being one — and the same folder is re-probed on every expand and refresh.
+_store_probe_cache: dict[str, bool] = {}
+
+
 class GcsProvider:
     """Lists the bucket through google-cloud-storage using ADC."""
 
@@ -120,9 +140,57 @@ class GcsProvider:
         self._client = storage.Client(project=project_id())
         self._bucket = self._client.bucket(bucket_name())
 
+    def _is_store(self, prefix: str) -> bool:
+        """True when this prefix is the root of a Zarr store.
+
+        Two HEADs at most, never a listing — the distinction matters because
+        listing is precisely the operation that hangs on a store. A store named
+        `*.zarr` is caught by the suffix before this is ever called; this exists
+        for the ones that were not.
+        """
+        if not prefix:
+            return False
+        key = prefix if prefix.endswith("/") else f"{prefix}/"
+        cached = _store_probe_cache.get(key)
+        if cached is not None:
+            return cached
+
+        found = False
+        for marker in ZARR_ROOT_MARKERS:
+            try:
+                if self._bucket.blob(f"{key}{marker}").exists(self._client):
+                    found = True
+                    break
+            except Exception:  # noqa: BLE001 - an unreachable probe is not a store
+                break
+        _store_probe_cache[key] = found
+        return found
+
     def list(self, prefix: str, limit: int) -> DerivedListing:
         root = root_prefix()
         full = f"{root}{prefix}"
+
+        # A Zarr store is a directory of chunk objects, and the object store has
+        # no idea it is anything other than a very deep folder. Listing one here
+        # would enumerate every chunk — tens of thousands on a survey, millions
+        # on a season — and the panel hangs on a listing nobody wanted. So a
+        # prefix that *is* a store answers with the store itself, as a leaf.
+        if self._is_store(full):
+            relative = full[len(root) :] if root else full
+            return DerivedListing(
+                bucket=bucket_name(),
+                prefix=prefix,
+                parent=_parent_of(prefix),
+                entries=[
+                    DerivedEntry(
+                        name=relative.rstrip("/").rsplit("/", 1)[-1],
+                        path=relative.rstrip("/"),
+                        uri=f"gs://{bucket_name()}/{full.rstrip('/')}",
+                        isDir=False,
+                        kind="zarr",
+                    )
+                ],
+            )
 
         iterator = self._client.list_blobs(
             self._bucket, prefix=full, delimiter="/", max_results=limit
@@ -134,13 +202,23 @@ class GcsProvider:
         entries: list[DerivedEntry] = []
         for folder in sorted(folders):
             relative = folder[len(root) :] if root else folder
+            name = relative.rstrip("/").rsplit("/", 1)[-1]
+            # The store itself is the asset. Listed as a leaf it can be selected
+            # and handed to `aa-store info` — the whole point of it appearing
+            # here — instead of being a folder whose contents interest nobody.
+            #
+            # The suffix is checked first because it is free and correct almost
+            # always; the probe is the fallback for a store that was named
+            # without one. Cheap test first, one HEAD second, never a listing.
+            store = name.lower().endswith(".zarr") or self._is_store(folder)
             entries.append(
                 DerivedEntry(
-                    name=relative.rstrip("/").rsplit("/", 1)[-1],
-                    path=relative,
-                    uri=f"gs://{bucket_name()}/{folder}",
-                    isDir=True,
-                    kind="folder",
+                    name=name,
+                    path=relative.rstrip("/") if store else relative,
+                    uri=f"gs://{bucket_name()}/"
+                    f"{folder.rstrip('/') if store else folder}",
+                    isDir=not store,
+                    kind="zarr" if store else "folder",
                 )
             )
 
@@ -164,15 +242,10 @@ class GcsProvider:
                 )
             )
 
-        parent = ""
-        if prefix:
-            trimmed = prefix.rstrip("/")
-            parent = trimmed.rsplit("/", 1)[0] + "/" if "/" in trimmed else ""
-
         return DerivedListing(
             bucket=bucket_name(),
             prefix=prefix,
-            parent=parent,
+            parent=_parent_of(prefix),
             entries=entries,
             truncated=len(blobs) >= limit,
         )
@@ -192,6 +265,7 @@ def get_provider() -> DerivedProvider:
 def _reset_for_tests(provider: DerivedProvider | None = None) -> None:
     global _provider
     _provider = provider
+    _store_probe_cache.clear()
 
 
 def _explain(exc: Exception) -> str:

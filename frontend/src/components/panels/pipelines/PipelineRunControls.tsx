@@ -13,7 +13,13 @@ import PlayArrowOutlined from '@mui/icons-material/PlayArrowOutlined';
 import InputOutlined from '@mui/icons-material/InputOutlined';
 import TerminalOutlined from '@mui/icons-material/TerminalOutlined';
 
-import { buildCommand, type PipelineDefinition, type PipelineValues } from './pipelineTypes';
+import {
+  buildArgv,
+  buildCommand,
+  type PipelineDefinition,
+  type PipelineValues,
+} from './pipelineTypes';
+import { startJob } from '../../../state/jobs';
 
 interface Props {
   selectedPipelines: PipelineDefinition[];
@@ -27,8 +33,17 @@ interface Props {
  * Run controls for the pipelines panel.
  *
  * Shows what will run, what file is being injected as the input (from the
- * left-window selection), and the exact commands the run would issue. Execution
- * is deferred to the backend — staging is honest about that.
+ * left-window selection), and the exact commands the run would issue.
+ *
+ * These now actually run. Each stage is submitted to `/api/jobs` as an argv
+ * list — never a shell string, because the runner uses `shell=False` and there
+ * is nothing on the other end to parse quoting. A stage the user has taken over
+ * with a hand-written command is refused rather than mangled: those may contain
+ * pipes, and executing `aa-sv f.nc | grep -v WARN` as one program with an
+ * argument called `|` is worse than declining. They belong in the Terminal.
+ *
+ * Progress and outcome are the Processing Queue's job, so this control hands
+ * off and says where to look rather than growing a second status display.
  *
  * It sits directly under the panel header, above the cards, because the card
  * list is unbounded. Pinned to the bottom, this band's distance from the card
@@ -52,6 +67,37 @@ export function PipelineRunControls({
   const count = selectedPipelines.length;
   const canRun = count > 0 && Boolean(injectedInput);
 
+  /* Stages whose command the user wrote by hand cannot become argv. Counted up
+     front so the button can say so instead of silently running a subset. */
+  const handWritten = selectedPipelines.some((pipeline) =>
+    pipeline.stages.some(
+      (stage) => buildArgv(stage, draftsFor(pipeline.id), injectedInput) === null,
+    ),
+  );
+
+  async function submit(): Promise<void> {
+    let started = 0;
+    for (const pipeline of selectedPipelines) {
+      const values = draftsFor(pipeline.id);
+      for (const stage of pipeline.stages) {
+        const argv = buildArgv(stage, values, injectedInput);
+        if (!argv) continue;
+        // --progress buys the queue a determinate bar instead of a spinner.
+        const job = await startJob({
+          tool: argv.tool,
+          args: [...argv.args, '--progress'],
+          label: `${argv.tool} · ${pipeline.name}`,
+        });
+        if (job) started += 1;
+      }
+    }
+    setToast(
+      started === 0
+        ? 'Nothing was started — check the Processing Queue for the reason.'
+        : `Started ${started} job${started === 1 ? '' : 's'}. Watch them in Processing Queue.`,
+    );
+  }
+
   const runLabel =
     count === 0
       ? 'Run'
@@ -61,7 +107,9 @@ export function PipelineRunControls({
     ? 'Select at least one pipeline card'
     : !injectedInput
       ? 'Select a file in the NCEI panel to supply the input'
-      : '';
+      : handWritten
+        ? 'Some stages have hand-written commands — those are skipped; run them from the Terminal'
+        : '';
 
   return (
     <Box
@@ -145,11 +193,7 @@ export function PipelineRunControls({
               variant="contained"
               startIcon={<PlayArrowOutlined />}
               disabled={!canRun}
-              onClick={() =>
-                setToast(
-                  `Staged ${count} pipeline${count === 1 ? '' : 's'} for ${injectedInput} — preview only (backend not connected).`,
-                )
-              }
+              onClick={() => void submit()}
             >
               {runLabel}
             </Button>

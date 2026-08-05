@@ -1,48 +1,27 @@
-import { useSyncExternalStore } from 'react';
-
 /**
- * Cross-panel bridge for "the file the user is currently looking at".
+ * The NCEI-shaped view of the active subject.
  *
- * The NCEI panel (left dock) and the Metadata panel (right dock) are independent
- * Dockview panels with no parent/child relationship, so they share state through
- * this module-level store rather than React context. When a file is identified
- * in NCEI it calls `setActiveAsset(...)`; the Metadata panel subscribes via
- * `useActiveAsset()` and re-renders. Any future panel can do the same.
+ * This module used to *be* the cross-panel bridge. It now sits on top of
+ * `activeSubject`, which widened the subject from "an NCEI raw file" to "the
+ * artifact the right dock is describing", so that a combined store selected in
+ * the Derived panel can reach the Metadata panel at all.
+ *
+ * It is kept, rather than deleted and its four callers rewritten, because
+ * `AssetMetadata` is a real and distinct thing: catalogue metadata that only
+ * NCEI has. A pipeline's injected input wants a URI and works for any subject;
+ * the vessel, survey and channel list want NCEI and are honestly absent
+ * otherwise. Returning null for a store is the correct answer to "which NCEI
+ * file is selected" — not a gap to paper over.
+ *
+ * New code that wants "whatever is selected" should read `useActiveSubject`.
  */
 
-export interface AssetMetadata {
-  fileName: string;
-  vessel: string;
-  survey: string;
-  sonar: string;
-  sizeBytes: number;
-  acquiredAt: string; // ISO 8601
-  channels: string[];
-  /** NCEI S3 object key, e.g. data/raw/{vessel}/{survey}/{sonar}/{file}. */
-  s3Path: string;
-  source: 'NCEI';
-}
+import { useActiveSubject } from './activeSubject';
 
-let current: AssetMetadata | null = null;
-const listeners = new Set<() => void>();
+export type { AssetMetadata } from './activeSubject';
+export { setActiveAsset } from './activeSubject';
 
-export function setActiveAsset(asset: AssetMetadata | null): void {
-  current = asset;
-  listeners.forEach((listener) => listener());
-}
-
-function getSnapshot(): AssetMetadata | null {
-  return current;
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-/** Subscribe a component to the active asset. */
-export function useActiveAsset(): AssetMetadata | null {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+/** The active subject when it is an NCEI file, otherwise null. */
+export function useActiveAsset() {
+  return useActiveSubject()?.asset ?? null;
 }

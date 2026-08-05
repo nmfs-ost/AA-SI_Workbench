@@ -22,9 +22,12 @@ from .. import _paths
 from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
+from .jobs import router as jobs_router
 from .ncei import router as ncei_router
 from .recipes import router as recipes_router
+from .store import router as store_router
 from .terminal import router as terminal_router
+from .tools import router as tools_router
 
 
 class _SPAStaticFiles(StaticFiles):
@@ -66,6 +69,12 @@ def create_app() -> FastAPI:
     app.include_router(files_router)
     app.include_router(recipes_router)
     app.include_router(terminal_router)
+    # The tool surface: run them (jobs), read them (store), ask what they take
+    # (tools). Registered after the panels' own endpoints so a routing conflict
+    # would surface here rather than shadowing something older.
+    app.include_router(jobs_router)
+    app.include_router(store_router)
+    app.include_router(tools_router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
