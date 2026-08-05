@@ -110,6 +110,22 @@ export function MenuBar() {
         position: 'relative',
         zIndex: (t) => t.zIndex.modal + 1,
         userSelect: 'none',
+        /* The decorative band. `transparent` in every palette but `pride`, so
+           this rule renders nothing at all in the four that shipped before it —
+           which is why it can sit here unconditionally rather than behind a
+           check on which theme is active. Drawn on the bar's outer edge, below
+           its border, so it reads as part of the seam between the chrome and
+           the workspace rather than as a stripe inside the toolbar. */
+        '&::after': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: -3,
+          height: 2,
+          background: theme.aa.color.decoration.band,
+          pointerEvents: 'none',
+        },
       }}
     >
       {/* The mark stands in for the wordmark that used to be here. It inherits

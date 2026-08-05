@@ -11,13 +11,30 @@ Scope and safety
 Listing and reading are unconditional. Writing is deliberate, not an accident
 of symmetry: the panel gained an editor because a scientist editing a
 three-line parameter file should not have to leave for a terminal, and the
-notebook they are about to run has to be created somewhere. What is still
-absent is equally deliberate — there is **no delete, move, or rename**.
-Destructive operations one misclick away from a file listing are a poor trade,
-and the terminal is right there for them.
+notebook they are about to run has to be created somewhere.
+
+Organising — rename, move, trash — was absent for a long time on the grounds
+that a destructive action one misclick from a listing is a poor trade. That
+reasoning was right about *deletion* and wrong about the conclusion, because
+the alternative on offer was ``rm`` at a terminal, which is worse in exactly
+the way the argument was worried about. So the operations exist now, and the
+trade is answered directly instead:
+
+* **There is still no delete.** ``/trash`` *moves*; nothing here unlinks a file
+  the user can see. The one ``unlink`` in this module removes a ``.trashinfo``
+  sidecar this module wrote seconds earlier.
+* **Trashing is reversible from inside the Workbench.** ``/trash`` returns the
+  token ``/restore`` needs, so "Moved to Trash · Undo" is one request and does
+  not depend on the user finding a desktop file manager.
+* **The destination follows the XDG Trash spec**, so a desktop Files app sees
+  the same trash and can restore from it independently of this API.
+* **Rename is a leaf operation.** A name containing a separator is rejected
+  rather than resolved, so renaming cannot relocate a file.
+* Every one of them refuses to overwrite an existing path.
 
 ``AASI_FS_READONLY=true`` removes the write half entirely (405 on every
-mutating route) for deployments that want browsing without editing.
+mutating route, organising included) for deployments that want browsing without
+editing.
 
 Access is bounded by ``AASI_FS_ROOT`` (default ``$HOME``). Every requested path
 is resolved and then checked against that boundary, so ``..`` traversal and
@@ -34,14 +51,21 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+try:  # POSIX only; the owner column degrades to empty elsewhere.
+    import pwd
+except ImportError:  # pragma: no cover - Windows
+    pwd = None  # type: ignore[assignment]
 
 router = APIRouter(prefix="/api/fs")
 
@@ -203,6 +227,27 @@ def _resolve(raw: str) -> Path:
     return resolved
 
 
+def _leaf_name(raw: str) -> str:
+    """Validate a user-supplied *name* — one path component, never a path.
+
+    Shared by ``/create`` and ``/rename`` because they need exactly the same
+    rule and it is the rule that stops a rename from becoming a move: a name
+    containing a separator is rejected rather than resolved, so a typed
+    ``../../ssh/authorized_keys`` cannot relocate anything. ``_resolve`` would
+    catch the escape afterwards, but only for paths that leave the root — this
+    catches the ones that stay inside it too.
+    """
+    name = raw.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A name is required.")
+    if name in {".", ".."} or "/" in name or "\\" in name or "\x00" in name:
+        raise HTTPException(
+            status_code=400,
+            detail="Names can't contain slashes — pick the folder separately.",
+        )
+    return name
+
+
 def _iso(ts: float) -> str:
     return (
         datetime.fromtimestamp(ts, UTC).isoformat(timespec="seconds").replace(
@@ -219,6 +264,73 @@ def _kind_for(path: Path, *, is_dir: bool) -> str:
     return ASSET_KINDS.get(suffix, "file")
 
 
+#: uid -> account name. A directory listing calls this once per row and the
+#: answer cannot change while the process runs, so the NSS lookup — which may
+#: touch LDAP on a managed workstation — happens once per distinct uid.
+_owner_cache: dict[int, str] = {}
+
+
+def _owner_for(uid: int) -> str:
+    """The account name owning a file, or "" when it can't be resolved.
+
+    **This is the owner, not the last writer.** POSIX does not record who
+    modified a file — only ``st_uid``, which is whoever owns it now. On a
+    single-user workstation the two coincide; on a shared one they do not, and
+    a column headed "modified by" built on this would be confidently wrong. The
+    field is therefore named for what it actually holds, and the UI labels it
+    "owner" for the same reason.
+    """
+    if pwd is None:
+        return ""
+    cached = _owner_cache.get(uid)
+    if cached is not None:
+        return cached
+    try:
+        name = pwd.getpwuid(uid).pw_name
+    except (KeyError, OSError):
+        # A uid with no passwd entry — an NFS mount or a deleted account.
+        name = str(uid)
+    _owner_cache[uid] = name
+    return name
+
+
+def _trash_dir() -> Path:
+    """The XDG trash directory for this user, honouring ``XDG_DATA_HOME``.
+
+    Deliberately *not* confined to ``AASI_FS_ROOT``: the trash is where files
+    go to stop being in the browsable tree, and a trash inside that tree would
+    still be listed. It is also the same directory the desktop uses, which is
+    what lets a file trashed here be restored from a Files app and vice versa.
+    """
+    base = os.getenv("XDG_DATA_HOME", "").strip()
+    root = Path(base).expanduser() if base else Path.home() / ".local" / "share"
+    return root / "Trash"
+
+
+def _unique_trash_name(info_dir: Path, name: str) -> tuple[Path, str]:
+    """Claim a free name in the trash, atomically.
+
+    The spec requires the entry in ``files/`` and its sidecar in ``info/`` to
+    share a name, so the sidecar is created with ``O_EXCL`` and *that* is what
+    reserves the name. Checking whether a name is free and then using it is the
+    race two Workbench windows would lose.
+    """
+    stem, dot, suffix = name.partition(".")
+    for attempt in range(1, 1000):
+        candidate = name if attempt == 1 else f"{stem}.{attempt}{dot}{suffix}"
+        info_path = info_dir / f"{candidate}.trashinfo"
+        try:
+            handle = os.open(info_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        os.close(handle)
+        return info_path, candidate
+    raise HTTPException(
+        status_code=500,
+        detail="The trash already holds a thousand files by that name.",
+    )
+
+
 class FsEntry(BaseModel):
     name: str
     path: str
@@ -226,6 +338,9 @@ class FsEntry(BaseModel):
     kind: str = ""
     sizeBytes: int = 0
     modifiedAt: str = ""
+    #: Account name owning the file. **Not** who last wrote it — see
+    #: ``_owner_for``. Empty when the platform has no passwd database.
+    owner: str = ""
     childCount: int = -1  # -1 = not counted (unreadable or not a directory)
 
 
@@ -276,13 +391,50 @@ class FsCreateRequest(BaseModel):
     kind: str = "text"
 
 
+class FsRenameRequest(BaseModel):
+    """Give an existing entry a new leaf name, in the same folder."""
+
+    path: str
+    name: str
+
+
+class FsMoveRequest(BaseModel):
+    """Move an entry into ``destination``, keeping its name."""
+
+    path: str
+    destination: str
+
+
+class FsTrashRequest(BaseModel):
+    path: str
+
+
+class FsRestoreRequest(BaseModel):
+    """Undo one trash operation, by the token ``/trash`` handed back."""
+
+    token: str
+
+
+class FsTrashResult(BaseModel):
+    """What was trashed, and everything ``/restore`` needs to undo it."""
+
+    #: Where the entry used to be — what the UI says in "Moved X to Trash".
+    path: str
+    name: str
+    #: Where it is now. Shown so the message is checkable rather than trusted.
+    trashedTo: str
+    #: Opaque handle for ``/restore``. The trash entry's name, which is not
+    #: necessarily the file's — a collision appends a counter.
+    token: str
+
+
 def _describe_path(path: Path) -> FsEntry:
     """FsEntry for a path we already hold (post-write), rather than a DirEntry."""
     try:
         stat = path.stat()
-        size, mtime = stat.st_size, stat.st_mtime
+        size, mtime, uid = stat.st_size, stat.st_mtime, stat.st_uid
     except OSError:
-        size, mtime = 0, 0.0
+        size, mtime, uid = 0, 0.0, -1
     is_dir = path.is_dir()
     kind = _kind_for(path, is_dir=is_dir)
     return FsEntry(
@@ -292,6 +444,7 @@ def _describe_path(path: Path) -> FsEntry:
         kind=kind,
         sizeBytes=size,
         modifiedAt=_iso(mtime) if mtime else "",
+        owner=_owner_for(uid) if uid >= 0 else "",
         childCount=-1,
     )
 
@@ -300,9 +453,9 @@ def _describe(entry: os.DirEntry[str]) -> FsEntry:
     path = Path(entry.path)
     try:
         stat = entry.stat(follow_symlinks=False)
-        size, mtime = stat.st_size, stat.st_mtime
+        size, mtime, uid = stat.st_size, stat.st_mtime, stat.st_uid
     except OSError:
-        size, mtime = 0, 0.0
+        size, mtime, uid = 0, 0.0, -1
 
     is_dir = entry.is_dir(follow_symlinks=False)
     # A .zarr store is a directory, but the workflow treats it as one asset.
@@ -323,6 +476,7 @@ def _describe(entry: os.DirEntry[str]) -> FsEntry:
         kind=kind,
         sizeBytes=size,
         modifiedAt=_iso(mtime) if mtime else "",
+        owner=_owner_for(uid) if uid >= 0 else "",
         childCount=child_count,
     )
 
@@ -590,16 +744,7 @@ def create_entry(request: FsCreateRequest) -> FsEntry:
             ),
         )
 
-    name = request.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="A name is required.")
-    # The name is a leaf, not a path: reject anything that would relocate the
-    # file, rather than silently resolving it somewhere else.
-    if name in {".", ".."} or "/" in name or "\\" in name or "\x00" in name:
-        raise HTTPException(
-            status_code=400,
-            detail="Names can't contain slashes — pick the folder separately.",
-        )
+    name = _leaf_name(request.name)
 
     suffix = NEW_FILE_SUFFIX[request.kind]
     if suffix and not name.lower().endswith(suffix):
@@ -635,3 +780,217 @@ def create_entry(request: FsCreateRequest) -> FsEntry:
         raise HTTPException(status_code=500, detail=f"Could not create: {exc}") from exc
 
     return _describe_path(target)
+
+
+@router.get("/stat", response_model=FsEntry)
+def stat_entry(path: str = Query(...)) -> FsEntry:
+    """Describe one path without listing or reading it.
+
+    The terminal's link provider is the caller that needs this. It sees a path
+    printed by a tool and has to choose between opening an editor and revealing
+    a folder, and the only alternatives were to guess from the suffix — wrong
+    for every extensionless directory these tools produce — or to call
+    ``/list`` and treat an error as "it's a file", which enumerates a survey
+    directory to answer a yes/no question.
+    """
+    _guard()
+    target = _resolve(path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"No such path: {target}")
+    return _describe_path(target)
+
+
+@router.post("/rename", response_model=FsEntry)
+def rename_entry(request: FsRenameRequest) -> FsEntry:
+    """Rename one entry in place. Refuses to overwrite, refuses to relocate."""
+    _guard_write()
+    target = _resolve(request.path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"No such path: {target}")
+    if target == _fs_root():
+        raise HTTPException(
+            status_code=400, detail="The browsable root can't be renamed."
+        )
+
+    name = _leaf_name(request.name)
+    if name == target.name:
+        return _describe_path(target)  # nothing to do; not an error
+
+    # Resolve through the parent so a symlinked folder can't land the result
+    # outside the root — the same reason /create resolves a second time.
+    destination = _resolve(str(target.parent / name))
+    if destination.exists():
+        raise HTTPException(status_code=409, detail=f"{name} already exists here.")
+
+    try:
+        os.rename(target, destination)
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403, detail=f"Permission denied: {target}"
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not rename: {exc}") from exc
+
+    return _describe_path(destination)
+
+
+@router.post("/move", response_model=FsEntry)
+def move_entry(request: FsMoveRequest) -> FsEntry:
+    """Move an entry into another folder, keeping its name."""
+    _guard_write()
+    source = _resolve(request.path)
+    destination_dir = _resolve(request.destination)
+
+    if not source.exists():
+        raise HTTPException(status_code=404, detail=f"No such path: {source}")
+    if source == _fs_root():
+        raise HTTPException(
+            status_code=400, detail="The browsable root can't be moved."
+        )
+    if not destination_dir.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a folder: {destination_dir}")
+
+    # Moving a directory into itself or into its own subtree detaches it from
+    # the filesystem: `os.rename` returns EINVAL on some platforms and silently
+    # produces an unreachable directory on others.
+    if source == destination_dir or source in destination_dir.parents:
+        raise HTTPException(
+            status_code=400, detail="A folder can't be moved inside itself."
+        )
+
+    target = _resolve(str(destination_dir / source.name))
+    if target == source:
+        return _describe_path(source)  # already there
+    if target.exists():
+        raise HTTPException(
+            status_code=409, detail=f"{source.name} already exists in that folder."
+        )
+
+    try:
+        # shutil.move rather than os.rename: the destination may be on another
+        # filesystem, which os.rename reports as EXDEV rather than handling.
+        shutil.move(str(source), str(target))
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403, detail=f"Permission denied: {source}"
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not move: {exc}") from exc
+
+    return _describe_path(target)
+
+
+@router.post("/trash", response_model=FsTrashResult)
+def trash_entry(request: FsTrashRequest) -> FsTrashResult:
+    """Move an entry to the desktop trash, following the XDG Trash spec.
+
+    Nothing is unlinked. The entry moves to ``$XDG_DATA_HOME/Trash/files`` and
+    a ``.trashinfo`` sidecar records where it came from, which is what lets
+    both ``/restore`` and any desktop file manager put it back.
+
+    The sidecar is written *first*, with ``O_EXCL``, because it is what claims
+    the name. Writing the file first and the sidecar second leaves an orphan in
+    ``files/`` if the second step fails — an entry the trash can display but
+    cannot restore.
+    """
+    _guard_write()
+    target = _resolve(request.path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"No such path: {target}")
+    if target == _fs_root():
+        raise HTTPException(
+            status_code=400, detail="The browsable root can't be trashed."
+        )
+
+    trash = _trash_dir()
+    files_dir, info_dir = trash / "files", trash / "info"
+    try:
+        files_dir.mkdir(parents=True, exist_ok=True)
+        info_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Could not open the trash ({trash}): {exc}"
+        ) from exc
+
+    info_path, entry_name = _unique_trash_name(info_dir, target.name)
+    destination = files_dir / entry_name
+
+    try:
+        info_path.write_text(
+            "[Trash Info]\n"
+            # The spec wants the original path URL-encoded, so a name with a
+            # space or a '#' survives the round trip through /restore.
+            f"Path={quote(str(target))}\n"
+            f"DeletionDate={datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}\n",
+            encoding="utf-8",
+        )
+        shutil.move(str(target), str(destination))
+    except (OSError, PermissionError) as exc:
+        # Roll the claim back so a failed trash doesn't leave a sidecar naming
+        # a file that is still in place — which /restore would then refuse.
+        info_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Could not trash: {exc}") from exc
+
+    return FsTrashResult(
+        path=str(target),
+        name=target.name,
+        trashedTo=str(destination),
+        token=entry_name,
+    )
+
+
+@router.post("/restore", response_model=FsEntry)
+def restore_entry(request: FsRestoreRequest) -> FsEntry:
+    """Undo one ``/trash``, using the token it returned.
+
+    This is what makes trashing a reversible action inside the Workbench rather
+    than a reversible action somewhere else that the user has to go and find.
+    """
+    _guard_write()
+    token = _leaf_name(request.token)
+
+    trash = _trash_dir()
+    info_path = trash / "info" / f"{token}.trashinfo"
+    source = trash / "files" / token
+
+    if not info_path.exists() or not source.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="That item is no longer in the trash — it may have been emptied.",
+        )
+
+    original = ""
+    for line in info_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("Path="):
+            original = unquote(line[len("Path=") :].strip())
+            break
+    if not original:
+        raise HTTPException(
+            status_code=422,
+            detail="The trash record has no original location, so it can't be undone.",
+        )
+
+    # Back through the boundary check: the sidecar is a file on disk and could
+    # name anywhere at all, so a restore is treated as untrusted input exactly
+    # like a path arriving in a query string.
+    destination = _resolve(original)
+    if destination.exists():
+        raise HTTPException(
+            status_code=409,
+            detail=f"{destination.name} exists again at that location.",
+        )
+    if not destination.parent.is_dir():
+        raise HTTPException(
+            status_code=409,
+            detail=f"The folder it came from is gone ({destination.parent}).",
+        )
+
+    try:
+        shutil.move(str(source), str(destination))
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Could not restore: {exc}"
+        ) from exc
+    info_path.unlink(missing_ok=True)
+
+    return _describe_path(destination)

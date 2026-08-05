@@ -5,9 +5,14 @@
  * wire). Every path is confined server-side to AASI_FS_ROOT; nothing here
  * re-checks that, because a client-side boundary check would be decoration.
  *
- * Reading and listing are unconditional. Writing exists but is narrow on
- * purpose — save an open file, create a new one. There is no delete or move,
- * here or on the server.
+ * Reading and listing are unconditional. Writing and organising — create,
+ * save, rename, move, trash — are all gated server-side by AASI_FS_READONLY.
+ *
+ * There is still no delete. `trash` *moves*, following the XDG Trash spec, and
+ * hands back the token `restore` needs, so the panel can offer "Moved to Trash
+ * · Undo" rather than an irreversible action with a confirmation dialog in
+ * front of it. A confirmation is a worse guarantee than an undo: it asks the
+ * user to be certain in advance, which is the one thing they cannot be.
  */
 
 const API_BASE = (import.meta.env.VITE_AASI_API_BASE ?? '').replace(/\/$/, '');
@@ -37,8 +42,28 @@ export interface FsEntry {
   kind: FsKind;
   sizeBytes: number;
   modifiedAt: string;
+  /**
+   * Account owning the file — **not** who last wrote it.
+   *
+   * POSIX records `st_uid` and nothing else, so "modified by" is not a
+   * question the filesystem can answer. On a shared workstation the owner and
+   * the last writer differ, which is exactly the case a column headed
+   * "modified by" would get wrong. Empty where there is no passwd database.
+   */
+  owner: string;
   /** Number of children, or -1 when not counted (unreadable, or not a folder). */
   childCount: number;
+}
+
+/** What `trash` hands back — everything `restore` needs to undo it. */
+export interface FsTrashResult {
+  /** Where it used to be. */
+  path: string;
+  name: string;
+  /** Where it is now, so the message is checkable rather than trusted. */
+  trashedTo: string;
+  /** Opaque handle for `restore`. Not necessarily the file's name. */
+  token: string;
 }
 
 export interface FsListing {
@@ -119,5 +144,41 @@ export const filesApi = {
     request<FsEntry>('/api/fs/create', {
       method: 'POST',
       body: JSON.stringify({ parent, name, kind }),
+    }),
+
+  /**
+   * Describe one path without listing or reading it.
+   *
+   * The terminal's link provider is the caller this exists for: it sees a path
+   * a tool printed and must choose between opening an editor and revealing a
+   * folder. Guessing from the suffix is wrong for every extensionless
+   * directory these tools produce.
+   */
+  stat: (path: string) =>
+    request<FsEntry>(`/api/fs/stat?path=${encodeURIComponent(path)}`),
+
+  /** Rename in place. `name` is a leaf — a separator in it is rejected. */
+  rename: (path: string, name: string) =>
+    request<FsEntry>('/api/fs/rename', {
+      method: 'POST',
+      body: JSON.stringify({ path, name }),
+    }),
+
+  move: (path: string, destination: string) =>
+    request<FsEntry>('/api/fs/move', {
+      method: 'POST',
+      body: JSON.stringify({ path, destination }),
+    }),
+
+  trash: (path: string) =>
+    request<FsTrashResult>('/api/fs/trash', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+
+  restore: (token: string) =>
+    request<FsEntry>('/api/fs/restore', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
     }),
 };

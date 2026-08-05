@@ -69,6 +69,24 @@ const dark = {
       reference: '#7cbdd0',
     },
 
+    /**
+     * A decorative band in the chrome, painted under the menu bar.
+     *
+     * The one token here that is not a colour: it is whatever CSS `background`
+     * accepts, which for four of the five palettes is the keyword
+     * `transparent` and for `pride` is a gradient. It exists because a rainbow
+     * cannot be expressed as a palette entry — every other slot is a single
+     * value used for text or fill, and a gradient in any of them would fail
+     * the contrast rules those slots are held to, correctly.
+     *
+     * Defaulting to `transparent` rather than to the accent is deliberate: the
+     * band renders in every theme, and any visible default would have changed
+     * the appearance of four palettes to introduce a fifth.
+     */
+    decoration: {
+      band: 'transparent',
+    },
+
     /* Scrollbar thumb. Lives here because global.css now reads every colour
        from these tokens rather than repeating hex values it can't switch. */
     scrollbar: {
@@ -192,6 +210,11 @@ const light: AaTokens = {
       reference: '#1a6070',
     },
 
+    /* No band. See the dark palette's note on this token. */
+    decoration: {
+      band: 'transparent',
+    },
+
     scrollbar: {
       thumb: '#c3c9d2',
       thumbHover: '#adb4bf',
@@ -279,6 +302,11 @@ const noaa: AaTokens = {
       reference: '#56cfd8',
     },
 
+    /* No band. See the dark palette's note on this token. */
+    decoration: {
+      band: 'transparent',
+    },
+
     scrollbar: {
       thumb: '#0e4590',
       thumbHover: '#1a5aad',
@@ -364,6 +392,11 @@ const spring: AaTokens = {
       reference: '#1a6a76',
     },
 
+    /* No band. See the dark palette's note on this token. */
+    decoration: {
+      band: 'transparent',
+    },
+
     scrollbar: {
       thumb: '#c8d2b3',
       thumbHover: '#b0bd97',
@@ -379,6 +412,115 @@ const spring: AaTokens = {
       warning: '#8a6100',
       error: '#b83228',
       info: '#377329',
+    },
+  },
+
+  font: dark.font,
+  radius: dark.radius,
+  size: dark.size,
+};
+
+
+/**
+ * The pride palette.
+ *
+ * Six saturated hues and a legible instrument are not obviously compatible, so
+ * the colours are given jobs rather than sprinkled. Three rules do the work.
+ *
+ * **The neutrals stay neutral.** The background ramp is a near-black carrying
+ * only a trace of violet — enough that it is not the dark theme's slate, not
+ * enough to compete. With six hues in play on an open file, a tinted chrome
+ * would leave nothing on screen that is *not* colour, and the eye needs
+ * somewhere to rest.
+ *
+ * **The flag lives in the editor.** The six syntax slots have always been the
+ * one place this UI admits more than one hue — "the colours *are* the
+ * information", as the dark palette's note puts it — so they carry five of the
+ * six stripes directly, lightened for a dark background the same way the NOAA
+ * palette lightens Process Blue. Red is the sixth, and it is deliberately not
+ * a syntax slot: red already means `status.error` everywhere in this
+ * application, and a red that means "string literal" in one panel and
+ * "the run failed" in another is worse than a five-stripe editor.
+ *
+ * **The rainbow itself is a band, not a fill.** A gradient cannot be a token
+ * that text is drawn in — it would fail every contrast rule in `theme.test.ts`,
+ * correctly — so it is `decoration.band`, two pixels under the menu bar, where
+ * it is unmistakable and sits behind nothing.
+ *
+ * The accent is pink rather than one of the six. It has to clear 4.5:1 against
+ * three surfaces *and* be distinguishable from all six stripes at a glance,
+ * since it marks focus and selection while they are on screen; a seventh hue is
+ * the honest answer, and pink is the one the flag's own family suggests.
+ */
+const pride: AaTokens = {
+  color: {
+    bg: {
+      base: '#16121c', // strips + status bar — deepest
+      chrome: '#1c1726', // menu bar
+      editor: '#1f1a2a', // docking surface
+      panel: '#241f31', // panel body surfaces
+      tabActive: '#2f2840', // most lifted surface
+      tabActiveUnfocused: '#282137',
+      tabInactive: '#1c1726',
+      elevated: '#2a2338', // menus, dialogs, popovers
+      hover: '#332b45',
+      selected: 'rgba(255, 111, 174, 0.18)',
+    },
+
+    border: {
+      subtle: '#352c48',
+      strong: '#0f0c14',
+    },
+
+    text: {
+      primary: '#ece7f5',
+      secondary: '#c0b4d4',
+      muted: '#8f83a5',
+      disabled: '#6d6382',
+    },
+
+    accent: {
+      main: '#ff6fae',
+      hover: '#ff92c4',
+      soft: 'rgba(255, 111, 174, 0.18)',
+      muted: 'rgba(255, 111, 174, 0.48)',
+    },
+
+    /* Five of the six stripes, lightened for a dark background. Red is absent
+       on purpose — see the note above. */
+    syntax: {
+      comment: '#7d7291',
+      string: '#4ade80', // green
+      keyword: '#82b8ff', // blue
+      number: '#ffa94d', // orange
+      entity: '#c084fc', // violet
+      reference: '#ffe066', // yellow
+    },
+
+    /* The flag, in the order it is flown. These are the same five hues the
+       editor uses plus the red that `status.error` carries, so the band is the
+       palette's own colours rather than a decoration pasted on top of it. */
+    decoration: {
+      band:
+        'linear-gradient(90deg, #ff7a7a 0%, #ffa94d 20%, #ffe066 40%, ' +
+        '#4ade80 60%, #82b8ff 80%, #c084fc 100%)',
+    },
+
+    scrollbar: {
+      thumb: '#453a5c',
+      thumbHover: '#584a75',
+    },
+
+    terminalAnsi: {
+      white: '#cdc3dd',
+      brightWhite: '#ffffff',
+    },
+
+    status: {
+      success: '#5cd97e',
+      warning: '#ffb454',
+      error: '#ff7a7a',
+      info: '#ff6fae',
     },
   },
 
@@ -408,6 +550,7 @@ export const palettes: Record<ThemeMode, PaletteDefinition> = {
   light: { id: 'light', label: 'Light Theme', base: 'light', tokens: light },
   noaa: { id: 'noaa', label: 'NOAA Theme', base: 'dark', tokens: noaa },
   spring: { id: 'spring', label: 'Spring Theme', base: 'light', tokens: spring },
+  pride: { id: 'pride', label: 'Pride Theme', base: 'dark', tokens: pride },
 };
 
 /** Menu order. Object key order is not a contract; this is. */
@@ -416,6 +559,7 @@ export const paletteList: readonly PaletteDefinition[] = [
   palettes.light,
   palettes.noaa,
   palettes.spring,
+  palettes.pride,
 ];
 
 /** The tokens for a mode. */

@@ -48,10 +48,11 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   });
   api.getPanel('pipelines')?.api.setActive();
 
-  // Left sidebar — data sources. These four are added as one group, but that
-  // group renders without a tab strip: `syncSidebarChrome` in
-  // useLayoutController hides the header and locks it against drops, because
-  // the icon strip beside it already names and switches between them.
+  // Left sidebar — the data sources, plus the project itself. These are added
+  // as one group, but that group renders without a tab strip:
+  // `syncSidebarChrome` in useLayoutController hides the header and locks it
+  // against drops, because the icon strip beside it already names and switches
+  // between them.
   api.addPanel({
     id: 'ncei',
     component: 'ncei',
@@ -75,6 +76,12 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     id: 'omao',
     component: 'omao',
     title: 'OMAO',
+    position: { referencePanel: 'ncei', direction: 'within' },
+  });
+  api.addPanel({
+    id: 'resources',
+    component: 'resources',
+    title: 'Project',
     position: { referencePanel: 'ncei', direction: 'within' },
   });
 
@@ -236,6 +243,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
     ['files', 'Files'],
     ['derived', 'Derived'],
     ['omao', 'OMAO'],
+    ['resources', 'Project'],
   ] as const) {
     api.addPanel({
       id,

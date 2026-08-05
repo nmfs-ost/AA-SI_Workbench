@@ -7,7 +7,7 @@
  * lives in `theme/tokens.ts`, and `Record<ThemeMode, PaletteDefinition>` there
  * is what turns a missing palette into a type error rather than a blank screen.
  */
-export type ThemeMode = 'dark' | 'light' | 'noaa' | 'spring';
+export type ThemeMode = 'dark' | 'light' | 'noaa' | 'spring' | 'pride';
 
 /**
  * Whether a palette is fundamentally light or dark.

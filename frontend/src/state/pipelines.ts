@@ -238,11 +238,23 @@ export function getPipeline(
 /**
  * Create a new pipeline from composed stages, seed its Default configuration,
  * and focus it so the Configuration panel opens on it. Returns the new id.
+ *
+ * `values` seeds the Default configuration on top of each parameter's default.
+ * The New Pipeline dialog's command parser needs it for two things a bare
+ * stage list cannot express: the flags a user actually typed, and the verbatim
+ * text of a freeform stage — which lives under `COMMAND_OVERRIDE` and has no
+ * `ParamDef` to hold a default at all.
+ *
+ * Deliberately *not* done by rewriting the stages' defaults. `pipelineTypes`
+ * records that an untouched field must send nothing, so the tool's own default
+ * keeps applying and a later change to it still takes effect; pinning a typed
+ * value in as a default would quietly end that.
  */
 export function createPipeline(input: {
   name: string;
   description: string;
   stages: StageDef[];
+  values?: PipelineValues;
 }): string {
   const id = `user-${Date.now().toString(36)}`;
   const pipeline: PipelineDefinition = {
@@ -256,7 +268,11 @@ export function createPipeline(input: {
     updatedAt: new Date().toISOString(),
   };
 
-  const base = defaultValues(pipeline);
+  const seeded = defaultValues(pipeline);
+  for (const [stageId, params] of Object.entries(input.values ?? {})) {
+    seeded[stageId] = { ...(seeded[stageId] ?? {}), ...params };
+  }
+  const base = seeded;
   const configId = `${id}:default`;
 
   emit({

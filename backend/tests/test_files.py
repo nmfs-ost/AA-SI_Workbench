@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from fastapi import HTTPException
@@ -391,3 +392,311 @@ def test_os_access_check_marks_unwritable_files(sandbox: Path) -> None:
         assert files.read_file(path=str(locked)).readOnly is True
     finally:
         locked.chmod(0o644)
+
+
+# --------------------------------------------------------------------------- #
+# Describing one path                                                           #
+# --------------------------------------------------------------------------- #
+
+
+def test_stat_describes_a_file_without_reading_it(sandbox: Path) -> None:
+    entry = files.stat_entry(path=str(sandbox / "notes.txt"))
+    assert entry.name == "notes.txt"
+    assert entry.isDir is False
+    assert entry.kind == "text"
+    assert entry.modifiedAt  # the Modified column has something to show
+
+
+def test_stat_distinguishes_a_directory(sandbox: Path) -> None:
+    # The whole reason /stat exists: the terminal prints extensionless paths
+    # and has to choose between an editor and a reveal.
+    assert files.stat_entry(path=str(sandbox / "sub")).isDir is True
+
+
+def test_stat_reports_a_zarr_store_as_a_leaf(sandbox: Path) -> None:
+    (sandbox / "survey.zarr").mkdir()
+    entry = files.stat_entry(path=str(sandbox / "survey.zarr"))
+    assert entry.kind == "zarr"
+    assert entry.isDir is False
+
+
+def test_stat_refuses_to_escape_the_root(sandbox: Path) -> None:
+    with pytest.raises(HTTPException) as caught:
+        files.stat_entry(path=str(sandbox.parent / "outside.txt"))
+    assert caught.value.status_code == 403
+
+
+def test_listing_reports_an_owner(sandbox: Path) -> None:
+    listing = files.list_directory(path=str(sandbox), showHidden=False, limit=2000)
+    notes = next(e for e in listing.entries if e.name == "notes.txt")
+    # POSIX-only, so the assertion is that it is populated *when* it can be.
+    assert notes.owner == files._owner_for(os.stat(sandbox / "notes.txt").st_uid)
+
+
+# --------------------------------------------------------------------------- #
+# Renaming                                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def test_rename_moves_the_entry_in_place(sandbox: Path) -> None:
+    entry = files.rename_entry(
+        files.FsRenameRequest(path=str(sandbox / "notes.txt"), name="journal.txt")
+    )
+    assert entry.name == "journal.txt"
+    assert (sandbox / "journal.txt").read_text() == "hello\nworld\n"
+    assert not (sandbox / "notes.txt").exists()
+
+
+def test_rename_to_the_same_name_is_not_an_error(sandbox: Path) -> None:
+    entry = files.rename_entry(
+        files.FsRenameRequest(path=str(sandbox / "notes.txt"), name="notes.txt")
+    )
+    assert entry.name == "notes.txt"
+    assert (sandbox / "notes.txt").exists()
+
+
+def test_rename_refuses_to_overwrite(sandbox: Path) -> None:
+    (sandbox / "taken.txt").write_text("mine", encoding="utf-8")
+    with pytest.raises(HTTPException) as caught:
+        files.rename_entry(
+            files.FsRenameRequest(path=str(sandbox / "notes.txt"), name="taken.txt")
+        )
+    assert caught.value.status_code == 409
+    assert (sandbox / "taken.txt").read_text() == "mine"
+
+
+@pytest.mark.parametrize("name", ["../escape.txt", "sub/nested.txt", "..", "", "   "])
+def test_rename_rejects_a_name_that_is_really_a_path(sandbox: Path, name: str) -> None:
+    # This is the check that keeps rename from being a move. Without it,
+    # "../../.ssh/authorized_keys" resolves rather than being refused.
+    with pytest.raises(HTTPException) as caught:
+        files.rename_entry(
+            files.FsRenameRequest(path=str(sandbox / "notes.txt"), name=name)
+        )
+    assert caught.value.status_code == 400
+    assert (sandbox / "notes.txt").exists()
+
+
+def test_rename_refuses_the_root(sandbox: Path) -> None:
+    with pytest.raises(HTTPException) as caught:
+        files.rename_entry(files.FsRenameRequest(path=str(sandbox), name="elsewhere"))
+    assert caught.value.status_code == 400
+
+
+def test_rename_is_refused_when_read_only(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AASI_FS_READONLY", "true")
+    with pytest.raises(HTTPException) as caught:
+        files.rename_entry(
+            files.FsRenameRequest(path=str(sandbox / "notes.txt"), name="x.txt")
+        )
+    assert caught.value.status_code == 405
+
+
+# --------------------------------------------------------------------------- #
+# Moving                                                                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_move_relocates_into_a_folder(sandbox: Path) -> None:
+    entry = files.move_entry(
+        files.FsMoveRequest(
+            path=str(sandbox / "notes.txt"), destination=str(sandbox / "sub")
+        )
+    )
+    assert Path(entry.path) == sandbox / "sub" / "notes.txt"
+    assert (sandbox / "sub" / "notes.txt").read_text() == "hello\nworld\n"
+
+
+def test_move_refuses_to_overwrite(sandbox: Path) -> None:
+    (sandbox / "sub" / "notes.txt").write_text("theirs", encoding="utf-8")
+    with pytest.raises(HTTPException) as caught:
+        files.move_entry(
+            files.FsMoveRequest(
+                path=str(sandbox / "notes.txt"), destination=str(sandbox / "sub")
+            )
+        )
+    assert caught.value.status_code == 409
+    assert (sandbox / "sub" / "notes.txt").read_text() == "theirs"
+
+
+def test_move_refuses_a_folder_into_its_own_subtree(sandbox: Path) -> None:
+    # os.rename gives EINVAL on some platforms and an unreachable directory on
+    # others, so this is refused before it is attempted.
+    (sandbox / "sub" / "deeper").mkdir()
+    with pytest.raises(HTTPException) as caught:
+        files.move_entry(
+            files.FsMoveRequest(
+                path=str(sandbox / "sub"), destination=str(sandbox / "sub" / "deeper")
+            )
+        )
+    assert caught.value.status_code == 400
+    assert (sandbox / "sub" / "deeper").is_dir()
+
+
+def test_move_refuses_to_escape_the_root(sandbox: Path) -> None:
+    outside = sandbox.parent / "outside"
+    outside.mkdir()
+    with pytest.raises(HTTPException) as caught:
+        files.move_entry(
+            files.FsMoveRequest(
+                path=str(sandbox / "notes.txt"), destination=str(outside)
+            )
+        )
+    assert caught.value.status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Trash and restore                                                             #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def trash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """An XDG data home of our own, so no test touches the real trash."""
+    data_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    return data_home / "Trash"
+
+
+def test_trash_moves_rather_than_deletes(sandbox: Path, trash: Path) -> None:
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    assert not (sandbox / "notes.txt").exists()
+    # The bytes still exist somewhere reachable — that is the whole claim.
+    assert Path(result.trashedTo).read_text() == "hello\nworld\n"
+    assert (trash / "info" / f"{result.token}.trashinfo").exists()
+
+
+def test_trashinfo_records_the_original_path(sandbox: Path, trash: Path) -> None:
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    info = (trash / "info" / f"{result.token}.trashinfo").read_text()
+    assert info.startswith("[Trash Info]")
+    assert "DeletionDate=" in info
+    # URL-encoded per the spec, so a path with a space survives /restore.
+    assert quote(str(sandbox / "notes.txt")) in info
+
+
+def test_trash_survives_a_name_collision(sandbox: Path, trash: Path) -> None:
+    first = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    (sandbox / "notes.txt").write_text("second", encoding="utf-8")
+    second = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+
+    assert first.token != second.token
+    # Neither copy was clobbered by the other.
+    assert Path(first.trashedTo).read_text() == "hello\nworld\n"
+    assert Path(second.trashedTo).read_text() == "second"
+
+
+def test_trash_handles_a_name_with_a_space(sandbox: Path, trash: Path) -> None:
+    awkward = sandbox / "Dyson's Bank survey.txt"
+    awkward.write_text("legs", encoding="utf-8")
+    result = files.trash_entry(files.FsTrashRequest(path=str(awkward)))
+    restored = files.restore_entry(files.FsRestoreRequest(token=result.token))
+    assert Path(restored.path) == awkward
+    assert awkward.read_text() == "legs"
+
+
+def test_trash_takes_a_whole_directory(sandbox: Path, trash: Path) -> None:
+    (sandbox / "sub" / "inner.txt").write_text("deep", encoding="utf-8")
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "sub")))
+    assert not (sandbox / "sub").exists()
+    assert (Path(result.trashedTo) / "inner.txt").read_text() == "deep"
+
+
+def test_restore_puts_it_back(sandbox: Path, trash: Path) -> None:
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    entry = files.restore_entry(files.FsRestoreRequest(token=result.token))
+
+    assert Path(entry.path) == sandbox / "notes.txt"
+    assert (sandbox / "notes.txt").read_text() == "hello\nworld\n"
+    # The record is consumed, so the same undo can't fire twice.
+    assert not (trash / "info" / f"{result.token}.trashinfo").exists()
+
+
+def test_restore_refuses_when_the_name_is_taken_again(
+    sandbox: Path, trash: Path
+) -> None:
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    (sandbox / "notes.txt").write_text("something new", encoding="utf-8")
+
+    with pytest.raises(HTTPException) as caught:
+        files.restore_entry(files.FsRestoreRequest(token=result.token))
+    assert caught.value.status_code == 409
+    assert (sandbox / "notes.txt").read_text() == "something new"
+
+
+def test_restore_reports_an_emptied_trash(sandbox: Path, trash: Path) -> None:
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    Path(result.trashedTo).unlink()
+
+    with pytest.raises(HTTPException) as caught:
+        files.restore_entry(files.FsRestoreRequest(token=result.token))
+    assert caught.value.status_code == 404
+
+
+def test_restore_will_not_write_outside_the_root(
+    sandbox: Path, trash: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A .trashinfo is a file on disk, so its Path= is untrusted input.
+
+    Nothing in the Workbench writes a record naming somewhere outside the root,
+    but the trash is shared with the desktop and editable by hand, so a restore
+    goes back through the same boundary check as a path in a query string.
+    """
+    result = files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    info = trash / "info" / f"{result.token}.trashinfo"
+    info.write_text(
+        f"[Trash Info]\nPath={quote(str(sandbox.parent / 'escaped.txt'))}\n"
+        "DeletionDate=2024-01-01T00:00:00\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        files.restore_entry(files.FsRestoreRequest(token=result.token))
+    assert caught.value.status_code == 403
+    assert not (sandbox.parent / "escaped.txt").exists()
+
+
+def test_trash_refuses_the_root(sandbox: Path, trash: Path) -> None:
+    with pytest.raises(HTTPException) as caught:
+        files.trash_entry(files.FsTrashRequest(path=str(sandbox)))
+    assert caught.value.status_code == 400
+
+
+def test_trash_is_refused_when_read_only(
+    sandbox: Path, trash: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AASI_FS_READONLY", "true")
+    with pytest.raises(HTTPException) as caught:
+        files.trash_entry(files.FsTrashRequest(path=str(sandbox / "notes.txt")))
+    assert caught.value.status_code == 405
+    assert (sandbox / "notes.txt").exists()
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda root: files.stat_entry(path=str(root / "notes.txt")),
+        lambda root: files.rename_entry(
+            files.FsRenameRequest(path=str(root / "notes.txt"), name="x.txt")
+        ),
+        lambda root: files.move_entry(
+            files.FsMoveRequest(
+                path=str(root / "notes.txt"), destination=str(root / "sub")
+            )
+        ),
+        lambda root: files.trash_entry(
+            files.FsTrashRequest(path=str(root / "notes.txt"))
+        ),
+        lambda root: files.restore_entry(files.FsRestoreRequest(token="notes.txt")),
+    ],
+)
+def test_non_loopback_bind_refuses_the_organising_routes(
+    sandbox: Path, monkeypatch: pytest.MonkeyPatch, call
+) -> None:
+    monkeypatch.setenv("AASI_BIND_HOST", "0.0.0.0")
+    monkeypatch.delenv("AASI_ALLOW_REMOTE_FS", raising=False)
+    with pytest.raises(HTTPException) as caught:
+        call(sandbox)
+    assert caught.value.status_code == 403

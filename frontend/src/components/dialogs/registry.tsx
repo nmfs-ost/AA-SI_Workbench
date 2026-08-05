@@ -5,6 +5,7 @@ import { AboutDialog } from './AboutDialog';
 import { EnvironmentDialog } from './EnvironmentDialog';
 import { FeedbackDialog } from './FeedbackDialog';
 import { NewFileDialog } from './NewFileDialog';
+import { RenameDialog } from './RenameDialog';
 
 /**
  * THE DIALOG REGISTRY — the extension point for shell-level modals, mirroring
@@ -30,6 +31,7 @@ export const dialogDefinitions: readonly DialogDefinition[] = [
   { id: 'environment', component: EnvironmentDialog },
   { id: 'feedback', component: FeedbackDialog },
   { id: 'new-file', component: NewFileDialog },
+  { id: 'rename', component: RenameDialog },
 ] as const;
 
 export const dialogRegistry: Record<string, DialogDefinition> = Object.fromEntries(

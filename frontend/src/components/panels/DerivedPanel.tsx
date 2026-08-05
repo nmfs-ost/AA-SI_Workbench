@@ -14,6 +14,8 @@ import {
 import {
   ChevronRightOutlined,
   CloudOutlined,
+  ContentCopyOutlined,
+  DataObjectOutlined,
   DescriptionOutlined,
   ExpandMoreOutlined,
   FolderOutlined,
@@ -23,14 +25,20 @@ import {
   LaunchOutlined,
   RefreshOutlined,
   SearchOutlined,
+  TerminalOutlined,
   UnfoldLessOutlined,
 } from '@mui/icons-material';
 
 import { CopyPathButton } from './CopyPathButton';
+import { RowMenu, RowMenuButton, useRowMenu, type RowAction } from './RowMenu';
 import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
+import { useLayout } from '../../context/LayoutContext';
 import { setActiveArtifact } from '../../state/activeSubject';
+import { sendToTerminal } from '../../state/terminal';
 import { panelDensity } from './panelStyles';
+import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
+import { quote } from './shellQuote';
 
 const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
   folder: FolderOutlined,
@@ -46,17 +54,250 @@ const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
 
 const ASSET_KINDS = new Set<DerivedKind>(['netcdf', 'zarr', 'raw']);
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return '';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  const value = bytes / 1024 ** i;
-  return `${value >= 10 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
-}
-
 interface Row {
   entry: DerivedEntry;
   depth: number;
+}
+
+/** Matches the Files panel's columns exactly, so the two trees line up when
+    the docks are switched between. See `rowFormat.ts`. */
+const SIZE_WIDTH = 52;
+const MODIFIED_WIDTH = 46;
+
+/** The console page for one object or prefix, rather than for the bucket.
+ *
+ * The header's Launch button already opens the bucket root; landing there
+ * after asking about a store six prefixes deep is a link that technically
+ * works and practically doesn't. GCS's console distinguishes the two forms:
+ * `browser/<bucket>/<prefix>` lists, `browser/_details/<bucket>/<object>`
+ * opens one object's detail page.
+ */
+function consoleUrlFor(
+  bucket: string,
+  project: string,
+  entry: DerivedEntry,
+): string {
+  const base = 'https://console.cloud.google.com/storage/browser';
+  const path = entry.path.replace(/^\/+/, '');
+  const suffix = project ? `?project=${encodeURIComponent(project)}` : '';
+  return entry.isDir
+    ? `${base}/${bucket}/${path}${suffix}`
+    : `${base}/_details/${bucket}/${path}${suffix}`;
+}
+
+interface DerivedRowProps {
+  entry: DerivedEntry;
+  depth: number;
+  expanded: boolean;
+  busy: boolean;
+  selected: boolean;
+  bucket: string;
+  project: string;
+  onActivate: () => void;
+  onRefresh: () => void;
+  onError: (message: string) => void;
+}
+
+/** One row of the bucket tree. A component for the same reason `FileRow` is:
+    each row owns its own menu anchor, and hooks cannot run in a loop body. */
+function DerivedRow({
+  entry,
+  depth,
+  expanded,
+  busy,
+  selected,
+  bucket,
+  project,
+  onActivate,
+  onRefresh,
+  onError,
+}: DerivedRowProps) {
+  const theme = useTheme();
+  const menu = useRowMenu();
+  const { openPanel } = useLayout();
+
+  const Icon = entry.isDir ? FolderOutlined : KIND_ICON[entry.kind];
+  const isAsset = ASSET_KINDS.has(entry.kind);
+
+  const copy = (value: string, what: string) => {
+    void navigator.clipboard?.writeText(value).catch(() => {
+      onError(`Could not reach the clipboard — select the ${what} instead.`);
+    });
+  };
+
+  const actions: readonly RowAction[] = [
+    ...(entry.isDir
+      ? [
+          {
+            id: 'refresh',
+            label: 'Refresh this folder',
+            icon: RefreshOutlined,
+            onSelect: onRefresh,
+          },
+        ]
+      : [
+          {
+            id: 'inspect',
+            label: 'Inspect metadata',
+            icon: DataObjectOutlined,
+            onSelect: () => {
+              onActivate();
+              openPanel('metadata');
+            },
+          },
+        ]),
+    {
+      id: 'copy-uri',
+      label: 'Copy gs:// URI',
+      icon: ContentCopyOutlined,
+      dividerBefore: true,
+      onSelect: () => copy(entry.uri, 'URI'),
+    },
+    {
+      id: 'copy-path',
+      label: 'Copy bucket path',
+      icon: ContentCopyOutlined,
+      onSelect: () => copy(entry.path, 'path'),
+    },
+    /* `aa-store` on a store, not on everything. Offering "inspect this PNG
+       with aa-store" would put a command in the user's shell that exits
+       non-zero, and a menu that suggests failing commands stops being read. */
+    ...(entry.kind === 'zarr'
+      ? [
+          {
+            id: 'aa-store',
+            label: 'aa-store info in Terminal',
+            icon: TerminalOutlined,
+            onSelect: () => {
+              sendToTerminal(`aa-store info ${quote(entry.uri)}`, {
+                origin: 'Derived',
+                execute: false,
+              });
+              openPanel('terminal');
+            },
+          },
+        ]
+      : []),
+    {
+      id: 'console',
+      label: 'Open in Cloud console',
+      icon: LaunchOutlined,
+      dividerBefore: true,
+      disabled: !bucket,
+      disabledReason: 'The bucket is not reachable, so there is nothing to open.',
+      onSelect: () => {
+        window.open(
+          consoleUrlFor(bucket, project, entry),
+          '_blank',
+          'noopener,noreferrer',
+        );
+      },
+    },
+  ];
+
+  return (
+    <>
+      <Box
+        title={entry.uri}
+        onClick={onActivate}
+        onContextMenu={menu.onContextMenu}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.5,
+          height: panelDensity.rowHeight,
+          pr: 0.5,
+          pl: `${depth * 12 + 4}px`,
+          cursor: 'pointer',
+          userSelect: 'none',
+          backgroundColor: selected ? theme.aa.color.bg.chrome : 'transparent',
+          '&:hover': { backgroundColor: theme.aa.color.bg.chrome },
+          '&:hover .aa-copy': { opacity: 1 },
+          '&:hover .aa-rowmenu': { opacity: 1 },
+        }}
+      >
+        <Box sx={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          {entry.isDir &&
+            (busy ? (
+              <CircularProgress size={10} sx={{ ml: '2px' }} />
+            ) : expanded ? (
+              <ExpandMoreOutlined
+                sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
+              />
+            ) : (
+              <ChevronRightOutlined
+                sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
+              />
+            ))}
+        </Box>
+
+        <Icon
+          sx={{
+            fontSize: panelDensity.icon.row,
+            flexShrink: 0,
+            color: isAsset ? theme.aa.color.accent.main : theme.aa.color.text.muted,
+          }}
+        />
+
+        <Typography
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: panelDensity.font.row,
+            fontFamily: isAsset ? theme.aa.font.mono : undefined,
+            color: theme.aa.color.text.primary,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {entry.name}
+        </Typography>
+
+        <Typography
+          sx={{
+            width: SIZE_WIDTH,
+            flexShrink: 0,
+            textAlign: 'right',
+            fontSize: panelDensity.font.meta,
+            color: theme.aa.color.text.muted,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {entry.isDir ? '' : formatBytes(entry.sizeBytes)}
+        </Typography>
+
+        {/* Modified. GCS reports `updatedAt` on objects only — a common prefix
+            is not a thing that has a timestamp, and neither is a store listed
+            as a leaf, because that listing never enumerated its chunks. Those
+            rows render blank rather than borrowing a number from somewhere
+            plausible. */}
+        <Tooltip
+          title={modifiedTooltip(entry.updatedAt)}
+          placement="left"
+          disableInteractive
+        >
+          <Typography
+            sx={{
+              width: MODIFIED_WIDTH,
+              flexShrink: 0,
+              textAlign: 'right',
+              fontSize: panelDensity.font.meta,
+              color: theme.aa.color.text.muted,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {formatRelativeTime(entry.updatedAt)}
+          </Typography>
+        </Tooltip>
+
+        <CopyPathButton value={entry.uri} label="Copy gs:// URI" />
+        <RowMenuButton controller={menu} label={`Actions for ${entry.name}`} />
+      </Box>
+
+      <RowMenu controller={menu} actions={actions} title={entry.name} />
+    </>
+  );
 }
 
 /**
@@ -67,8 +308,19 @@ interface Row {
  * with a delimiter, so each level is one request and nothing is enumerated
  * until it's opened.
  *
- * Read-only. Producing derived assets is the pipelines' job; putting delete one
- * misclick from a listing would be a poor trade.
+ * Right-click a row (or use the ⋮ at its right edge) for the same menu the
+ * Files panel offers — but a *read-only* one. That is not an oversight and not
+ * a thing to fill in later: `/api/derived` has no mutating route at all, and
+ * the reason is that these objects are pipeline output. A store deleted here
+ * is a store some run has to produce again, and the bucket's own console
+ * already offers deletion to anyone whose IAM role permits it. So the menu
+ * carries no Delete item rather than a disabled one — a disabled item promises
+ * the action is coming, and it is not.
+ *
+ * What the menu does carry is the four things a reader of this panel actually
+ * wants and currently has to assemble by hand: the `gs://` URI, the console
+ * link for *this* object rather than the bucket, the metadata inspection this
+ * panel already feeds, and an `aa-store` command typed into the terminal.
  */
 export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
@@ -273,114 +525,69 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
             </Typography>
           )}
 
+          {/* Column header — matches the Files panel's, so the two trees read
+              as one component on different storage. */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              pr: 0.5,
+              pl: '4px',
+              height: 18,
+              flexShrink: 0,
+              borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
+              color: theme.aa.color.text.muted,
+              fontSize: 9.5,
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+              userSelect: 'none',
+            }}
+          >
+            <Box sx={{ width: 16, flexShrink: 0 }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>Name</Box>
+            <Box sx={{ width: SIZE_WIDTH, flexShrink: 0, textAlign: 'right' }}>Size</Box>
+            <Box sx={{ width: MODIFIED_WIDTH, flexShrink: 0, textAlign: 'right' }}>
+              Updated
+            </Box>
+            <Box sx={{ width: 44, flexShrink: 0 }} />
+          </Box>
+
           <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, py: 0.25 }}>
-            {rows.map(({ entry, depth }) => {
-              const Icon = entry.isDir ? FolderOutlined : KIND_ICON[entry.kind];
-              const open = expanded.has(entry.path);
-              const rowBusy = loading.has(entry.path);
-
-              return (
-                <Box
-                  key={entry.path}
-                  title={entry.uri}
-                  onClick={() => {
-                    setSelected(entry.path);
-                    if (entry.isDir) {
-                      toggle(entry);
-                      return;
-                    }
-                    /* Publish to the right dock. A store selected here is the
-                       artifact of the entire acquire → convert → assemble
-                       sector, and until this line existed clicking it changed
-                       nothing anywhere — the Metadata panel could only ever be
-                       about an NCEI raw file. The URI, not the path: a bare
-                       path resolves against whatever directory the reader
-                       happens to be standing in. */
-                    setActiveArtifact({
-                      uri: entry.uri,
-                      label: entry.name,
-                      origin: 'Derived',
-                      kind: entry.kind,
-                    });
-                  }}
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.5,
-                    height: panelDensity.rowHeight,
-                    pr: 0.5,
-                    pl: `${depth * 12 + 4}px`,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    backgroundColor:
-                      selected === entry.path
-                        ? theme.aa.color.bg.chrome
-                        : 'transparent',
-                    '&:hover': { backgroundColor: theme.aa.color.bg.chrome },
-                    '&:hover .aa-copy': { opacity: 1 },
-                  }}
-                >
-                  <Box
-                    sx={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center' }}
-                  >
-                    {entry.isDir &&
-                      (rowBusy ? (
-                        <CircularProgress size={10} sx={{ ml: '2px' }} />
-                      ) : open ? (
-                        <ExpandMoreOutlined
-                          sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
-                        />
-                      ) : (
-                        <ChevronRightOutlined
-                          sx={{ fontSize: panelDensity.icon.chevron, color: theme.aa.color.text.muted }}
-                        />
-                      ))}
-                  </Box>
-
-                  <Icon
-                    sx={{
-                      fontSize: panelDensity.icon.row,
-                      flexShrink: 0,
-                      color: ASSET_KINDS.has(entry.kind)
-                        ? theme.aa.color.accent.main
-                        : theme.aa.color.text.muted,
-                    }}
-                  />
-
-                  <Typography
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontSize: panelDensity.font.row,
-                      fontFamily: ASSET_KINDS.has(entry.kind)
-                        ? theme.aa.font.mono
-                        : undefined,
-                      color: theme.aa.color.text.primary,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {entry.name}
-                  </Typography>
-
-                  {!entry.isDir && entry.sizeBytes > 0 && (
-                    <Typography
-                      sx={{
-                        fontSize: panelDensity.font.meta,
-                        color: theme.aa.color.text.muted,
-                        flexShrink: 0,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {formatBytes(entry.sizeBytes)}
-                    </Typography>
-                  )}
-
-                  <CopyPathButton value={entry.uri} label="Copy gs:// URI" />
-                </Box>
-              );
-            })}
+            {rows.map(({ entry, depth }) => (
+              <DerivedRow
+                key={entry.path}
+                entry={entry}
+                depth={depth}
+                expanded={expanded.has(entry.path)}
+                busy={loading.has(entry.path)}
+                selected={selected === entry.path}
+                bucket={status?.bucket ?? ''}
+                project={status?.project ?? ''}
+                onActivate={() => {
+                  setSelected(entry.path);
+                  if (entry.isDir) {
+                    toggle(entry);
+                    return;
+                  }
+                  /* Publish to the right dock. A store selected here is the
+                     artifact of the entire acquire → convert → assemble
+                     sector, and until this line existed clicking it changed
+                     nothing anywhere — the Metadata panel could only ever be
+                     about an NCEI raw file. The URI, not the path: a bare
+                     path resolves against whatever directory the reader
+                     happens to be standing in. */
+                  setActiveArtifact({
+                    uri: entry.uri,
+                    label: entry.name,
+                    origin: 'Derived',
+                    kind: entry.kind,
+                  });
+                }}
+                onRefresh={() => void fetchPrefix(entry.isDir ? entry.path : '')}
+                onError={setError}
+              />
+            ))}
 
             {!busy && rows.length === 0 && !error && (
               <Typography

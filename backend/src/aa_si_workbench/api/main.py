@@ -22,6 +22,7 @@ from .. import _paths
 from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
+from .identity import router as identity_router
 from .jobs import router as jobs_router
 from .ncei import router as ncei_router
 from .recipes import router as recipes_router
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(environment_router)
     app.include_router(derived_router)
     app.include_router(files_router)
+    app.include_router(identity_router)
     app.include_router(recipes_router)
     app.include_router(terminal_router)
     # The tool surface: run them (jobs), read them (store), ask what they take

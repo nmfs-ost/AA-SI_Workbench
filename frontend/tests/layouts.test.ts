@@ -69,6 +69,7 @@ const ALL_PANELS = [
   'files',
   'derived',
   'omao',
+  'resources',
   'metadata',
   'configuration',
   'calibration',

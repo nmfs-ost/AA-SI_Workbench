@@ -26,6 +26,7 @@ export type BuiltinPanelId =
   | 'files'
   | 'derived'
   | 'omao'
+  | 'resources'
   | 'terminal'
   | 'log'
   | 'progress'

@@ -116,6 +116,38 @@ describe('token shape', () => {
   });
 });
 
+describe('the decoration band', () => {
+  /* The band is the one token that is not a colour, and the one that could
+     change how an existing theme looks. Both facts are pinned here. */
+
+  it('is invisible in every palette that shipped before it', () => {
+    for (const palette of ALL.filter((p) => p.id !== 'pride')) {
+      expect(tokensFor(palette.id).color.decoration.band).toBe('transparent');
+    }
+  });
+
+  it('is a gradient in pride, which is the whole reason it exists', () => {
+    expect(tokensFor('pride').color.decoration.band).toContain('linear-gradient');
+  });
+
+  it('is never used where text is drawn', () => {
+    /* A gradient in a text slot would fail the contrast suite below, but only
+       if someone remembered to add it there. This says it directly: the band
+       is decoration, and no text ramp, accent, syntax or status value may
+       equal it. */
+    for (const palette of ALL) {
+      const t = tokensFor(palette.id);
+      const drawn = [
+        ...Object.values(t.color.text),
+        ...Object.values(t.color.accent),
+        ...Object.values(t.color.syntax),
+        ...Object.values(t.color.status),
+      ];
+      expect(drawn).not.toContain(t.color.decoration.band);
+    }
+  });
+});
+
 describe('contrast', () => {
   /* The surfaces text is actually read from. `base` carries the status bar and
      the icon strips, `chrome` the menu bar, `editor` the docking surface and

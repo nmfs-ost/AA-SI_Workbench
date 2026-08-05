@@ -10,7 +10,12 @@ import { baseFor } from '../../theme';
 import { getPipelinesState, subscribePipelines } from '../../state/pipelines';
 import { getRecipesState, subscribeRecipes } from '../../state/recipes';
 import { setConfigurationFocus } from '../../state/configurationFocus';
-import { clearOpenRequest, useOpenRequest } from '../../state/editors';
+import {
+  clearCloseRequest,
+  clearOpenRequest,
+  useCloseRequest,
+  useOpenRequest,
+} from '../../state/editors';
 
 /**
  * The docking surface. Thin wrapper around <DockviewReact />: it supplies the
@@ -35,10 +40,11 @@ import { clearOpenRequest, useOpenRequest } from '../../state/editors';
  * variable overrides in src/theme/dockview-overrides.css.
  */
 export function DockLayout() {
-  const { onReady, openPanel, openEditor } = useLayout();
+  const { onReady, openPanel, openEditor, closeEditor } = useLayout();
   const lastActiveRef = useRef<string | null>(getPipelinesState().activePipelineId);
   const lastActiveRecipeRef = useRef<string | null>(getRecipesState().activeRecipeId);
   const openRequest = useOpenRequest();
+  const closeRequest = useCloseRequest();
   const mode = useThemeMode();
 
   useEffect(() => {
@@ -72,6 +78,14 @@ export function DockLayout() {
     openEditor(openRequest.path, openRequest.name);
     clearOpenRequest(openRequest.id);
   }, [openEditor, openRequest]);
+
+  /* A renamed file's tab carries the old path in its panel id, so it is closed
+     and reopened rather than relabelled. See `renameOpenFile`. */
+  useEffect(() => {
+    if (!closeRequest) return;
+    closeEditor(closeRequest.path);
+    clearCloseRequest(closeRequest.id);
+  }, [closeEditor, closeRequest]);
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>

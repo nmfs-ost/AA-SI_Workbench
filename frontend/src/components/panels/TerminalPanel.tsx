@@ -17,14 +17,27 @@ import {
   TerminalOutlined,
 } from '@mui/icons-material';
 import { Terminal } from '@xterm/xterm';
+import type { ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+import { useLayout } from '../../context/LayoutContext';
 import { clearTerminalRequest, useTerminalRequest } from '../../state/terminal';
+import { setActiveArtifact } from '../../state/activeSubject';
+import { openFile } from '../../state/editors';
+import { refreshFileBrowser } from '../../state/fileBrowser';
+import { filesApi } from '../../services/filesApi';
 import { terminalApi, terminalSocketUrl } from '../../services/terminalApi';
 import type { TerminalInfo } from '../../services/terminalApi';
 import type { AaTokens } from '../../theme';
 import { tokens } from '../../theme';
+import {
+  describeLink,
+  findLinks,
+  logicalLineAt,
+  positionAt,
+  type FoundLink,
+} from './terminalLinks';
 
 type Status = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
 
@@ -40,6 +53,20 @@ type Status = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
  * live in a specific environment (venv313 on a workstation). A shell started
  * outside it silently cannot see them, so the environment is chosen up front
  * and activated by the server when the session starts.
+ *
+ * ## Links
+ *
+ * Output is scanned for URLs, `gs://` URIs and absolute paths, and each becomes
+ * clickable. This is not decoration: the first thing every one of these tools
+ * prints is a location — `aa-fetch` a run directory, `aa-combine` a store,
+ * `aa-upload` a bucket URI — and the next thing the user does is select it,
+ * copy it, and paste it into another panel. The click does that step.
+ *
+ * A path is resolved through `/api/fs/stat` before anything opens, because
+ * whether it is a file or a directory decides which panel should answer, and
+ * the text cannot say: the directories these tools print have no extension.
+ * `terminalLinks.ts` holds the parsing, including the wrapped-line handling
+ * that a dock this narrow makes the normal case rather than an edge one.
  */
 /**
  * xterm's colours, from the active palette.
@@ -78,9 +105,67 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const [venv, setVenv] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
+  /** What the hovered link would do. Shown in the toolbar rather than as a
+      floating tooltip: xterm draws to a canvas, so a tooltip would have to be
+      positioned by hand against a cell grid, and the toolbar is already the
+      place this panel says things. */
+  const [hovered, setHovered] = useState('');
+  const { openPanel } = useLayout();
   // A command another panel wants run here. Held until the PTY is ready.
   const pendingRef = useRef<string | null>(null);
   const incoming = useTerminalRequest();
+
+  /**
+   * Act on a clicked link.
+   *
+   * Held in a ref because the terminal — and therefore the link provider — is
+   * constructed once for the panel's lifetime. Closing over `openPanel` in the
+   * construction effect would freeze the first render's copy; adding it to the
+   * effect's dependencies would tear down the PTY and the scrollback every
+   * time the layout controller re-rendered.
+   */
+  const activateRef = useRef<(link: FoundLink) => void>(() => {});
+  activateRef.current = (link: FoundLink) => {
+    if (link.kind === 'url') {
+      window.open(link.text, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (link.kind === 'gs') {
+      // The same thing clicking the object in the Derived panel does, so a
+      // store reaches the inspector by either route.
+      setActiveArtifact({
+        uri: link.text,
+        label: link.text.replace(/\/+$/, '').split('/').pop() ?? link.text,
+        origin: 'Terminal',
+        kind: link.text.toLowerCase().endsWith('.zarr') ? 'zarr' : 'object',
+      });
+      openPanel('metadata');
+      return;
+    }
+
+    /* A path has to be resolved before it can be opened: a directory belongs
+       in the Files tree and a file belongs in the editor, and the text does
+       not say which it is. A path that no longer exists reports itself in the
+       toolbar rather than opening an editor onto an error. */
+    void filesApi
+      .stat(link.text)
+      .then((entry) => {
+        if (entry.isDir) {
+          refreshFileBrowser(entry.path);
+          openPanel('files');
+          return;
+        }
+        openFile(entry.path, entry.name);
+      })
+      .catch((caught: unknown) => {
+        setError(
+          caught instanceof Error
+            ? `${link.text}: ${caught.message}`
+            : `Could not open ${link.text}.`,
+        );
+      });
+  };
 
   const loadInfo = useCallback(async () => {
     try {
@@ -127,6 +212,72 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
     term.open(host);
     termRef.current = term;
 
+    /*
+      The link provider.
+
+      xterm asks per *buffer row*, so the first thing this does is reassemble
+      the logical line the row belongs to — a run directory printed into a dock
+      this narrow is wrapped far more often than not, and matching row by row
+      would link its first fragment and stop, which looks like it worked.
+
+      Ranges come back in 1-based cell coordinates, which is one off from
+      `buffer.getLine`; `positionAt` is the only place that conversion happens.
+    */
+    const links = term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const buffer = term.buffer.active;
+        const line = logicalLineAt(
+          {
+            length: buffer.length,
+            getLine: (index) => {
+              const row = buffer.getLine(index);
+              if (!row) return undefined;
+              return {
+                isWrapped: row.isWrapped,
+                // Never trimmed: a wrapped row contributes its full width, and
+                // that is what makes index-to-cell arithmetic valid.
+                translate: () => row.translateToString(false),
+              };
+            },
+          },
+          bufferLineNumber - 1,
+        );
+
+        if (!line) {
+          callback(undefined);
+          return;
+        }
+
+        const found = findLinks(line.text);
+        if (found.length === 0) {
+          callback(undefined);
+          return;
+        }
+
+        const cols = term.cols;
+        const result: ILink[] = found.map((link) => ({
+          text: link.text,
+          range: {
+            start: positionAt(link.start, line.startRow, cols),
+            // `end` is inclusive, so it addresses the last character rather
+            // than the position after it.
+            end: positionAt(link.end - 1, line.startRow, cols),
+          },
+          decorations: { pointerCursor: true, underline: true },
+          activate: (event) => {
+            // Let a modified click fall through to the browser's own
+            // behaviour, and never hijack a right-click — that is the
+            // selection menu, and a terminal without one is a broken terminal.
+            if (event.button !== 0 || event.altKey) return;
+            activateRef.current(link);
+          },
+          hover: () => setHovered(describeLink(link)),
+          leave: () => setHovered(''),
+        }));
+        callback(result);
+      },
+    });
+
     // Dockview resizes the panel, not the window, so observe the element.
     const observer = new ResizeObserver(() => {
       try {
@@ -145,6 +296,7 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
 
     return () => {
       observer.disconnect();
+      links.dispose();
       socketRef.current?.close();
       term.dispose();
       termRef.current = null;
@@ -298,9 +450,30 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
           </span>
         </Tooltip>
 
-        <Box sx={{ flex: 1 }} />
+        <Box sx={{ flex: 1, minWidth: 8 }} />
 
-        <Typography sx={{ fontSize: 11, color: statusColor }}>
+        {/* What a click would do. Takes the space before the status word
+            because that is the only room in this toolbar, and while the
+            pointer is on a link the target is the more useful of the two. */}
+        {hovered && (
+          <Typography
+            title={hovered}
+            sx={{
+              fontSize: 11,
+              minWidth: 0,
+              flexShrink: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              color: theme.aa.color.accent.main,
+              fontFamily: theme.aa.font.mono,
+            }}
+          >
+            {hovered}
+          </Typography>
+        )}
+
+        <Typography sx={{ fontSize: 11, color: statusColor, flexShrink: 0 }}>
           {status === 'connected'
             ? 'connected'
             : status === 'connecting'

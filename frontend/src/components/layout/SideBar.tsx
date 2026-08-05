@@ -79,7 +79,11 @@ const STRIP_HEIGHT = 34;
 const ITEM_EXTENT = 42;
 
 const STRIP_LABEL: Record<DockSide, string> = {
-  left: 'Data sources',
+  /* Was 'Data sources', which stopped being true when the Project panel joined
+     the strip: repositories and documentation are not a source of survey data.
+     This is the strip's accessible name, so it is the sentence a screen-reader
+     user hears before the icons — it has to cover what is actually there. */
+  left: 'Data sources and project links',
   right: 'Inspectors',
   bottom: 'Output and diagnostics',
 };

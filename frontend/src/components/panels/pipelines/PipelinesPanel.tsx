@@ -19,7 +19,6 @@ import {
 import { PipelineCard } from './PipelineCard';
 import { PipelineRunControls } from './PipelineRunControls';
 import { NewPipelineDialog } from './NewPipelineDialog';
-import { makeStage } from './toolCatalog';
 import { defaultValues } from './pipelineTypes';
 
 /**
@@ -171,12 +170,10 @@ export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
       <NewPipelineDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreate={({ name, description, tools }) => {
-          createPipeline({
-            name,
-            description,
-            stages: tools.map((template, index) => makeStage(template, index)),
-          });
+        onCreate={({ name, description, stages, values }) => {
+          // The dialog builds both, because a stage list alone cannot carry the
+          // flags the user typed or the verbatim text of a hand-written step.
+          createPipeline({ name, description, stages, values });
           setCreateOpen(false);
         }}
       />

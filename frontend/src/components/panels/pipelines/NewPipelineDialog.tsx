@@ -1,52 +1,86 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
-  IconButton,
   TextField,
   Tooltip,
   Typography,
   useTheme,
 } from '@mui/material';
 import AddOutlined from '@mui/icons-material/AddOutlined';
-import CloseOutlined from '@mui/icons-material/CloseOutlined';
-import ArrowUpwardOutlined from '@mui/icons-material/ArrowUpwardOutlined';
-import ArrowDownwardOutlined from '@mui/icons-material/ArrowDownwardOutlined';
-import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined';
+import CheckCircleOutlineOutlined from '@mui/icons-material/CheckCircleOutlineOutlined';
+import TerminalOutlined from '@mui/icons-material/TerminalOutlined';
 
-import { toolCatalog, makeStage, type ToolTemplate } from './toolCatalog';
-import { buildCommand, type PipelineDefinition } from './pipelineTypes';
-import { chainIssues, layerLabel } from '../../../types/layers';
+import { toolCatalog } from './toolCatalog';
+import { buildPipeline, parseCommand } from './commandParser';
+import { INPUT_TOKEN, type PipelineValues, type StageDef } from './pipelineTypes';
+import { chainIssues, layerLabel, type LayerKind } from '../../../types/layers';
+
+/**
+ * Compose a new pipeline by writing the command.
+ *
+ * ## Why this is a text box and not a row of buttons
+ *
+ * It used to be a row of buttons: click `aa-fetch`, click `aa-raw`, get a
+ * pipeline. That works for the tools the catalogue lists and for nothing else —
+ * not the `aa-*` tools that ship after it was written, and not the Unix
+ * toolbox, which is genuinely useful in a pipe chain. The escape hatch was a
+ * single "Custom command" button producing an opaque stage, so the real choice
+ * on offer was: structure for a handful of tools, or a text box with no
+ * structure at all.
+ *
+ * Both, then. A command line is already the notation everyone here types, reads
+ * in the docs and pastes from a colleague, so **the command is the input** and
+ * the structure is recovered from it by `commandParser`. A segment whose tool
+ * is known, and all of whose flags are known, becomes a real stage with real
+ * parameters and a working Configuration panel. Anything else keeps its text
+ * verbatim and runs as a freeform stage.
+ *
+ * The tool chips are still here and are now *insertions into the command*
+ * rather than a parallel way to build a pipeline. That is what makes this the
+ * better of the two rather than a replacement: someone who does not know the
+ * tool names can still find them, and what they get back is a command they can
+ * edit — a starting point rather than a black box.
+ *
+ * The steps list is a live read-out of what the parser made of what is typed,
+ * so a stage becoming configurable — and, more importantly, any *demotion* away
+ * from that — is visible as it happens rather than discovered later.
+ */
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onCreate: (input: { name: string; description: string; tools: ToolTemplate[] }) => void;
+  onCreate: (input: {
+    name: string;
+    description: string;
+    stages: StageDef[];
+    values: PipelineValues;
+  }) => void;
 }
 
-/**
- * Compose a new pipeline: name it, then click tools to append them in order.
- *
- * The tools come from the shared catalog, so the resulting pipeline gets real
- * parameters, a working Configuration panel, and a correct command preview
- * without any extra wiring. The live command at the bottom shows what is being
- * built as it is built.
- */
+/** A hand-written stage constrains nothing, so it must not raise a composition
+    warning wherever it is put. Same `any`/`any` the catalogue's escape-hatch
+    entry declares, for the same reason. */
+const FREEFORM_LAYERS = { consumes: 'any' as LayerKind, produces: 'any' as LayerKind };
+
 export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
   const theme = useTheme();
+  const commandRef = useRef<HTMLTextAreaElement | null>(null);
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [tools, setTools] = useState<ToolTemplate[]>([]);
+  const [command, setCommand] = useState('');
 
   const reset = () => {
     setName('');
     setDescription('');
-    setTools([]);
+    setCommand('');
   };
 
   const handleClose = () => {
@@ -54,59 +88,56 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
     onClose();
   };
 
-  const handleCreate = () => {
-    onCreate({ name, description, tools });
-    reset();
-  };
+  const parsed = useMemo(() => parseCommand(command), [command]);
+  const built = useMemo(() => buildPipeline(parsed), [parsed]);
 
-  const move = (index: number, delta: number) => {
-    const next = [...tools];
-    const target = index + delta;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    setTools(next);
+  /**
+   * Insert a tool at the caret.
+   *
+   * At the caret rather than at the end, because the gesture after typing `| `
+   * is to reach for a name, and appending to the end would put it after a pipe
+   * the user has not typed yet. The separating pipe is added only when the
+   * caret sits at the end of an existing command, which is the one case where
+   * the intent is unambiguous.
+   */
+  const insertTool = (tool: string) => {
+    const input = commandRef.current;
+    const at = input?.selectionStart ?? command.length;
+    const before = command.slice(0, at);
+    const after = command.slice(at);
+
+    const trailing = before.trim() === '' ? '' : /[|\s]\s*$/.test(before) ? ' ' : ' | ';
+    const fragment = `${trailing}${tool} `;
+    setCommand(`${before}${fragment}${after}`);
+
+    // Restore the caret after the re-render, or it jumps to the end and the
+    // next insertion lands somewhere the user did not point at.
+    requestAnimationFrame(() => {
+      const position = before.length + fragment.length;
+      input?.focus();
+      input?.setSelectionRange(position, position);
+    });
   };
 
   /* Does each step's input come from somewhere?
      Reported, never enforced. Several catalogue entries are unverified
      proposals, so a composition this flags may well be right — and a dialog
      that refused to build it would be wrong in a way the user could not work
-     around. The freeform stage declares `any` on both sides and therefore
-     never trips this. */
-  const issues = chainIssues(tools, 'any');
+     around. */
+  const issues = chainIssues(
+    parsed.map((stage) =>
+      stage.structured && stage.template
+        ? stage.template
+        : { tool: stage.tool || 'command', ...FREEFORM_LAYERS },
+    ),
+    'any',
+  );
 
-  /* Tools whose name or flags were never checked against an installed
-     environment. Said once for the whole chain rather than badged per step:
-     the honest claim is about the catalogue, not about any one entry. */
-  const unverified = tools.filter((t) => t.verified !== true);
+  const unverified = parsed
+    .map((stage) => stage.template)
+    .filter((template) => template !== undefined && template.verified !== true);
 
-  // Preview the command using the composed stages and their defaults.
-  const previewPipeline: PipelineDefinition | null =
-    tools.length > 0
-      ? {
-          id: 'preview',
-          name: name || 'New pipeline',
-          description: '',
-          tags: [],
-          inputKind: 'raw',
-          author: '',
-          updatedAt: '',
-          stages: tools.map((t, i) => makeStage(t, i)),
-        }
-      : null;
-
-  const command = previewPipeline
-    ? buildCommand(
-        previewPipeline,
-        Object.fromEntries(
-          previewPipeline.stages.map((stage) => [
-            stage.id,
-            Object.fromEntries(stage.params.map((p) => [p.id, p.default])),
-          ]),
-        ),
-        null,
-      ).join(' \\\n  | ')
-    : '';
+  const structuredCount = parsed.filter((stage) => stage.structured).length;
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
@@ -132,64 +163,63 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
           sx={{ mb: 2 }}
         />
 
-        <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>
-          Add tools, in order
+        <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.5 }}>Command</Typography>
+        <TextField
+          fullWidth
+          multiline
+          minRows={2}
+          maxRows={8}
+          size="small"
+          value={command}
+          inputRef={commandRef}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder={`aa-fetch -o ./downloads ${INPUT_TOKEN} | aa-raw --sonar-model EK60 | aa-combine -o combined.zarr`}
+          InputProps={{ sx: { fontFamily: theme.aa.font.mono, fontSize: 11.5 } }}
+        />
+        <Typography sx={{ mt: 0.5, fontSize: 10.5, color: theme.aa.color.text.muted }}>
+          Pipes separate steps. Put{' '}
+          <Box component="code" sx={{ fontFamily: theme.aa.font.mono }}>
+            {INPUT_TOKEN}
+          </Box>{' '}
+          where the selected file should go; a step that names no input reads
+          the pipe, which is what a filter should do.
         </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+
+        {/* The catalogue, as insertions rather than as a parallel builder. */}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1.25, mb: 2 }}>
           {toolCatalog
             .filter((template) => !template.freeform)
             .map((template) => (
-            <Tooltip key={template.tool} title={template.description}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<AddOutlined sx={{ fontSize: 14 }} />}
-                onClick={() => setTools((prev) => [...prev, template])}
-                sx={{
-                  fontFamily: theme.aa.font.mono,
-                  fontSize: 11,
-                  textTransform: 'none',
-                  py: 0.25,
-                }}
-              >
-                {template.tool}
-              </Button>
-            </Tooltip>
-          ))}
-        </Box>
-
-        {/* The catalogue can never be complete — there are more aa-* tools than
-            this lists, plus the entire Unix toolbox, which is genuinely useful
-            in a pipe chain. Rather than enumerate them, offer one stage the user
-            writes themselves. */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          {toolCatalog
-            .filter((template) => template.freeform)
-            .map((template) => (
               <Tooltip key={template.tool} title={template.description}>
-                <Button
+                <Chip
                   size="small"
                   variant="outlined"
-                  startIcon={<AddOutlined sx={{ fontSize: 14 }} />}
-                  onClick={() => setTools((prev) => [...prev, template])}
-                  sx={{ fontSize: 11, textTransform: 'none', py: 0.25 }}
-                >
-                  {template.label}
-                </Button>
+                  label={template.tool}
+                  icon={<AddOutlined sx={{ fontSize: 13 }} />}
+                  onClick={() => insertTool(template.tool)}
+                  sx={{
+                    fontFamily: theme.aa.font.mono,
+                    fontSize: 10.5,
+                    height: 22,
+                    cursor: 'pointer',
+                  }}
+                />
               </Tooltip>
             ))}
-          <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
-            For any other tool, a pipe, or a shell filter — you write the command.
-          </Typography>
         </Box>
 
         <Divider sx={{ mb: 1.5 }} />
 
-        <Typography sx={{ fontSize: 12, fontWeight: 600, mb: 0.75 }}>
-          Pipeline steps
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.75 }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 600 }}>Steps</Typography>
+          {parsed.length > 0 && (
+            <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
+              {structuredCount} of {parsed.length} configurable
+            </Typography>
+          )}
+        </Box>
 
-        {tools.length === 0 ? (
+        {parsed.length === 0 ? (
           <Box
             sx={{
               p: 2,
@@ -200,16 +230,16 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
               fontSize: 12,
             }}
           >
-            No steps yet — add a tool above to begin the chain.
+            Write a command above, or click a tool to insert it.
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {tools.map((template, index) => (
+            {parsed.map((stage, index) => (
               <Box
-                key={`${template.tool}-${index}`}
+                key={`${stage.tool}-${index}`}
                 sx={{
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   gap: 0.75,
                   p: 0.75,
                   borderRadius: `${theme.aa.radius.sm}px`,
@@ -222,61 +252,77 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
                 >
                   {index + 1}
                 </Typography>
+
+                <Box sx={{ flexShrink: 0, pt: '1px', display: 'flex' }}>
+                  {stage.structured ? (
+                    <Tooltip title="Recognised — this step gets real parameters and a Configuration panel">
+                      <CheckCircleOutlineOutlined
+                        sx={{ fontSize: 14, color: theme.aa.color.status.success }}
+                      />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Runs verbatim, as a shell command">
+                      <TerminalOutlined
+                        sx={{ fontSize: 14, color: theme.aa.color.text.muted }}
+                      />
+                    </Tooltip>
+                  )}
+                </Box>
+
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography
                     sx={{
                       fontFamily: theme.aa.font.mono,
                       fontSize: 11.5,
                       fontWeight: 600,
-                      color: theme.aa.color.accent.main,
+                      color: stage.structured
+                        ? theme.aa.color.accent.main
+                        : theme.aa.color.text.primary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    {template.tool}
+                    {stage.raw}
                   </Typography>
+
                   <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
-                    {template.label}
-                    {/* The layer transition, so the chain reads as a chain
-                        rather than as an ordered list of unrelated commands.
-                        This is the same `consumes`/`produces` the warning
-                        below is computed from — one source, two readings. */}
-                    {!template.freeform && (
+                    {stage.template ? stage.template.label : 'Custom command'}
+                    {stage.structured && stage.template && (
                       <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
                         {' · '}
-                        {layerLabel(template.consumes)} → {layerLabel(template.produces)}
+                        {layerLabel(stage.template.consumes)} →{' '}
+                        {layerLabel(stage.template.produces)}
                       </Box>
                     )}
-                    {template.verified !== true && ' · unverified'}
+                    {stage.template && stage.template.verified !== true && ' · unverified'}
                   </Typography>
+
+                  {/* Why a known tool did not become a configurable step. Said
+                      out loud, because a silent demotion is indistinguishable
+                      from the parser simply not working. */}
+                  {stage.unmapped.length > 0 && (
+                    <Typography
+                      sx={{
+                        fontSize: 10.5,
+                        color: theme.aa.color.status.warning,
+                        mt: 0.25,
+                      }}
+                    >
+                      Runs as written —{' '}
+                      <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
+                        {stage.unmapped.join(' ')}
+                      </Box>{' '}
+                      {stage.unmapped.length === 1 ? 'is' : 'are'} not in the
+                      catalogue for {stage.tool}.
+                    </Typography>
+                  )}
                 </Box>
-                <IconButton
-                  size="small"
-                  disabled={index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  <ArrowUpwardOutlined sx={{ fontSize: 14 }} />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  disabled={index === tools.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  <ArrowDownwardOutlined sx={{ fontSize: 14 }} />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => setTools((prev) => prev.filter((_, i) => i !== index))}
-                >
-                  <CloseOutlined sx={{ fontSize: 14 }} />
-                </IconButton>
               </Box>
             ))}
           </Box>
         )}
 
-        {/* Composition warnings. Grouped into one block rather than sprinkled
-            through the list, for the same reason combineOptions groups its
-            unverified flags: the whole thing is provisional, and saying so once
-            is clearer than saying it six times. */}
         {issues.length > 0 && (
           <Box
             sx={{
@@ -312,69 +358,14 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
         )}
 
         {unverified.length > 0 && (
-          <Typography
-            sx={{ mt: 1, fontSize: 10.5, color: theme.aa.color.text.muted }}
-          >
+          <Typography sx={{ mt: 1, fontSize: 10.5, color: theme.aa.color.text.muted }}>
             Unverified against an installed environment:{' '}
             <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
-              {[...new Set(unverified.map((t) => t.tool))].join(', ')}
+              {[...new Set(unverified.map((template) => template!.tool))].join(', ')}
             </Box>
             . Confirm with <code>ls $VIRTUAL_ENV/bin/aa-*</code>, then correct
             toolCatalog.ts.
           </Typography>
-        )}
-
-        {tools.length > 0 && (
-          <>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 0.25,
-                mt: 1.5,
-              }}
-            >
-              {tools.map((template, index) => (
-                <Box
-                  key={`flow-${template.tool}-${index}`}
-                  sx={{ display: 'flex', alignItems: 'center' }}
-                >
-                  <Typography
-                    sx={{
-                      fontFamily: theme.aa.font.mono,
-                      fontSize: 10.5,
-                      color: theme.aa.color.text.secondary,
-                    }}
-                  >
-                    {template.tool}
-                  </Typography>
-                  {index < tools.length - 1 && (
-                    <ChevronRightOutlined
-                      sx={{ fontSize: 13, color: theme.aa.color.text.muted }}
-                    />
-                  )}
-                </Box>
-              ))}
-            </Box>
-
-            <Box
-              sx={{
-                mt: 1,
-                p: 1,
-                borderRadius: `${theme.aa.radius.sm}px`,
-                backgroundColor: theme.aa.color.bg.base,
-                border: `1px solid ${theme.aa.color.border.subtle}`,
-                fontFamily: theme.aa.font.mono,
-                fontSize: 11,
-                color: theme.aa.color.text.secondary,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}
-            >
-              {command}
-            </Box>
-          </>
         )}
       </DialogContent>
 
@@ -382,13 +373,21 @@ export function NewPipelineDialog({ open, onClose, onCreate }: Props) {
         <Button size="small" onClick={handleClose}>
           Cancel
         </Button>
-        <Tooltip title={tools.length === 0 ? 'Add at least one tool' : ''}>
+        <Tooltip title={parsed.length === 0 ? 'Write a command first' : ''}>
           <span style={{ display: 'flex' }}>
             <Button
               size="small"
               variant="contained"
-              disabled={tools.length === 0}
-              onClick={handleCreate}
+              disabled={parsed.length === 0}
+              onClick={() => {
+                onCreate({
+                  name,
+                  description,
+                  stages: built.stages,
+                  values: built.values,
+                });
+                reset();
+              }}
             >
               Create pipeline
             </Button>

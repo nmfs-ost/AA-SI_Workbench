@@ -42,7 +42,16 @@ export interface AssetMetadata {
   source: 'NCEI';
 }
 
-export type SubjectOrigin = 'NCEI' | 'Derived' | 'Files';
+/**
+ * Which panel the selection came from. Rendered as a chip in the inspector, so
+ * a reader can tell a store they clicked in the bucket from the same store
+ * arrived at by clicking the path a tool printed.
+ *
+ * 'Terminal' is the fourth: the terminal's links select a subject exactly as
+ * the browsers do, and reporting one of the others would be a small lie in the
+ * one place whose whole job is saying where something came from.
+ */
+export type SubjectOrigin = 'NCEI' | 'Derived' | 'Files' | 'Terminal';
 
 export interface ActiveSubject {
   /**

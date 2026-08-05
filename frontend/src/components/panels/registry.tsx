@@ -7,6 +7,7 @@ import {
   TravelExploreOutlined,
   LayersOutlined,
   SailingOutlined,
+  HubOutlined,
   MapOutlined,
   DescriptionOutlined,
   AccountTreeOutlined,
@@ -33,6 +34,7 @@ import { ProcessingQueuePanel } from './ProcessingQueuePanel';
 import { NceiPanel } from './ncei/NceiPanel';
 import { DerivedPanel } from './DerivedPanel';
 import { OmaoPanel } from './OmaoPanel';
+import { ResourcesPanel } from './resources/ResourcesPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { LogPanel } from './LogPanel';
 import { ProgressPanel } from './ProgressPanel';
@@ -104,6 +106,19 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: 'OMAO vessel acoustics data.',
     region: 'left',
     component: OmaoPanel,
+  },
+  /* The project itself, rather than a source of data.
+     It sits on the left because that strip already carries the shell's
+     standing, selection-independent things — the environment updater and the
+     feedback dialog live there under a divider — whereas the right dock is
+     entirely "about the thing currently selected", which this is not. */
+  {
+    id: 'resources',
+    title: 'Project',
+    icon: HubOutlined,
+    description: 'Repositories, documentation, and where to ask.',
+    region: 'left',
+    component: ResourcesPanel,
   },
 
   // Right region — details about the current selection.

@@ -100,6 +100,9 @@ export interface LayoutController {
   closeAllPanels: () => void;
   /** Open a file as a centre tab, or focus it if it's already open. */
   openEditor: (path: string, name: string) => void;
+  /** Remove an editor tab by path. Used when a file is renamed out from under
+      it — see `renameOpenFile` in state/editors.ts. */
+  closeEditor: (path: string) => void;
   /** Which panel is fronted in each dock — what the icon strips highlight. */
   activeDockPanel: Record<DockSide, PanelId | null>;
   /** True when a dock is collapsed to nothing. */
@@ -372,6 +375,18 @@ export function useLayoutController(): LayoutController {
   }, []);
 
   /**
+   * Remove one editor tab.
+   *
+   * Silent when there is no such panel: `renameOpenFile` fires this on every
+   * rename rather than only on files that happen to be open, so "nothing to
+   * close" is the ordinary case and not a fault.
+   */
+  const closeEditor = useCallback((path: string) => {
+    const panel = apiRef.current?.getPanel(editorPanelId(path));
+    panel?.api.close();
+  }, []);
+
+  /**
    * Rebuild the dock for a monitor shape.
    *
    * This is a full teardown. Dockview has no "re-flow" operation, and moving
@@ -490,6 +505,7 @@ export function useLayoutController(): LayoutController {
     openPanel,
     closeAllPanels,
     openEditor,
+    closeEditor,
     applyLayout,
     layoutVariant,
     activeDockPanel,

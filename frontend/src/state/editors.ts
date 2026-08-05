@@ -49,14 +49,37 @@ export interface OpenRequest {
   name: string;
 }
 
+/**
+ * A request for the shell to *close* an editor tab.
+ *
+ * The mirror of `OpenRequest`, and it exists for one reason: a Dockview panel's
+ * id embeds the file's path (see `editor/panelIds.ts`), so a renamed file
+ * cannot keep its tab. The id is wrong, and `params.path` points at something
+ * that no longer exists. Dropping the doc from this store is not enough —
+ * Dockview would still render the panel, now showing a file-not-found.
+ *
+ * So renaming closes the old tab and opens a new one, and this is how a store
+ * action asks the dock to remove a panel it cannot reach itself.
+ */
+export interface CloseRequest {
+  id: number;
+  path: string;
+}
+
 interface EditorsState {
   docs: Record<string, EditorDoc>;
   request: OpenRequest | null;
+  closeRequest: CloseRequest | null;
   /** The editor tab the user is in, so Ctrl+S knows what "this file" means. */
   focusedPath: string;
 }
 
-let state: EditorsState = { docs: {}, request: null, focusedPath: '' };
+let state: EditorsState = {
+  docs: {},
+  request: null,
+  closeRequest: null,
+  focusedPath: '',
+};
 let counter = 0;
 const listeners = new Set<() => void>();
 
@@ -211,6 +234,50 @@ export function clearOpenRequest(id: number): void {
   if (state.request?.id === id) emit({ ...state, request: null });
 }
 
+export function clearCloseRequest(id: number): void {
+  if (state.closeRequest?.id === id) emit({ ...state, closeRequest: null });
+}
+
+/**
+ * Follow a rename: move any open buffer to the new path.
+ *
+ * A no-op when the file isn't open, which is the common case — this is called
+ * on every rename rather than only on the interesting ones, because the
+ * alternative is asking every caller to check first and eventually one of them
+ * forgetting.
+ *
+ * **Unsaved edits survive.** The buffer is re-keyed rather than reloaded, so
+ * renaming a file you are halfway through editing does not silently discard
+ * the edit. `openFile` never re-fetches a path it already holds, so the tab
+ * that opens is the same buffer under a new name. Getting this wrong is the
+ * kind of data loss that teaches people not to trust an editor — the same
+ * reason `openFile` refuses to re-fetch in the first place.
+ */
+export function renameOpenFile(
+  oldPath: string,
+  newPath: string,
+  newName: string,
+): void {
+  const existing = state.docs[oldPath];
+  if (!existing || oldPath === newPath) return;
+
+  counter += 1;
+  const docs = { ...state.docs };
+  delete docs[oldPath];
+  docs[newPath] = { ...existing, path: newPath, name: newName };
+
+  emit({
+    ...state,
+    docs,
+    closeRequest: { id: counter, path: oldPath },
+    focusedPath: state.focusedPath === oldPath ? newPath : state.focusedPath,
+  });
+
+  // Now that the doc is keyed under the new path, this focuses the existing
+  // buffer rather than fetching the file again.
+  openFile(newPath, newName);
+}
+
 export function isDirty(doc: EditorDoc | undefined): boolean {
   return doc !== undefined && doc.status === 'ready' && doc.text !== doc.savedText;
 }
@@ -239,6 +306,14 @@ export function useEditorDoc(path: string): EditorDoc | undefined {
     subscribe,
     () => state.docs[path],
     () => state.docs[path],
+  );
+}
+
+export function useCloseRequest(): CloseRequest | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.closeRequest,
+    () => state.closeRequest,
   );
 }
 
