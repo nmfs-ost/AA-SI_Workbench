@@ -4,7 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      The official NOAA mark. Every one of these files is derived from a single
+      asset in NOAA Fisheries' own brand repository — see
+      src/components/branding/NoaaMark.tsx for the provenance and the build.
+
+      Three declarations rather than one because they answer different
+      questions. The .ico carries 16, 32 and 48 in one file, which is what
+      Windows shortcuts and older browsers reach for; the 32px PNG is what
+      modern browsers prefer for the tab; apple-touch-icon is the home-screen
+      tile, which is drawn at 180 and looks soft if it has to upscale a 32.
+
+      The mark used to be a hand-drawn monochrome SVG that followed the
+      browser's light/dark scheme. It is a fixed two-colour emblem now: it is
+      NOAA's mark, and an agency emblem that changes colour to suit the tab
+      strip is no longer the emblem. It carries its own contrast either way.
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/noaa-mark-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/noaa-mark.png" />
     <title>AA-SI — Active Acoustics Strategic Initiative</title>
   </head>
   <body>

@@ -55,7 +55,7 @@ import { CopyPathButton } from './CopyPathButton';
 import { RowMenu, RowMenuButton, useRowMenu, type RowAction } from './RowMenu';
 import { isOpenable } from './editor/language';
 import { dirname } from './editor/paths';
-import { panelDensity } from './panelStyles';
+import { panelColumns, panelDensity } from './panelStyles';
 import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
 import { quote } from './shellQuote';
 
@@ -81,12 +81,6 @@ interface Row {
   entry: FsEntry;
   depth: number;
 }
-
-/** Width of the Modified column, so the values form a column rather than a
-    ragged right edge. Sized for "12 Aug", the widest thing it renders. */
-const MODIFIED_WIDTH = 46;
-/** Width of the size column. Sized for "999.9 MB". */
-const SIZE_WIDTH = 52;
 
 interface FileRowProps {
   entry: FsEntry;
@@ -294,7 +288,8 @@ function FileRow({
 
         <Typography
           sx={{
-            width: SIZE_WIDTH,
+            width: panelColumns.size,
+            ml: `${panelColumns.lead}px`,
             flexShrink: 0,
             textAlign: 'right',
             fontSize: panelDensity.font.meta,
@@ -316,7 +311,7 @@ function FileRow({
         >
           <Typography
             sx={{
-              width: MODIFIED_WIDTH,
+              width: panelColumns.modified,
               flexShrink: 0,
               textAlign: 'right',
               fontSize: panelDensity.font.meta,
@@ -332,7 +327,7 @@ function FileRow({
         <RowMenuButton controller={menu} label={`Actions for ${entry.name}`} />
       </Box>
 
-      <RowMenu controller={menu} actions={actions} title={entry.name} />
+      <RowMenu controller={menu} actions={actions} />
     </>
   );
 }
@@ -658,13 +653,20 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
       >
         <Box sx={{ width: 16, flexShrink: 0 }} />
         <Box sx={{ flex: 1, minWidth: 0 }}>Name</Box>
-        <Box sx={{ width: SIZE_WIDTH, flexShrink: 0, textAlign: 'right' }}>Size</Box>
-        <Box sx={{ width: MODIFIED_WIDTH, flexShrink: 0, textAlign: 'right' }}>
+        <Box
+          sx={{
+            width: panelColumns.size,
+            ml: `${panelColumns.lead}px`,
+            flexShrink: 0,
+            textAlign: 'right',
+          }}
+        >
+          Size
+        </Box>
+        <Box sx={{ width: panelColumns.modified, flexShrink: 0, textAlign: 'right' }}>
           Modified
         </Box>
-        {/* Reserves the two hover buttons' width so the headings sit over the
-            columns they name rather than two icons to the right of them. */}
-        <Box sx={{ width: 44, flexShrink: 0 }} />
+        <Box sx={{ width: panelColumns.actions, flexShrink: 0 }} />
       </Box>
 
       {/* The tree */}

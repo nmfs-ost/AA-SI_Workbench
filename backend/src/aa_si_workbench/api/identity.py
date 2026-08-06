@@ -36,30 +36,63 @@ Configuration
                           scientist out of their own machine over a
                           misconfigured environment variable.
 ``AASI_FS_READONLY``      already read by files.py; mirrored into capabilities.
+``AALIBRARY_GCP_PROJECT_ID``  the project id, when it should not be detected.
 
-Detection order is env var, then ``gcloud config get-value account``, then the
-GCE/Cloud Workstation metadata server. Each is tried once per process and the
-answer cached, because two of the three are slow enough to be felt on a panel
-that renders at startup.
+Detection
+---------
+The account is looked for in six places, in this order, and the first answer
+wins. Each is tried once per process and the answer cached, because several of
+them are slow enough to be felt on a panel that renders at startup.
+
+1. ``AASI_PRINCIPAL``          our own override
+2. ``CLOUDSDK_CORE_ACCOUNT``   gcloud's override. Someone who has set this has
+                               already told the SDK who they are, and naming a
+                               different account than ``gcloud`` does is worse
+                               than naming none.
+3. ``gcloud config get-value account``
+4. ``gcloud auth list``        the *active credentialed* account
+5. ``~/.config/gcloud/configurations/config_<name>``  read directly
+6. the GCE/Cloud Workstation metadata server
+
+Steps 2, 4 and 5 were added because step 3 alone reports nobody in three
+situations that are all ordinary rather than exotic, and in each of them the
+user is signed in and the Workbench said "No account detected":
+
+* **They authenticated with ``gcloud auth application-default login``.** That
+  writes application-default credentials and never sets the ``account``
+  property, so step 3 returns ``(unset)`` for someone who is fully signed in.
+  Step 4 finds them.
+* **``gcloud`` is not on the server's ``PATH``.** The backend is often started
+  from a desktop launcher or a unit file with a minimal environment, where the
+  SDK's own shell-profile ``PATH`` entry never ran. Both subprocess probes fail
+  with ``FileNotFoundError``; step 5 reads the same answer off disk without
+  needing the binary at all.
+* **Their account lives in a non-default configuration.** Step 5 honours
+  ``CLOUDSDK_ACTIVE_CONFIG_NAME``, which is what selects between them.
+
+Step 5 reports its source as ``gcloud`` rather than inventing a name for
+itself: the file *is* gcloud's configuration, and the source field answers
+"which account is this" — not "which syscall found it".
 """
 
 from __future__ import annotations
 
+import configparser
 import os
 import subprocess
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/identity", tags=["identity"])
 
-#: Where the metadata server answers, on a Cloud Workstation or GCE VM.
-_METADATA_URL = (
-    "http://metadata.google.internal/computeMetadata/v1/"
-    "instance/service-accounts/default/email"
-)
+#: Where the metadata server answers, on a Cloud Workstation or GCE VM. A root
+#: rather than one URL, because the project id lives on the same server under a
+#: different path and there is no reason to spell the host twice.
+_METADATA_ROOT = "http://metadata.google.internal/computeMetadata/v1/"
 
 #: Both external probes are on a short leash. This endpoint is called while the
 #: shell is painting its first frame, and a workstation with no metadata server
@@ -130,10 +163,83 @@ def _from_gcloud() -> str:
     return account
 
 
-def _from_metadata() -> str:
-    """The service account this VM runs as, or ""."""
+def _from_gcloud_auth_list() -> str:
+    """The active *credentialed* account, or "".
+
+    This is the one that finds a user who ran ``gcloud auth application-default
+    login`` and nothing else. That flow deposits working credentials without
+    ever setting the ``account`` property, so `_from_gcloud` above reports
+    ``(unset)`` for somebody who is completely signed in — which is the single
+    most common way this endpoint used to come back empty.
+
+    ``--format=value(account)`` prints bare values, one per line, with no
+    header; the filter leaves at most one. `.splitlines()[0]` rather than
+    `.strip()` because a future gcloud that prints two would otherwise be
+    concatenated into one nonsense address.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [
+                "gcloud",
+                "auth",
+                "list",
+                "--filter=status:ACTIVE",
+                "--format=value(account)",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not lines or lines[0] == "(unset)":
+        return ""
+    return lines[0]
+
+
+def _gcloud_config_path() -> Path:
+    """The active gcloud configuration file.
+
+    ``CLOUDSDK_CONFIG`` relocates the whole SDK config directory and
+    ``CLOUDSDK_ACTIVE_CONFIG_NAME`` selects between configurations; both are
+    honoured because a workstation set up by someone else is exactly where they
+    get used, and reading the wrong file is worse than reading none.
+    """
+    root = os.getenv("CLOUDSDK_CONFIG", "").strip()
+    base = Path(root) if root else Path.home() / ".config" / "gcloud"
+    name = os.getenv("CLOUDSDK_ACTIVE_CONFIG_NAME", "").strip() or "default"
+    return base / "configurations" / f"config_{name}"
+
+
+def _from_config_file(key: str) -> str:
+    """Read ``[core] <key>`` out of gcloud's own configuration file.
+
+    No subprocess. This is the probe that still works when the SDK is installed
+    but not on the backend's ``PATH`` — a service started from a desktop
+    launcher or a unit file does not get the ``PATH`` a login shell would, so
+    both probes above fail with `FileNotFoundError` on a machine where typing
+    `gcloud` in the terminal panel works fine.
+
+    Everything here is best-effort: an unreadable, absent or malformed file
+    means this layer has no answer, which is not an error.
+    """
+    path = _gcloud_config_path()
+    parser = configparser.ConfigParser()
+    try:
+        if not parser.read(path, encoding="utf-8"):
+            return ""
+    except (OSError, UnicodeDecodeError, configparser.Error):
+        return ""
+    value = parser.get("core", key, fallback="").strip()
+    return "" if value == "(unset)" else value
+
+
+def _from_metadata(path: str = "instance/service-accounts/default/email") -> str:
+    """Ask the metadata server, or "" when there isn't one."""
     request = urllib.request.Request(
-        _METADATA_URL, headers={"Metadata-Flavor": "Google"}
+        _METADATA_ROOT + path, headers={"Metadata-Flavor": "Google"}
     )
     try:
         with urllib.request.urlopen(request, timeout=_PROBE_TIMEOUT) as response:
@@ -145,9 +251,35 @@ def _from_metadata() -> str:
 #: (principal, source), resolved once. Cleared by `?refresh=true`.
 _cached: tuple[str, str] | None = None
 
+#: The project id, resolved once. Separate from `_cached` because it has its own
+#: sources and one can be known while the other is not.
+_cached_project: str | None = None
+
+#: Last resort for the project id. A real value rather than "" because the
+#: Workbench has always shown this one and a blank chip where a project used to
+#: be reads as breakage; it is the *last* thing tried, so any workstation that
+#: can answer for itself does.
+_DEFAULT_PROJECT = "ggn-nmfs-aa-dev-1"
+
+#: Project id environment variables, most specific first. Ours leads so that a
+#: deployment which pins the project keeps pinning it.
+_PROJECT_ENV = (
+    "AALIBRARY_GCP_PROJECT_ID",
+    "GOOGLE_CLOUD_PROJECT",
+    "CLOUDSDK_CORE_PROJECT",
+    "GCLOUD_PROJECT",
+)
+
 
 def detect_principal(*, refresh: bool = False) -> tuple[str, str]:
-    """Resolve the active principal to (address, source)."""
+    """Resolve the active principal to (address, source).
+
+    Ordered cheapest-and-most-explicit first: two environment reads, then two
+    subprocesses, then a file, then the network. The file probe sits *after*
+    the subprocesses because when `gcloud` does run it is authoritative — it
+    resolves the active configuration itself rather than us guessing at which
+    file that is.
+    """
     global _cached
     if _cached is not None and not refresh:
         return _cached
@@ -157,7 +289,22 @@ def detect_principal(*, refresh: bool = False) -> tuple[str, str]:
         _cached = (override, "env")
         return _cached
 
-    account = _from_gcloud()
+    # gcloud's own override. Honoured before probing gcloud, because that is
+    # the precedence gcloud itself applies, and disagreeing with the SDK about
+    # which account is active would put a name in the UI that no command run
+    # from the terminal panel would use.
+    override = os.getenv("CLOUDSDK_CORE_ACCOUNT", "").strip()
+    if override and override != "(unset)":
+        _cached = (override, "env")
+        return _cached
+
+    for probe in (_from_gcloud, _from_gcloud_auth_list):
+        account = probe()
+        if account:
+            _cached = (account, "gcloud")
+            return _cached
+
+    account = _from_config_file("account")
     if account:
         _cached = (account, "gcloud")
         return _cached
@@ -169,6 +316,41 @@ def detect_principal(*, refresh: bool = False) -> tuple[str, str]:
 
     _cached = ("", "unknown")
     return _cached
+
+
+def detect_project(*, source: str = "unknown", refresh: bool = False) -> str:
+    """Resolve the GCP project id.
+
+    `source` is the principal's source, and it decides whether the metadata
+    server is worth asking: on anything that is not a GCE VM or Cloud
+    Workstation that probe is a two-second timeout, and the only evidence we
+    have that a metadata server exists is that it already answered once. This
+    endpoint is called while the shell paints its first frame, so a probe that
+    is nearly always going to time out does not get to run.
+    """
+    global _cached_project
+    if _cached_project is not None and not refresh:
+        return _cached_project
+
+    for name in _PROJECT_ENV:
+        value = os.getenv(name, "").strip()
+        if value:
+            _cached_project = value
+            return _cached_project
+
+    # The file before the subprocess here, unlike the principal: this is the
+    # same value `gcloud config get-value project` would print, and it is not
+    # worth a process spawn on the startup path to read it a second way.
+    for candidate in (
+        _from_config_file("project"),
+        _from_metadata("project/project-id") if source == "metadata" else "",
+    ):
+        if candidate:
+            _cached_project = candidate
+            return _cached_project
+
+    _cached_project = _DEFAULT_PROJECT
+    return _cached_project
 
 
 def allowlist() -> list[str]:
@@ -248,7 +430,7 @@ def get_identity(refresh: bool = Query(default=False)) -> Identity:
     return Identity(
         principal=principal,
         source=source,
-        project=os.getenv("AALIBRARY_GCP_PROJECT_ID", "ggn-nmfs-aa-dev-1"),
+        project=detect_project(source=source, refresh=refresh),
         member=member,
         restricted=restricted,
         capabilities=capabilities,

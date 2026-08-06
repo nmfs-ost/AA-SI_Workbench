@@ -67,8 +67,6 @@ const SHELL_ACTIONS: readonly ActionItem[] = [
   },
 ];
 
-/** Thickness of a vertical strip. */
-const STRIP_WIDTH = 44;
 /**
  * Thickness of the horizontal one. It is the tab strip's own height, so the
  * bottom dock's chrome costs exactly what it did before the icons moved out of
@@ -164,7 +162,7 @@ export function SideBar({ side }: { side: DockSide }) {
     <Box
       sx={{
         ...(vertical
-          ? { width: STRIP_WIDTH, flexDirection: 'column' }
+          ? { width: theme.aa.size.sideStrip, flexDirection: 'column' }
           : { height: STRIP_HEIGHT, flexDirection: 'row' }),
         flexShrink: 0,
         display: 'flex',

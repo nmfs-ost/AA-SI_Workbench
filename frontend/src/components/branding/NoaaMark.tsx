@@ -1,94 +1,64 @@
-import { useState } from 'react';
-
 /**
  * The NOAA mark in the menu bar.
  *
- * Unlike every other glyph in this application, this one carries its own
- * colour. That is the point of it: the toolbar icons are outlined, grey, and
- * inherit `currentColor` so they read as one set, and a logo that joins that
- * set stops reading as a logo. It is an emblem, not a control, and it should
- * look like the one thing on the bar you cannot click to do something.
+ * This is the official emblem, shipped as a real asset — not a drawing of one.
+ * An earlier version of this file rendered hand-written SVG geometry (a disc, a
+ * gull, water) as a stand-in, with a comment saying the drawn mark was there
+ * only until the real file arrived. It has arrived, so the geometry is gone:
+ * an approximation of a federal agency emblem is the one thing this component
+ * must not be, because it looks like the real mark while not being it.
  *
- * Two ways it renders, in order of preference.
+ * ## Provenance
  *
- * **The official emblem**, when the file is present. Drop the real asset at
- * `frontend/public/noaa-emblem.svg` (or .png — change EMBLEM_SRC) and it is
- * used here with no code change. This is the right answer and the drawn mark
- * below is a stand-in for it: the NOAA emblem is an official agency insignia
- * with its own usage guidance, and reproducing it exactly from memory would
- * produce something that looks like the real thing while not being it.
+ * `public/noaa-mark.png`, `noaa-mark-32.png` and `favicon.ico` are all derived
+ * from a single official file:
  *
- * **The drawn mark**, otherwise. Original geometry — a disc, a gull, water —
- * in NOAA's blues rather than in the toolbar's grey. It is recognisable at
- * 19px and honest about being an approximation, which a wrong reproduction of
- * the seal would not be.
+ *   nmfs-opensci/NOAA-NMFS-Brand-Resources
+ *   logo-icons/noaa_digital_logo-2022_icon.png  (1501x1501, RGBA)
  *
- * The favicon at public/favicon.svg is deliberately *not* this. A tab icon is
- * painted outside the page, cannot read the in-app theme, and sits in a strip
- * whose colour the browser chooses — so it stays a monochrome mark that follows
- * the browser's own light/dark scheme. Colour here, adaptability there.
+ * — NOAA Fisheries' own brand-resources repository, sibling to the nmfs-ost org
+ * this project ships from. That file is the 2022 NOAA digital logo in its icon
+ * form: no circumscribed "NATIONAL OCEANIC AND ATMOSPHERIC ADMINISTRATION / U.S.
+ * DEPARTMENT OF COMMERCE" ring, no NOAA wordmark, transparent background, and
+ * exactly two brand colours (#0085CA and #003087) plus white for the gull.
+ *
+ * Nothing was redrawn. The build (see `docs/development/branding.md`) trims the
+ * master to its own ink, squares it, and resamples it on **premultiplied**
+ * alpha — the master's clear pixels are (0,0,0,0), so a straight RGBA resize
+ * bleeds black into every antialiased edge and the mark picks up a grey halo at
+ * 16px.
+ *
+ * The ring text was dropped rather than shrunk because it is illegible below
+ * about 64px; a 19px emblem whose outer third is grey mush reads as a smudge,
+ * not as NOAA. The icon variant is NOAA's own answer to the same question.
+ *
+ * ## Why a raster
+ *
+ * The brand repository publishes no SVG. Tracing one would be redrawing the
+ * emblem, which is the thing this file exists not to do, so the mark ships at
+ * 180px and is drawn at 18 — enough for a 6x display and still 13KB.
  */
 
-const EMBLEM_SRC = '/noaa-emblem.svg';
+/** The mark. One file, used by the menu bar and as the apple-touch icon. */
+const MARK_SRC = '/noaa-mark.png';
 
-/* NOAA's blues. Named rather than inlined because the two of them have to hold
-   a readable contrast against each other at 19px, and that is a relationship
-   worth being able to see in one place. */
-const DEEP = '#003087'; // the disc
-const SEA = '#0085CA'; // water, and the rim highlight
-
-export function NoaaMark({ size = 20 }: { size?: number }) {
-  const [emblemMissing, setEmblemMissing] = useState(false);
-
-  if (!emblemMissing) {
-    return (
-      <img
-        src={EMBLEM_SRC}
-        width={size}
-        height={size}
-        alt="NOAA"
-        // A missing file is the expected case until the asset is added, not an
-        // error worth logging or showing.
-        onError={() => setEmblemMissing(true)}
-        style={{ display: 'block', objectFit: 'contain' }}
-      />
-    );
-  }
-
+/**
+ * Rendered size in px.
+ *
+ * 18 rather than the strip's 20, because this is a *solid* mark sitting beside
+ * outlined icons that are mostly whitespace. Matched by the number, a filled
+ * disc reads a size larger than everything next to it; 18 is where the two
+ * weigh the same. See `MenuBar.tsx` for how it is centred on the strip.
+ */
+export function NoaaMark({ size = 18 }: { size?: number }) {
   return (
-    <svg
+    <img
+      src={MARK_SRC}
       width={size}
       height={size}
-      viewBox="0 0 24 24"
-      role="img"
-      aria-label="NOAA"
-      focusable="false"
-      style={{ display: 'block' }}
-    >
-      {/* The disc. Filled rather than outlined — an outline at this size reads
-          as another icon, and filling it is most of what makes it read as a
-          mark instead. */}
-      <circle cx="12" cy="12" r="10" fill={DEEP} />
-
-      {/* Water across the lower third, clipped to the disc. */}
-      <clipPath id="aa-noaa-disc">
-        <circle cx="12" cy="12" r="10" />
-      </clipPath>
-      <g clipPath="url(#aa-noaa-disc)">
-        <path d="M2 15.6 Q6 13.6 10 15.6 T18 15.6 T26 15.6 V23 H2 Z" fill={SEA} />
-      </g>
-
-      {/* The gull, in white, above the water. Two wings meeting low — the shape
-          a bird makes at a distance, and the one part of the emblem that
-          survives being drawn at 19px. */}
-      <path
-        d="M5.6 11.4 Q8.8 7.2 12 10.6 Q15.2 7.2 18.4 11.4"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth={1.7}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+      alt="NOAA"
+      draggable={false}
+      style={{ display: 'block', objectFit: 'contain' }}
+    />
   );
 }

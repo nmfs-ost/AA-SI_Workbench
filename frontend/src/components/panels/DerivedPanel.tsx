@@ -36,7 +36,7 @@ import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/de
 import { useLayout } from '../../context/LayoutContext';
 import { setActiveArtifact } from '../../state/activeSubject';
 import { sendToTerminal } from '../../state/terminal';
-import { panelDensity } from './panelStyles';
+import { panelColumns, panelDensity } from './panelStyles';
 import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
 import { quote } from './shellQuote';
 
@@ -58,11 +58,6 @@ interface Row {
   entry: DerivedEntry;
   depth: number;
 }
-
-/** Matches the Files panel's columns exactly, so the two trees line up when
-    the docks are switched between. See `rowFormat.ts`. */
-const SIZE_WIDTH = 52;
-const MODIFIED_WIDTH = 46;
 
 /** The console page for one object or prefix, rather than for the bucket.
  *
@@ -256,7 +251,8 @@ function DerivedRow({
 
         <Typography
           sx={{
-            width: SIZE_WIDTH,
+            width: panelColumns.size,
+            ml: `${panelColumns.lead}px`,
             flexShrink: 0,
             textAlign: 'right',
             fontSize: panelDensity.font.meta,
@@ -279,7 +275,7 @@ function DerivedRow({
         >
           <Typography
             sx={{
-              width: MODIFIED_WIDTH,
+              width: panelColumns.modified,
               flexShrink: 0,
               textAlign: 'right',
               fontSize: panelDensity.font.meta,
@@ -295,7 +291,7 @@ function DerivedRow({
         <RowMenuButton controller={menu} label={`Actions for ${entry.name}`} />
       </Box>
 
-      <RowMenu controller={menu} actions={actions} title={entry.name} />
+      <RowMenu controller={menu} actions={actions} />
     </>
   );
 }
@@ -546,11 +542,20 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
           >
             <Box sx={{ width: 16, flexShrink: 0 }} />
             <Box sx={{ flex: 1, minWidth: 0 }}>Name</Box>
-            <Box sx={{ width: SIZE_WIDTH, flexShrink: 0, textAlign: 'right' }}>Size</Box>
-            <Box sx={{ width: MODIFIED_WIDTH, flexShrink: 0, textAlign: 'right' }}>
+            <Box
+              sx={{
+                width: panelColumns.size,
+                ml: `${panelColumns.lead}px`,
+                flexShrink: 0,
+                textAlign: 'right',
+              }}
+            >
+              Size
+            </Box>
+            <Box sx={{ width: panelColumns.modified, flexShrink: 0, textAlign: 'right' }}>
               Updated
             </Box>
-            <Box sx={{ width: 44, flexShrink: 0 }} />
+            <Box sx={{ width: panelColumns.actions, flexShrink: 0 }} />
           </Box>
 
           <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, py: 0.25 }}>

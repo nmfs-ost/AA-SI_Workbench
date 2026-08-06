@@ -125,10 +125,16 @@ const dark = {
     md: 5,
   },
 
-  /* Fixed heights for the chrome regions (px). */
+  /* Fixed extents for the chrome regions (px). */
   size: {
     menuBar: 32,
     statusBar: 24,
+    /* Width of a vertical icon strip — and therefore the width of the column
+       the menu bar's mark has to sit in the middle of. It lived in
+       `SideBar.tsx` as a module constant until the mark needed to agree with
+       it: two files each holding their own 44 is exactly how the two drift a
+       pixel apart and nobody can see why the logo looks off-centre. */
+    sideStrip: 44,
   },
 } as const;
 
