@@ -1,498 +1,441 @@
-# Handoff — organising, links, custom commands, and a fifth palette
+# Handoff — the emblem, the jiggling terminal, and finding the account
 
 Paste this at the start of the next session with the Workbench zip. The previous
-handoff (tool discovery, the job runner, the NCEI sequence) is still accurate
-about everything it describes; nothing in it was undone. Its **Next** list is
-also still the right list, and none of it was done this session — see
-*What is still open*.
+handoff (organising, terminal links, custom commands, the fifth palette) is kept
+alongside this one as `HANDOFF-previous.md`; it is still accurate about
+everything it describes and nothing in it was undone. Its **What is still open**
+list is repeated at the end of this one, because none of it was done this session
+either.
 
 ---
 
 ## What happened
 
-Five requests, all UI-facing, all landed. One required reversing a documented
-design decision, one required a new backend module, and one required being
-careful about a claim the UI must not make.
+Six requests, all small and all visible. Two turned out to have causes somewhere
+other than where the symptom was, one required an asset that had never been
+obtained before, and one was a real bug rather than a missing feature.
 
-**40 files: 15 new, 25 modified** (plus this document). Backend `ruff` clean,
-**184 tests** (was 126).
-Frontend typecheck clean, production build clean, **337 tests** (was 230).
+**20 files: 6 new, 12 modified, 2 deleted.** Backend `ruff` clean, **197 tests**
+(was 184). Frontend typecheck clean, production build clean, **344 tests**
+(was 337).
 
 | # | Asked for | Where it landed |
 |---|-----------|-----------------|
-| 1 | Right-click file operations; a Modified column | `files.py`, `RowMenu`, both browsers |
-| 2 | Pipeline cards from custom bash | `commandParser.ts`, `NewPipelineDialog` |
-| 3 | Clickable links in the terminal | `terminalLinks.ts`, `TerminalPanel` |
-| 4 | A side panel of project links | `ResourcesPanel`, `githubApi.ts` |
-| 5 | A rainbow pride theme | `tokens.ts`, `MenuBar` |
+| 1 | Stop the terminal jiggling on click | `TerminalPanel` |
+| 2 | Align the header mark with the sidebar | `tokens.ts`, `MenuBar`, `SideBar` |
+| 3 | The real NOAA logo, not a drawing of one | `public/*`, `NoaaMark`, `index.html` |
+| 4 | Drop the context menu's title header | `RowMenu`, both browsers |
+| 5 | Room in the file metadata columns | `panelStyles.ts`, both browsers |
+| 6 | Show the signed-in Google account | `identity.py`, `StatusBar` |
 
 ---
 
-## 1. Organising files
+## 1. The jiggling terminal
 
-### The decision that was reversed
+### What it was not
 
-`files.py` used to document, at length, that there is deliberately **no delete,
-move, or rename**, on the grounds that a destructive action one misclick from a
-listing is a poor trade. That docstring was rewritten rather than quietly
-bypassed, because it was load-bearing documentation and the next reader deserves
-to know it changed on purpose.
+Two plausible causes were checked against the installed source and ruled out
+before anything changed. Both are worth recording so the next person does not
+spend the same time on them:
 
-The reasoning was right about *deletion* and wrong about the conclusion. The
-alternative it left users was `rm` at a terminal, which fails worse in exactly
-the way the argument worried about. The trade is now answered directly instead:
+- **`term.focus()` does not scroll.** xterm 5.5 calls
+  `textarea.focus({ preventScroll: true })`. The helper textarea does sit at
+  `left: -9999em`, which is what makes this look like the answer, but the flag is
+  already there.
+- **The scrollbar cannot oscillate.** `.xterm-viewport` is `overflow-y: scroll`,
+  not `auto`, so it is always present. The classic FitAddon feedback loop —
+  content grows, scrollbar appears, `cols` drops, content re-wraps, scrollbar
+  goes — cannot happen here.
 
-- **There is still no delete.** `/trash` *moves*. Nothing in the module unlinks
-  a file the user can see; the one `unlink` removes a `.trashinfo` sidecar the
-  module wrote seconds earlier.
-- **Trashing is reversible from inside the Workbench.** `/trash` returns the
-  token `/restore` needs, so the panel offers **Moved to Trash · Undo** rather
-  than an irreversible action behind a confirmation dialog. A confirmation is
-  the weaker guarantee: it asks the user to be certain *in advance*, which is
-  when they have the least information.
-- The destination follows the **XDG Trash spec**, so a desktop Files app sees
-  the same trash and can restore from it independently.
-- **Rename is a leaf operation.** A name containing a separator is rejected
-  rather than resolved, so renaming cannot relocate a file.
+### What it was
 
-### New endpoints
+The hover readout was a **sibling** in the toolbar's flex row, mounted on hover
+and unmounted on leave. Inserting an item into a flex row costs its own width
+plus a `gap`, and this toolbar's fixed content is not small:
 
 ```
-GET  /api/fs/stat?path=      describe one path, without listing or reading it
-POST /api/fs/rename          { path, name }         leaf-only, never overwrites
-POST /api/fs/move            { path, destination }  never overwrites, no self-subtree
-POST /api/fs/trash           { path }            -> { trashedTo, token }
-POST /api/fs/restore         { token }
-GET  /api/identity?refresh=  see §4
+icon 15 + "Environment" 68 + Select 190 + Rescan 78 + status 60 + button 90
+  + 6 gaps + padding                                        ~ 565px
+  + the readout and its gap                                 ~ 713px
 ```
 
-All are behind `_guard_write()`, so `AASI_FS_READONLY` still removes the whole
-mutating half, and behind the existing non-loopback guard. Both are asserted by
-parametrised tests naming every new route.
+Above 713px of dock width the spacer absorbs it and nothing moves. Below it — and
+the previous handoff records that this panel lives in "a dock a third of the
+window wide" — the spacer is already at its `minWidth: 8` floor, so the cost
+comes out of every other control instead. The Select, the Rescan button, the
+status word and the session button all shrank when a link was hovered and sprang
+back when the pointer left it. Crossing a line of output with several links in it
+made the whole toolbar shiver.
 
-Three details worth not undoing:
+**And you have to hover a link to click one**, which is why it presented as
+"clicking links makes it jiggle" rather than as a hover bug.
 
-- **The `.trashinfo` sidecar is written first, with `O_EXCL`.** It is what
-  claims the name in the trash. Writing the file first and the sidecar second
-  leaves an orphan in `files/` if the second step fails — an entry the trash can
-  *display* but cannot *restore*.
-- **A restore path is untrusted input.** The sidecar is a file on disk, shared
-  with the desktop and editable by hand, so its `Path=` goes back through
-  `_resolve` exactly like a path arriving in a query string. A test hand-edits
-  one to point outside the root and asserts a 403.
-- **`_leaf_name` is shared by create and rename.** They need identical rules,
-  and it is the rule that stops a rename becoming a move.
+### The fix, and the rule behind it
 
-### `owner`, not `modifiedBy`
+The readout now renders **inside** the spacer, which already reserves that space.
+Text in there can only consume slack that was going spare, so nothing else in the
+row can move, whatever the readout says or how long the path is.
 
-`FsEntry` gained `owner`, cached per uid. The name is the point: POSIX records
-`st_uid`, which is **who owns the file now**, not who last wrote it. On a
-single-user workstation they coincide; on a shared one they do not, and a column
-headed "modified by" built on this would be confidently wrong. The UI labels it
-*Owner* for the same reason.
+Everything before the spacer also gained `flexShrink: 0`. That is the general
+statement of the bug:
 
-`modifiedAt` was already on the wire and had simply never been rendered.
+> **A flex item without `flexShrink: 0` is a control that changes size when its
+> neighbours do.** In a toolbar that is always wrong. Only the spacer flexes.
 
-### The menu
+One more thing changed in the same file. The host's `onMouseDown` called
+`term.focus()` on every button, so it ran second on a normal click (xterm focuses
+itself) and stole focus on a right-click, from the selection the user was about
+to act on. It now fires only for the primary button and only when the target is
+the host itself — which is the job it was added for: the 4px of padding around
+the screen is part of the terminal to anyone clicking it, and xterm does not own
+those pixels.
 
-`components/panels/RowMenu.tsx` — **one component, both browsers**. They sit one
-icon apart in the same dock doing the same job on different storage, and
-`panelStyles.ts` already records what happened the last time they diverged.
-
-Two ways in, one action list:
-
-- **Right-click the row.** What everyone tries first.
-- **A ⋮ button at the row's right edge**, revealed on hover like
-  `CopyPathButton`. Right-click is undiscoverable — nothing on screen says it is
-  there — and unavailable outright from a touchscreen or an assistive pointer.
-  The button makes the actions *visible*; the right-click makes them *fast*.
-
-**Disabled items show their reason rather than hiding.** A hidden action is
-indistinguishable from an action that does not exist, which sends people to the
-terminal to do it by hand — the exact outcome the menu exists to prevent.
-
-The **Bucket menu is read-only** and carries **no Delete item, not even a
-disabled one**. `/api/derived` has no mutating route at all; these objects are
-pipeline output, a store deleted here is a store some run has to produce again,
-and the console already offers deletion to anyone whose IAM role permits it. A
-disabled item would promise the action is coming. It is not. What the menu does
-add is the per-object console link — the header button only ever opened the
-bucket *root*, which is useless six prefixes deep.
-
-### The Modified column
-
-Right-aligned, fixed width, with a real header row in both trees — the header is
-what turns a ragged right edge into something the eye can scan down. Values are
-relative (`now`, `12m`, `3h`, `5d`, then a date at a week), because the question
-is nearly always "is this the file the job just wrote?" and `2h` answers it where
-an ISO timestamp does not. Exact stamp and owner live in the tooltip.
-
-`formatBytes` had been written twice, identically, in both panels; it and the new
-time formatting now live in `panels/rowFormat.ts`.
-
-### Renaming an open file
-
-A Dockview panel's id **embeds the file path** (`editor/panelIds.ts`), so a
-renamed file cannot keep its tab: the id is wrong and `params.path` points at
-something gone. Dropping the doc from the store is not enough — Dockview would
-still render the panel.
-
-So `editors.ts` gained a `CloseRequest`, the mirror of the existing
-`OpenRequest`, consumed by `DockLayout` the same way; and `renameOpenFile`
-re-keys the buffer to the new path. **Unsaved edits survive the rename** — the
-buffer is moved, not reloaded, for the same reason `openFile` refuses to
-re-fetch a path it already holds.
+**Untested against a PTY.** The mechanism is arithmetic and the fix removes it by
+construction, but nobody has hovered a link in a browser to confirm the shiver is
+gone. This suite is pure-module — no jsdom, no testing-library — so there is no
+component test to add here, and inventing a rendering harness for one assertion
+would be a bigger change than the fix.
 
 ---
 
-## 2. Pipelines from custom bash
+## 2 and 3. The mark
 
-`pipelines/commandParser.ts` + a rewritten `NewPipelineDialog`.
+These are one job. The alignment cannot be checked without the asset, and the
+asset cannot be sized without the alignment.
 
-### What changed and why
+### The emblem is real now
 
-Building a pipeline used to be clicking tool buttons. That works for the tools
-the catalogue lists and for nothing else — not the `aa-*` tools that ship later,
-and not the Unix toolbox, which is genuinely useful in a pipe chain. The escape
-hatch was one "Custom command" button producing an opaque freeform stage, so the
-real choice on offer was: *structure for a handful of tools, or a text box with
-no structure at all.*
-
-**The command is now the input, and the structure is recovered from it.** A
-command line is already the notation everyone here types, reads in the docs, and
-pastes from a colleague.
+`NoaaMark.tsx` already had the hook: an `EMBLEM_SRC` it would use if the file
+existed, and a hand-drawn SVG stand-in with a comment saying the drawn mark was
+there only until the real one arrived. It has arrived.
 
 ```
-aa-fetch -o ./downloads {input} | grep -v WARN | aa-combine -o combined.zarr
-   ^ structured                    ^ freeform     ^ structured
+nmfs-opensci/NOAA-NMFS-Brand-Resources
+logo-icons/noaa_digital_logo-2022_icon.png     1501x1501 RGBA
 ```
 
-- Split on top-level pipes; each segment is a stage.
-- If the segment's program is in the catalogue **and every token maps to a
-  declared flag**, it becomes a real stage: real params, a working Configuration
-  panel, an argv the job runner can execute.
-- Otherwise the segment keeps its text verbatim and runs as a freeform stage.
+NOAA Fisheries' own brand-resources repository, sibling to the `nmfs-ost` org
+this project ships from. It is the 2022 NOAA digital logo in its **icon** form:
+no circumscribed "NATIONAL OCEANIC AND ATMOSPHERIC ADMINISTRATION / U.S.
+DEPARTMENT OF COMMERCE" ring, no NOAA wordmark, transparent, and exactly two
+brand colours (`#0085CA`, `#003087`) plus white for the gull — the same two hexes
+the drawn stand-in had named as `SEA` and `DEEP`.
 
-The tool chips remain, but they now **insert into the command** rather than
-appending a hidden stage. That is what makes this the better of the two rather
-than a replacement: someone who does not know the tool names can still find
-them, and what they get back is a command they can then edit.
+**Nothing was redrawn, and nothing was erased.** The textless mark is NOAA's own
+published variant, not the full emblem with its ring painted out. That matters:
+the ring text is illegible below about 64px, and dropping it is NOAA's design
+decision rather than ours. `docs/development/branding.md` has the whole story;
+`scripts/build_noaa_mark.py` regenerates the three files and reproduces the
+committed ones byte for byte.
 
-### The rule not to relax
+Two details in that script are load-bearing:
 
-**A stage is structured only if *every* token is accounted for.** Partial mapping
-is the tempting version and it is the dangerous one:
-`aa-combine -o out.zarr --nonexistent 3` would keep the two flags it understood,
-silently drop the third, and generate a command that is **not the one the user
-typed**. Since the whole promise is "what you typed is what runs", an
-unrecognised token demotes its stage to freeform, where the text is preserved
-exactly — and the dialog says *which* token did it, so the demotion is visible
-rather than mysterious.
+- **The frame is normalised.** The asset as published sits in its own margins —
+  the version that came in with this request filled 56% of its canvas — which is
+  why the mark looked a different size everywhere it was used. Trim to the ink,
+  centre on a square, and every size frames identically.
+- **Resampling is premultiplied.** The master's clear pixels are `(0,0,0,0)` —
+  transparent *black*. A straight RGBA resize averages those zeros into the
+  colour channel of every partially covered edge pixel. Measured on this asset,
+  minimum edge luminance is **24 without premultiplication and 62 with it**: a
+  dark fringe that is invisible at 180px and obvious at 16.
 
-Redirection, subshells, globbing, variables and `&&` are not interpreted. They
-land in a segment, fail the mapping rule, and end up in a freeform stage handed
-to a real shell. That is the correct outcome for all of them, and it is why the
-parser can be this small.
+Three files ship, because three declarations answer different questions —
+`favicon.ico` (16/32/48 in one file) for Windows and older browsers,
+`noaa-mark-32.png` for the tab, `noaa-mark.png` (180) for the home-screen tile
+and the menu bar.
 
-`createPipeline` gained an optional `values` argument, because a stage list alone
-cannot carry the flags a user typed or the verbatim text of a freeform stage. It
-seeds the Default configuration and deliberately **does not** rewrite
-`ParamDef.default` — `pipelineTypes` records that an untouched field must send
-nothing so the tool's own default keeps applying, and pinning a typed value in as
-a default would quietly end that.
+**The old monochrome `favicon.svg` is deleted, and its light/dark adaptation with
+it.** That is deliberate. It is NOAA's mark, and an agency emblem that changes
+colour to suit the tab strip is no longer the emblem; it carries its own contrast
+against either. Checked by rendering at 16/18/20/32px on both chromes.
+
+### The alignment
+
+The mark's centre was at **25.5px** and the icon strip's at **22** — the menu
+bar's `px: 1`, plus the mark box's own `px: 1`, plus half of 19. Three and a half
+pixels: too small to look intentional, too large to look right.
+
+`STRIP_WIDTH` was a module constant in `SideBar.tsx`. It is now
+`theme.aa.size.sideStrip`, and `MenuBar` gives the mark a slot exactly that wide
+and centres it. The menu buttons moved into their own container so the bar itself
+can carry no `gap` — a gap on the bar lands between the mark's slot and the first
+label too, and would put it 2px off again.
+
+The mark renders at **18**, not the strip's 20. It is a solid mark beside
+outlined icons that are mostly whitespace, and matched by the number a filled
+disc reads a size larger than everything next to it.
+
+`tests/chromeGeometry.test.ts` pins the arithmetic and pins `sideStrip` equal
+across all five palettes — a palette that changed it would move the mark off its
+column in that palette only, which is the hardest kind of visual bug to
+attribute.
 
 ---
 
-## 3. Terminal links
+## 4. The context menu opens on the actions
 
-`panels/terminalLinks.ts` (pure, 34 tests) + a link provider in `TerminalPanel`.
+The greyed row at the top of `RowMenu` naming the file is gone. It restated
+something the reader had just done themselves — the menu is anchored to the row,
+opened by a gesture on that row, and the row is still visible underneath it — and
+it cost a line of vertical travel to every item below.
 
-Three kinds: `http(s)` opens a tab; `gs://` selects the object in the right dock
-exactly as clicking it in the Derived panel does; an absolute path (or one under
-`~`) opens in the editor, or reveals in Files when it is a directory.
-
-This is not decoration. The first thing every one of these tools prints is a
-*location* — `aa-fetch` a run directory, `aa-ed` a directory, `aa-combine` a
-store, `aa-upload` a bucket URI — and the next thing the user does is select it,
-copy it and paste it into another panel. The click is that step.
-
-Four things that were not obvious:
-
-- **Wrapped lines are the normal case, not an edge case.** These paths are long
-  and the terminal lives in a dock a third of the window wide. A provider that
-  looked at single rows would link the first 80 characters of every run
-  directory and stop — which is *worse* than no link, because it looks like it
-  worked. `logicalLineAt` reassembles the logical line first.
-- **`/api/fs/stat` exists for this.** Whether a path is a file or a directory
-  decides which panel answers, and the text cannot say: the directories these
-  tools print have no extension. The alternatives were guessing from the suffix
-  (wrong every time) or calling `/list` and treating an error as "it's a file",
-  which enumerates a survey directory to answer a yes/no question.
-- **No new dependency.** `@xterm/addon-web-links` handles one of the three kinds;
-  using it plus a hand-rolled provider for the other two would mean two hover
-  styles and two activation paths for one gesture.
-- **Right-click is never hijacked.** That is the selection menu, and a terminal
-  without one is a broken terminal.
-
-`SubjectOrigin` gained `'Terminal'` — the inspector chip's whole job is saying
-where a selection came from, and reporting one of the other three would be a
-small lie in exactly the wrong place.
+The `title` **prop** was removed, not just left unpassed at the two call sites. A
+prop nothing supplies is an invitation to supply it again.
 
 ---
 
-## 4. The Project panel — and the permissions question
+## 5. The metadata columns
 
-### The panel
+`SIZE_WIDTH = 52` and `MODIFIED_WIDTH = 46` existed twice, once in each browser,
+each with a comment saying it had to match the other. That is a convention, not a
+mechanism. They are now `panelColumns` in `panelStyles.ts`, alongside the density
+scale that is already shared for the same reason.
 
-New left-dock panel (`resources`), icon `HubOutlined`, titled **Project**. It is
-on the left because that strip already carries the shell's standing,
-selection-independent things (the environment updater and feedback dialog, under
-a divider), whereas the right dock is entirely "about the thing currently
-selected", which this is not. The strip's accessible name changed from
-`Data sources` to `Data sources and project links`, because the old one had
-stopped being true.
+Widened to **66** and **78**, with an **8px lead** before the first value:
 
-Repositories are **fetched live** from `api.github.com/orgs/nmfs-ost/repos`,
-filtered on the `AA-SI` prefix — the same match the org's own `?q=AA` link does —
-and shown with the three facts that actually answer "is this the one I want":
-what it is, what it is written in, and when anything last happened in it. A repo
-last pushed to two years ago is a different answer from one pushed this morning,
-and no button can say that.
+- 46 was sized for `12 Aug` and could not fit `12 Aug 2025` at all, which is what
+  `formatRelativeTime` renders once a file is older than a year. That column was
+  not merely tight, it was clipping.
+- Values are right-aligned inside their widths, so extra width becomes space to
+  the *left* of each value — which is the space that separates it from its
+  neighbour. **Widening the column is the spacing.**
+- The lead is separate because a long filename ellipsises to the full width of
+  its box, so without it the last character of a name and the first digit of its
+  size sit one row-gap apart. A width increase alone does not fix that.
 
-Called from the browser, not proxied through the backend: the backend has no
-outbound-network dependency today, and adding one for a link list would mean a
-workstation with no egress fails to *start* rather than fails to show a panel.
+### There is still no "Modified by" column
 
-**`FALLBACK_REPOS` in `config/resources.ts` is a floor, not a catalogue.** Every
-entry cites its evidence in a comment. It exists so an air-gapped workstation, or
-one that has hit GitHub's unauthenticated hourly limit, still has somewhere to
-go — and the panel **says plainly** when it is showing that list rather than a
-live one. Silently presenting a hand-maintained list as live is the failure mode
-`toolCatalog.ts` already carries an ACCURACY WARNING about. Rate-limiting is
-reported as itself rather than as a generic failure, because "wait an hour" and
-"you are offline" call for different things from the reader.
+The request named one. There isn't one, and there deliberately should not be:
+`rowFormat.ts` records that POSIX gives `st_uid` — **who owns the file now**, not
+who last wrote it — and the two only coincide on a single-user machine. The owner
+is in the row's tooltip, labelled *Owner*.
 
-### Read this before touching `identity.py`
-
-The request was that certain options "should only execute according to email
-assigned to the project". There is now a `/api/identity` endpoint and a
-`state/identity.ts` store, and the UI gates on them — but:
-
-> **This is not an authorization system and must never be mistaken for one.**
-
-The Workbench runs *on* the user's own workstation, as that user. Every tool it
-starts inherits their credentials, and **the terminal panel two clicks away is an
-unrestricted shell**. A check in that file cannot stop anyone from doing
-anything.
-
-There are exactly two real boundaries and both are elsewhere:
-
-- **GCP IAM**, for anything touching the bucket. `aa-upload` to a prefix you
-  cannot write fails at Google's edge, correctly, whatever the UI says.
-- **`AASI_FS_READONLY`**, for the filesystem, enforced in `files.py` on every
-  mutating route.
-
-So `capabilities` is a **prediction** of what those two will allow, offered so a
-disabled button can explain itself instead of a job failing three minutes in with
-a 403 from a service the user has never heard of. `enforced` is `False`, and
-**a test pins it there** — a future change that flipped it without adding a real
-boundary would be a lie the UI then repeats.
-
-Configuration:
-
-```
-AASI_PRINCIPAL        override the detected account (tests, CI)
-AASI_PROJECT_MEMBERS  comma-separated allowlist: full addresses, or @domain
-AASI_FS_READONLY      already read by files.py; mirrored into capabilities
-```
-
-Detection order: env var, then `gcloud config get-value account`, then the
-GCE/Cloud Workstation metadata server. Cached per process; both probes are on a
-2 s leash because this is called while the shell paints its first frame.
-`gcloud` prints the literal string `(unset)` on stdout with exit 0 when no
-account is set, which is handled — taken at face value it lands in the UI as an
-account named "(unset)".
-
-Two defaults chosen deliberately:
-
-- **No allowlist means everyone.** An allowlist defaulting to closed would lock a
-  scientist out of their own workstation over a misconfigured environment
-  variable.
-- **Non-membership gates *project* actions only,** never the local filesystem.
-  Whose machine this is has already been answered by them being logged into it,
-  and a colleague helping at someone else's desk should not lose the file
-  browser.
+**This is the one open question from this session.** An `Owner` column, correctly
+labelled, is a reasonable thing to want and there is now room for it. It was not
+added because it was not what was asked for, and because a third column in a
+300px dock works against the request that produced the other two changes.
 
 ---
 
-## 5. The pride palette
+## 6. The missing account
 
-A fifth palette, `pride`, dark-based. Three rules did the work, because six
-saturated hues and a legible instrument are not obviously compatible:
+### It was a real bug, and the symptom named it exactly
 
-- **The neutrals stay neutral.** A near-black carrying only a trace of violet.
-  With six hues on screen in an open file, a tinted chrome would leave nothing
-  that is *not* colour, and the eye needs somewhere to rest.
-- **The flag lives in the editor.** The six syntax slots have always been the one
-  place this UI admits more than one hue. Five stripes go there directly,
-  lightened for a dark background the way the NOAA palette lightens Process Blue.
-  **Red is deliberately not a syntax slot** — red already means `status.error`
-  everywhere here, and a red meaning "string literal" in one panel and "the run
-  failed" in another is worse than a five-stripe editor.
-- **The rainbow itself is a band, not a fill.** A gradient cannot be a token text
-  is drawn in; it would fail every contrast rule in `theme.test.ts`, correctly.
+> *"the Project ID is displayed correctly, but the logged-in user identity is
+> missing"*
 
-That last point is the only structural change: a new token
-`color.decoration.band`, which is whatever CSS `background` accepts. It is
-**`transparent` in all four pre-existing palettes**, so the rule that renders it
-(a 2px strip on the menu bar's outer edge) draws nothing at all in them — adding
-a fifth palette changed the appearance of none of the other four. Three tests pin
-this: the four are transparent, pride's is a gradient, and the band never equals
-any value text is drawn in.
+Those two facts had different causes, which is why they behaved differently:
 
-The palette passes the existing contrast suite unchanged — every threshold was
-computed before a colour was written, not adjusted afterwards.
+```python
+project=os.getenv("AALIBRARY_GCP_PROJECT_ID", "ggn-nmfs-aa-dev-1")   # a constant
+principal, source = detect_principal(refresh=refresh)                # real detection
+```
+
+The project always displayed because it was **hard-coded**. The principal was the
+only one actually being looked for, and it had exactly one user-account probe:
+`gcloud config get-value account`.
+
+That probe reports nobody in three ordinary situations, in every one of which the
+user is fully signed in:
+
+- **`gcloud auth application-default login`.** It deposits working credentials
+  and never sets the `account` property, so the probe returns the literal string
+  `(unset)`.
+- **`gcloud` is not on the backend's `PATH`.** A server started from a desktop
+  launcher or a unit file does not get a login shell's `PATH`, so the probe fails
+  with `FileNotFoundError` on a machine where typing `gcloud` in the terminal
+  panel works fine.
+- **The account is in a non-default configuration**, selected by
+  `CLOUDSDK_ACTIVE_CONFIG_NAME`.
+
+### Six sources now, first answer wins
+
+```
+1. AASI_PRINCIPAL                      our override
+2. CLOUDSDK_CORE_ACCOUNT               gcloud's override
+3. gcloud config get-value account
+4. gcloud auth list                    the active credentialed account
+5. ~/.config/gcloud/configurations/config_<name>       read directly
+6. the metadata server
+```
+
+Details worth not undoing:
+
+- **Step 2 is honoured before probing.** That is the precedence gcloud itself
+  applies. Naming a different account than `gcloud` does would put a name in the
+  UI that no command run from the terminal panel two clicks away would use.
+- **Step 5 needs no subprocess**, which is the entire reason it can answer the
+  `PATH` case. It honours `CLOUDSDK_CONFIG` and `CLOUDSDK_ACTIVE_CONFIG_NAME`,
+  because a workstation configured by someone else is exactly where those get
+  used, and reading the wrong file is worse than reading none.
+- **Step 5 reports its source as `gcloud`.** The file *is* gcloud's
+  configuration. `source` answers "which account is this", not "which syscall
+  found it" — and inventing a new value would have widened the TypeScript union
+  for no reader's benefit.
+- **The file probe sits after the subprocesses.** When `gcloud` runs it is
+  authoritative: it resolves the active configuration itself rather than us
+  guessing which file that is.
+
+`project` is detected too — our env var still first so a pinned deployment stays
+pinned, then the standard `GOOGLE_CLOUD_PROJECT` family, then gcloud's config
+file, then the metadata server, then the old constant **last**, as a floor rather
+than an answer.
+
+- **The metadata probe only runs when the principal already came from metadata.**
+  That is the only available evidence that a metadata server exists, and
+  everywhere else the probe is a two-second timeout on an endpoint called while
+  the shell paints its first frame.
+
+### Where it shows
+
+The account was only ever in the Project panel's footer, which means the answer
+to "which Google account is this running as?" was behind opening a panel — and
+nobody opens a panel to check something they assume they already know. That
+assumption is exactly what goes wrong: a service account, a colleague's
+workstation, or a second account in another configuration all look identical
+until something is refused.
+
+It is in the **status bar** now, next to its project, on the one strip that is
+always visible. Clicking it opens the Project panel, which still carries the
+detail sentence and the membership warning — the status bar states *who*, the
+panel explains *what that means*.
+
+No account is rendered as a **state**, in the warning colour, not as a blank. It
+is the one case here the user can fix, and `identity.detail` already carries the
+sentence saying how. Nothing renders until `loaded`: an empty slot that fills in
+is honest, where a placeholder reading "signed in" during the probe would be a
+claim we cannot yet make.
+
+**None of this weakens what `identity.py` is.** It still predicts and never
+enforces, `enforced` is still `False`, and the test still pins it there. Naming
+the account is not a claim about what it may do.
 
 ---
 
 ## Files
 
-**New (15)**
+**New (6)**
 
 ```
-backend/src/aa_si_workbench/api/            identity.py
-backend/tests/                              test_identity.py
-frontend/src/config/                        resources.ts
-frontend/src/services/                      identityApi.ts  githubApi.ts
-frontend/src/state/                         identity.ts
-frontend/src/components/dialogs/            RenameDialog.tsx
-frontend/src/components/panels/             RowMenu.tsx  rowFormat.ts
-                                            terminalLinks.ts
-frontend/src/components/panels/resources/   ResourcesPanel.tsx
-frontend/src/components/panels/pipelines/   commandParser.ts
-frontend/tests/    terminalLinks.test.ts  commandParser.test.ts  rowFormat.test.ts
+scripts/                                    build_noaa_mark.py
+docs/development/                           branding.md
+frontend/public/                            noaa-mark.png  noaa-mark-32.png
+                                            favicon.ico
+frontend/tests/                             chromeGeometry.test.ts
 ```
 
-**Modified (25)** — `api/files.py`, `api/main.py`, `filesApi.ts`, `FilesPanel`,
-`DerivedPanel`, `TerminalPanel`, `NewPipelineDialog`, `PipelinesPanel`,
-`state/editors`, `state/pipelines`, `state/activeSubject`, `useLayoutController`,
-`DockLayout`, `SideBar`, `MenuBar`, `defaultLayout`, `panels/registry`,
-`dialogs/registry`, `types/panels`, `types/dialogs`, `types/theme`,
-`theme/tokens`, plus `tests/test_files.py`, `tests/layouts.test.ts` and
-`tests/theme.test.ts`.
+**Deleted (2)** — `frontend/public/favicon.svg`, and the drawn SVG geometry
+inside `NoaaMark.tsx`.
+
+**Modified (12)** — `api/identity.py`, `tests/test_identity.py`, `index.html`,
+`NoaaMark.tsx`, `MenuBar`, `SideBar`, `StatusBar`, `TerminalPanel`, `RowMenu`,
+`FilesPanel`, `DerivedPanel`, `panelStyles.ts`, `theme/tokens.ts`.
 
 ---
 
 ## Status, honestly
 
-**Verified** — by typecheck, unit test, and a clean production build:
+**Verified** — by typecheck, unit test, production build, or direct measurement:
 
-- every new `files.py` route, including the boundary cases: rename-as-path,
-  move-into-own-subtree, trash name collision, a hand-edited `.trashinfo`
-  pointing outside the root, and read-only refusal on all of them
-- the command parser against real catalogue entries — quoting, `--flag=value`,
-  multi-value splitting, and every path that causes a demotion
-- link detection against transcribed tool output, including wrapped lines and
-  the false positives (`and/or`, `38/120`, relative paths, a URL's own path)
-- `formatRelativeTime` at all five boundaries, including a future timestamp
-- all five palettes against the contrast suite, and the band's invisibility in
-  the other four
-- identity detection, the allowlist, and `enforced === false`
+- the mark renders correctly at 16/18/20/32px on dark and light chrome, and all
+  three asset files are emitted by the production build and referenced from the
+  built `index.html`
+- `build_noaa_mark.py` reproduces the three committed files byte for byte
+- the premultiplication claim, by measuring edge luminance both ways (24 vs 62)
+- `sideStrip` identical across all five palettes; the mark's centring arithmetic
+- the column widths against the widest value each renders
+- every new identity probe: the ADC case, the missing-`PATH` case, a real config
+  file on disk, `CLOUDSDK_ACTIVE_CONFIG_NAME`, malformed and absent files,
+  `(unset)` in each place it can appear, probe ordering, and that the metadata
+  probe does **not** run off a VM
+- project detection at every level, including that the constant is reached last
+- `enforced === false`, still
 
-**Untested — written, never run against anything real.** This is the honest
-headline and it has not changed in character from last session:
+**Untested — written, never run against anything real.**
 
-- **No part of this has run against a live backend.** Not one of the new
-  endpoints has been called over HTTP; they are exercised as Python functions.
-- **The trash has never been used on a real workstation.** In particular the
-  cross-filesystem path (`shutil.move` when `$HOME` and the data are on different
-  mounts) is written but unexercised, and a workstation with `AASI_FS_ROOT=/data`
-  and a home trash elsewhere will move files *out of the browsable tree* —
-  recoverable via Undo or a desktop Files app, but the tree will not show them.
-- **The GitHub fetch has never succeeded here.** The sandbox hit the
-  unauthenticated rate limit, so only the *fallback* path has been seen. The live
-  path is inference from the API's documented shape.
-- **`identity.py`'s metadata-server probe has never met a metadata server**, and
-  the `gcloud` probe is tested only against a fake `subprocess.run`.
-- **Terminal links have never been clicked**, because that needs a PTY. The
-  parsing is well covered; the xterm wiring — the range coordinates in
-  particular — is the part to watch, and a link landing one cell off would be
-  the symptom.
-- **No screenshot of the pride palette exists.** It is correct by computation,
-  which is not the same as looking right.
+- **The terminal fix has never been hovered.** The mechanism was found by
+  arithmetic against the real flex values and removed by construction; the shiver
+  being gone is inference. No PTY, no browser, and no component-rendering harness
+  in this suite to add one to.
+- **No screenshot of the aligned menu bar exists.** The mark's position is
+  correct by construction and pinned by a test, which is not the same as looking
+  right next to the icon strip.
+- **`gcloud auth list` and the metadata project probe have never met the real
+  thing.** Both are tested against fakes. The `auth list` output shape — bare
+  values, one per line, from `--format=value(account)` — is from documentation,
+  not observation.
+- **The status bar's account has never displayed a real account**, because
+  nothing here has run against a live backend. This inherits the previous
+  session's headline unchanged: **no part of this has been called over HTTP.**
 
 **Known wrong / known incomplete**
 
-- **The menus act on one row.** There is no multi-select, so trashing twenty
-  files is twenty gestures. The tree has never had multi-select; adding it is a
-  bigger change than it looks because it interacts with the filter and with lazy
-  loading.
-- **No Duplicate, and no drag-to-move.** `/api/fs/move` exists and is tested but
-  has **no UI** — it was built because trash needs the same primitives and
-  because the menu will want it. Nothing calls it yet.
-- **The bucket has no Modified value for folders or stores.** GCS reports
-  `updatedAt` on objects only; a common prefix has no timestamp, and a store
-  listed as a leaf never enumerated its chunks. Those rows render blank rather
-  than borrowing a plausible number.
-- **The command parser does not round-trip.** Editing a structured stage in the
-  Configuration panel and re-opening the New Pipeline dialog does not show the
-  edited command; the dialog is a one-way builder.
-- **The pride palette has no light variant.** Every other palette states a base;
-  this one is dark only.
+- **No `Owner` column**, per section 5 above. This is the open question.
+- **The account appears in two places now** — the status bar and the Project
+  panel footer. That is a deliberate division (who / what it means) but it is
+  duplication, and if the footer ever grows it should probably lose the address.
+- **`_from_config_file` parses gcloud's INI by hand.** It is a stable format and
+  the probe is best-effort in every failure direction, but it is a second
+  implementation of something gcloud owns.
+- Everything the previous handoff lists as known-incomplete is still true: no
+  multi-select, `/api/fs/move` still has no caller, no Modified value for bucket
+  folders or stores, the command parser still does not round-trip, and the pride
+  palette still has no light variant.
 
 ---
 
 ## What is still open
 
-The previous handoff's **Next** list is untouched and still correct. Repeated
-here so it does not get lost behind this session's work:
+The previous handoff's list, untouched and still correct:
 
-1. **Make sequence stages skippable, and add a short path.** A sequence that
-   cannot express `aa-ed → aa-combine` is wrong for the common small job. This
-   was *"the first thing to fix"* last session and still is.
+1. **Make sequence stages skippable, and add a short path.** Still "the first
+   thing to fix", now for the third session running.
 2. **Run the sequence against real survey data, once, end to end.**
-3. **A bucket to test against.** Publish, remote `aa-store`, and the derived
-   listing fix are all unexercised, and all three touch credentials. This session
-   added a fourth: the Derived panel's per-object console links.
+3. **A bucket to test against.**
 4. **`aa-split`.**
-5. **The Sv sector** (`aa-sv`, `aa-clean`, `aa-mvbs`), when the Zarr/NetCDF
-   boundary is decided.
+5. **The Sv sector** (`aa-sv`, `aa-clean`, `aa-mvbs`).
+6. **Point `AASI_PROJECT_MEMBERS` at the real project list** — or decide it
+   should stay unset.
+7. **Multi-select in the two trees.**
 
 New, from this session:
 
-6. **Point `AASI_PROJECT_MEMBERS` at the real project list** — or decide it
-   should stay unset. It is currently unset, which means unrestricted, which is
-   the right default but probably not the intended end state.
-7. **Multi-select in the two trees**, which unblocks bulk trash and gives
-   `/api/fs/move` a caller.
+8. **Decide the `Owner` column.** Add it, correctly labelled, or record that the
+   tooltip is the final answer so it stops being re-asked.
+9. **Click a terminal link on a real workstation**, in a narrow dock, and confirm
+   the toolbar is still.
+10. **Confirm the account resolves** on a machine where it previously did not.
+    `/api/identity?refresh=true` re-probes without a restart, and `source` says
+    which of the six layers answered — that field is the diagnostic.
 
 ## What would help
 
-1. **A GitHub token, or a run from an unthrottled address**, so the Project
-   panel's live path can be seen working once.
-2. **The list of AA-SI repositories that should appear**, if the `AA-SI` prefix
-   match is not the right filter. `config/resources.ts` documents where each
-   fallback entry came from.
-3. Unchanged from last session: the remaining tool files (`aa-sv`, `aa-clean`,
-   `aa-mvbs`, `aa-graph`, `aa-get`, `aa-recipe`), and which workflows besides
-   NCEI survey assembly matter.
+1. **One run against a live backend.** This is now two sessions of endpoints that
+   have never been called over HTTP, and it is the largest single gap.
+2. **A GitHub token, or a run from an unthrottled address.** Unchanged, and hit
+   again this session — the API was rate-limited, so the brand asset was fetched
+   through `codeload` instead. The Project panel's live path is still unseen.
+3. Unchanged: the remaining tool files (`aa-sv`, `aa-clean`, `aa-mvbs`,
+   `aa-graph`, `aa-get`, `aa-recipe`), and which workflows besides NCEI survey
+   assembly matter.
 
 ---
 
 ## Conventions worth not breaking
 
-The previous handoff's two still hold — *a mode is a verb, never a variant of
-one*, and *defaults are placeholders, not values* (the latter is why
-`createPipeline` seeds values instead of rewriting defaults). Three more:
+The previous handoff's five all still hold — *a mode is a verb*, *defaults are
+placeholders*, *nothing here deletes*, *a disabled action says why*, and *the UI
+predicts, the boundary enforces*. Three more:
 
-**Nothing here deletes.** Trash moves, and can be undone. If a Delete ever lands,
-it should be a separate, differently-worded action — not a stronger version of
-this one.
+**Only the spacer flexes.** In a toolbar, any item without `flexShrink: 0` is a
+control that resizes when its neighbours change. Transient content goes *inside*
+reserved space, never beside it.
 
-**A disabled action says why; a nonexistent one is absent.** Both browsers follow
-this. The Bucket menu has no Delete *item*, because a disabled one promises the
-feature is coming.
+**The emblem is an asset, never geometry.** If a change to branding ever involves
+writing a `<path d="...">`, it is the wrong change. The mark is a federal agency
+insignia; an approximation looks like the real thing while not being it.
 
-**The UI predicts, the boundary enforces.** `identity.py` predicts what IAM and
-`AASI_FS_READONLY` will allow. Anything that starts treating it as the thing
-granting permission has introduced a security hole shaped like a feature.
+**A number two files must agree on belongs to neither of them.** `sideStrip` and
+`panelColumns` joined `panelDensity` and `rowFormat` this session for the same
+reason, and in one case only after the two copies had already drifted.

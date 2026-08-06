@@ -53,6 +53,44 @@ export const panelDensity = {
 } as const;
 
 /**
+ * The metadata columns at the right of a browser row.
+ *
+ * Both trees had their own copy of these numbers with a comment in each saying
+ * they must match the other — which is a convention, not a mechanism, and the
+ * two were one edit away from disagreeing. They are one set now.
+ *
+ * They were also too tight. 52 and 46 sized each column to its *content* and
+ * nothing else, so at 10.5px a size and a timestamp sat about four pixels
+ * apart and read as one run of grey digits rather than two columns. Values are
+ * right-aligned inside these widths, so the extra width becomes space to the
+ * left of each value — which is the space that separates it from its
+ * neighbour. Widening the column *is* the spacing.
+ */
+export const panelColumns = {
+  /** Size. Sized for "999.9 MB", plus room so it is not touching the name. */
+  size: 66,
+  /**
+   * Modified. Sized for "12 Aug 2025" — the widest thing `formatRelativeTime`
+   * renders, and the case the old 46 could not fit at all: anything older than
+   * a year overflowed its column or was clipped by the next one.
+   */
+  modified: 78,
+  /**
+   * Space to the left of the first metadata column, on top of the row's own
+   * gap. A long filename ellipsises to the full width of its box, so without
+   * this the last visible character of a name and the first digit of its size
+   * are 4px apart.
+   */
+  lead: 8,
+  /**
+   * What the two hover buttons occupy at the row's right edge. The header row
+   * reserves the same, so headings sit over the columns they name rather than
+   * two icons to the right of them.
+   */
+  actions: 44,
+} as const;
+
+/**
  * Density for MUI form controls inside a side panel.
  *
  * Only type size and vertical rhythm are touched. Horizontal padding, the

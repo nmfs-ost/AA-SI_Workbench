@@ -14,7 +14,6 @@ import {
 import MoreVertOutlined from '@mui/icons-material/MoreVertOutlined';
 
 import type { IconComponent } from '../../types';
-import { panelDensity } from './panelStyles';
 
 /**
  * The per-row action menu shared by every file browser in the shell.
@@ -144,15 +143,22 @@ export function RowMenuButton({
   );
 }
 
+/**
+ * The menu itself.
+ *
+ * It opens straight onto the actions. There was a greyed title row at the top
+ * naming the row the menu belonged to, and it was removed: the menu is
+ * anchored to the row, opened by a gesture *on* that row, and the row is still
+ * on screen underneath it. Restating the filename told the reader something
+ * they had just done themselves, and cost a line of vertical travel to every
+ * item below it. The row's own tooltip still carries the full path.
+ */
 export function RowMenu({
   controller,
   actions,
-  /** Shown greyed at the top — which row this menu belongs to. */
-  title,
 }: {
   controller: RowMenuController;
   actions: readonly RowAction[];
-  title?: string;
 }) {
   const theme = useTheme();
   const { anchor, close } = controller;
@@ -181,24 +187,6 @@ export function RowMenu({
         close();
       }}
     >
-      {title && (
-        <Typography
-          sx={{
-            px: 1.5,
-            pb: 0.5,
-            fontSize: panelDensity.font.meta,
-            color: theme.aa.color.text.muted,
-            fontFamily: theme.aa.font.mono,
-            maxWidth: 260,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {title}
-        </Typography>
-      )}
-
       {actions.map((action) => {
         const Icon = action.icon;
         const item = (

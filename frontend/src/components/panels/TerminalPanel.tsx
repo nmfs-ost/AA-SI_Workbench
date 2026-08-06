@@ -412,8 +412,15 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         }}
       >
-        <TerminalOutlined sx={{ fontSize: 15, color: theme.aa.color.text.muted }} />
-        <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
+        {/* Everything up to the spacer is pinned. A flex item with no
+            `flexShrink: 0` is a control that changes size when its neighbours
+            do, which is the whole class of bug this toolbar just had. */}
+        <TerminalOutlined
+          sx={{ fontSize: 15, flexShrink: 0, color: theme.aa.color.text.muted }}
+        />
+        <Typography
+          sx={{ fontSize: 11.5, flexShrink: 0, color: theme.aa.color.text.muted }}
+        >
           Environment
         </Typography>
         <Select
@@ -422,7 +429,12 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
           disabled={running || disabled}
           onChange={(e) => setVenv(e.target.value)}
           displayEmpty
-          sx={{ minWidth: 190, fontSize: 12, '& .MuiSelect-select': { py: 0.35 } }}
+          sx={{
+            minWidth: 190,
+            flexShrink: 0,
+            fontSize: 12,
+            '& .MuiSelect-select': { py: 0.35 },
+          }}
         >
           <MenuItem value="" sx={{ fontSize: 12 }}>
             System (no virtualenv)
@@ -437,7 +449,7 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
         </Select>
 
         <Tooltip title="Re-scan for virtual environments">
-          <span>
+          <span style={{ flexShrink: 0 }}>
             <Button
               size="small"
               disabled={running}
@@ -450,28 +462,52 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
           </span>
         </Tooltip>
 
-        <Box sx={{ flex: 1, minWidth: 8 }} />
+        {/*
+          What a click would do — rendered *inside* the spacer rather than as
+          another item in the row.
 
-        {/* What a click would do. Takes the space before the status word
-            because that is the only room in this toolbar, and while the
-            pointer is on a link the target is the more useful of the two. */}
-        {hovered && (
-          <Typography
-            title={hovered}
-            sx={{
-              fontSize: 11,
-              minWidth: 0,
-              flexShrink: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              color: theme.aa.color.accent.main,
-              fontFamily: theme.aa.font.mono,
-            }}
-          >
-            {hovered}
-          </Typography>
-        )}
+          It used to be a sibling that appeared on hover and vanished on leave.
+          Inserting an item into a flex row costs its width plus a gap, and this
+          toolbar needs about 565px before the readout and 713px with it — so in
+          any dock narrower than that (which is the normal one; this panel lives
+          in a dock a third of the window wide) hovering a link shrank the
+          environment Select, the Rescan button, the status word and the
+          session button, and leaving it sprang them all back. Crossing a line
+          of output with several links in it made the whole toolbar shiver, and
+          since you have to hover a link to click one, it read as the terminal
+          jiggling whenever you clicked anything.
+
+          The spacer already reserves this space, so putting the readout in it
+          means the text can only consume slack that was going spare. Nothing
+          else in the row can move, whatever the readout says or how long it is.
+        */}
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 8,
+            display: 'flex',
+            justifyContent: 'flex-end',
+            overflow: 'hidden',
+            pl: 1,
+          }}
+        >
+          {hovered && (
+            <Typography
+              title={hovered}
+              sx={{
+                fontSize: 11,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                color: theme.aa.color.accent.main,
+                fontFamily: theme.aa.font.mono,
+              }}
+            >
+              {hovered}
+            </Typography>
+          )}
+        </Box>
 
         <Typography sx={{ fontSize: 11, color: statusColor, flexShrink: 0 }}>
           {status === 'connected'
@@ -488,7 +524,7 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
             size="small"
             color="inherit"
             onClick={disconnect}
-            sx={{ fontSize: 11.5, textTransform: 'none' }}
+            sx={{ fontSize: 11.5, flexShrink: 0, textTransform: 'none' }}
           >
             {status === 'connecting' ? <CircularProgress size={13} /> : 'End session'}
           </Button>
@@ -499,7 +535,7 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
             disabled={disabled}
             onClick={connect}
             startIcon={<PlayArrowOutlined sx={{ fontSize: 15 }} />}
-            sx={{ fontSize: 11.5, textTransform: 'none' }}
+            sx={{ fontSize: 11.5, flexShrink: 0, textTransform: 'none' }}
           >
             {status === 'closed' ? 'Restart' : 'Start session'}
           </Button>
@@ -524,7 +560,23 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
 
       <Box
         ref={hostRef}
-        onMouseDown={() => termRef.current?.focus()}
+        /*
+          Focus the shell when the padding around it is clicked.
+
+          This used to fire on every mousedown, for every button. xterm focuses
+          itself when its own screen is clicked, so on a normal click this ran
+          second and re-focused something already focused; on a right-click it
+          stole focus from the selection the user was about to act on. The two
+          guards leave it doing only the job it was added for — the 4px of
+          padding between the panel edge and the screen is part of the terminal
+          as far as anyone clicking it is concerned, and xterm does not own
+          those pixels.
+        */
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          if (event.target !== event.currentTarget) return;
+          termRef.current?.focus();
+        }}
         sx={{
           flex: 1,
           minHeight: 0,

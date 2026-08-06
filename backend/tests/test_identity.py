@@ -11,6 +11,7 @@ rather than hoping about ordering.
 
 from __future__ import annotations
 
+import pathlib
 import subprocess
 
 import pytest
@@ -31,14 +32,27 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "AASI_PROJECT_MEMBERS",
         "AASI_FS_READONLY",
         "AALIBRARY_GCP_PROJECT_ID",
+        # gcloud's own environment, which the suite must not inherit either:
+        # a developer with CLOUDSDK_CORE_ACCOUNT exported would otherwise see
+        # different results from CI for reasons nothing in the test says.
+        "CLOUDSDK_CORE_ACCOUNT",
+        "CLOUDSDK_CORE_PROJECT",
+        "CLOUDSDK_ACTIVE_CONFIG_NAME",
+        "CLOUDSDK_CONFIG",
+        "GOOGLE_CLOUD_PROJECT",
+        "GCLOUD_PROJECT",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(identity, "_cached", None)
-    # Neither probe may run in a test: gcloud might genuinely be installed on
-    # the machine running this suite, and the metadata server is a two-second
-    # timeout on anything that isn't a GCE VM.
+    monkeypatch.setattr(identity, "_cached_project", None)
+    # No probe may run in a test: gcloud might genuinely be installed on the
+    # machine running this suite, the metadata server is a two-second timeout
+    # on anything that isn't a GCE VM, and `_from_config_file` would read the
+    # real ~/.config/gcloud of whoever is running the suite.
     monkeypatch.setattr(identity, "_from_gcloud", lambda: "")
-    monkeypatch.setattr(identity, "_from_metadata", lambda: "")
+    monkeypatch.setattr(identity, "_from_gcloud_auth_list", lambda: "")
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: "")
+    monkeypatch.setattr(identity, "_from_metadata", lambda path="": "")
 
 
 # --------------------------------------------------------------------------- #
@@ -59,11 +73,101 @@ def test_falls_back_to_gcloud(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_falls_back_to_the_metadata_server(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        identity, "_from_metadata", lambda: "svc@project.iam.gserviceaccount.com"
+        identity,
+        "_from_metadata",
+        lambda path="": "svc@project.iam.gserviceaccount.com"
+        if "service-accounts" in path or not path
+        else "",
     )
     principal, source = identity.detect_principal(refresh=True)
     assert source == "metadata"
     assert principal.startswith("svc@")
+
+
+def test_gcloud_env_override_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLOUDSDK_CORE_ACCOUNT beats probing, because gcloud itself obeys it."""
+    monkeypatch.setenv("CLOUDSDK_CORE_ACCOUNT", "ada@noaa.gov")
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "stale@noaa.gov")
+    assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "env")
+
+
+def test_gcloud_env_override_can_be_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLOUDSDK_CORE_ACCOUNT", "(unset)")
+    assert identity.detect_principal(refresh=True) == ("", "unknown")
+
+
+def test_application_default_login_is_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The case that made this endpoint report nobody for a signed-in user.
+
+    `gcloud auth application-default login` never sets the `account` property,
+    so `config get-value account` is empty while `auth list` shows them active.
+    """
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "")
+    monkeypatch.setattr(identity, "_from_gcloud_auth_list", lambda: "ada@noaa.gov")
+    assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "gcloud")
+
+
+def test_config_file_is_read_when_gcloud_is_not_on_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both subprocess probes fail; the configuration file still answers."""
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: {
+        "account": "ada@noaa.gov",
+    }.get(key, ""))
+    assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "gcloud")
+
+
+def test_config_file_probe_reads_the_real_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_from_config_file` against an actual gcloud config, not a stub."""
+    monkeypatch.undo()
+    config = tmp_path / "configurations" / "config_default"
+    config.parent.mkdir(parents=True)
+    config.write_text("[core]\naccount = ada@noaa.gov\nproject = some-project\n")
+    monkeypatch.setenv("CLOUDSDK_CONFIG", str(tmp_path))
+    assert identity._from_config_file("account") == "ada@noaa.gov"
+    assert identity._from_config_file("project") == "some-project"
+
+
+def test_config_file_probe_honours_the_active_configuration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.undo()
+    root = tmp_path / "configurations"
+    root.mkdir(parents=True)
+    (root / "config_default").write_text("[core]\naccount = wrong@noaa.gov\n")
+    (root / "config_survey").write_text("[core]\naccount = ada@noaa.gov\n")
+    monkeypatch.setenv("CLOUDSDK_CONFIG", str(tmp_path))
+    monkeypatch.setenv("CLOUDSDK_ACTIVE_CONFIG_NAME", "survey")
+    assert identity._from_config_file("account") == "ada@noaa.gov"
+
+
+def test_config_file_probe_survives_a_missing_or_broken_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absent, malformed and (unset) all mean 'this layer has no answer'."""
+    monkeypatch.undo()
+    monkeypatch.setenv("CLOUDSDK_CONFIG", str(tmp_path / "nothing-here"))
+    assert identity._from_config_file("account") == ""
+
+    config = tmp_path / "configurations" / "config_default"
+    config.parent.mkdir(parents=True)
+    config.write_text("this is not an ini file {{{")
+    monkeypatch.setenv("CLOUDSDK_CONFIG", str(tmp_path))
+    assert identity._from_config_file("account") == ""
+
+    config.write_text("[core]\naccount = (unset)\n")
+    assert identity._from_config_file("account") == ""
+
+
+def test_probe_order_prefers_gcloud_over_the_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A running gcloud is authoritative: it resolves the active config itself."""
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "live@noaa.gov")
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: "ondisk@noaa.gov")
+    assert identity.detect_principal(refresh=True) == ("live@noaa.gov", "gcloud")
 
 
 def test_unknown_is_a_real_answer(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -241,7 +345,11 @@ def test_detail_names_something_to_do_when_nobody_is_signed_in() -> None:
 
 def test_detail_explains_a_service_account(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        identity, "_from_metadata", lambda: "svc@project.iam.gserviceaccount.com"
+        identity,
+        "_from_metadata",
+        lambda path="": "svc@project.iam.gserviceaccount.com"
+        if "service-accounts" in path or not path
+        else "",
     )
     detail = identity.get_identity(refresh=True).detail
     # The distinction that catches people out: the bucket grants are the
@@ -262,3 +370,64 @@ def test_detail_leads_with_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AASI_FS_READONLY", "1")
     detail = identity.get_identity(refresh=True).detail
     assert detail.startswith("This Workbench is read-only")
+
+
+# --------------------------------------------------------------------------- #
+# Project id                                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_project_prefers_our_own_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deployment that pins the project keeps pinning it."""
+    monkeypatch.setenv("AALIBRARY_GCP_PROJECT_ID", "pinned-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ignored-project")
+    assert identity.detect_project(refresh=True) == "pinned-project"
+
+
+def test_project_reads_the_standard_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "detected-project")
+    assert identity.detect_project(refresh=True) == "detected-project"
+
+
+def test_project_falls_back_to_the_gcloud_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: {
+        "project": "configured-project",
+    }.get(key, ""))
+    assert identity.detect_project(refresh=True) == "configured-project"
+
+
+def test_project_default_is_last_not_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The constant is a floor. Anything that can answer for itself wins."""
+    assert identity.detect_project(refresh=True) == identity._DEFAULT_PROJECT
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: "real-project")
+    assert identity.detect_project(refresh=True) == "real-project"
+
+
+def test_project_does_not_probe_metadata_off_a_vm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The metadata probe is a 2s timeout anywhere it isn't going to answer.
+
+    It runs only when the principal already came from the metadata server,
+    which is the only evidence available that one exists. This endpoint is
+    called while the shell paints its first frame.
+    """
+    calls: list[str] = []
+
+    def counted(path: str = "") -> str:
+        calls.append(path)
+        return "metadata-project"
+
+    monkeypatch.setattr(identity, "_from_metadata", counted)
+
+    assert identity.detect_project(source="gcloud", refresh=True) == (
+        identity._DEFAULT_PROJECT
+    )
+    assert calls == []
+
+    assert identity.detect_project(source="metadata", refresh=True) == (
+        "metadata-project"
+    )
+    assert calls == ["project/project-id"]

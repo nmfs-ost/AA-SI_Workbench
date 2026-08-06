@@ -102,8 +102,13 @@ export function MenuBar() {
         alignItems: 'center',
         height: theme.aa.size.menuBar,
         flexShrink: 0,
-        px: 1,
-        gap: 0.25,
+        /* No left padding, and no `gap`. Both used to be here, and between them
+           they put the mark's centre at 25.5px against the icon strip's 22 —
+           close enough to look like a mistake rather than a decision. The mark
+           now owns a slot exactly one strip wide and the menu buttons carry
+           their own spacing, so the only number involved is `sideStrip`. */
+        pl: 0,
+        pr: 1,
         backgroundColor: theme.aa.color.bg.chrome,
         borderBottom: `1px solid ${theme.aa.color.border.strong}`,
         // Sit above the menu backdrop so hover-to-switch works.
@@ -128,122 +133,134 @@ export function MenuBar() {
         },
       }}
     >
-      {/* The mark stands in for the wordmark that used to be here. It inherits
-          `color`, so it needs no per-theme variant; the name it replaces lives
-          on the tooltip and the accessible label rather than being lost. */}
+      {/* The mark stands in for the wordmark that used to be here; the name it
+          replaces lives on the tooltip and the accessible label rather than
+          being lost.
+
+          The slot is one icon strip wide and the mark is centred in it, so the
+          emblem sits on the same vertical axis as the Files / Derived / Project
+          icons directly below it. They are in different bars — the menu bar
+          spans the window, the strip starts under it — which is exactly why
+          this has to be done by arithmetic rather than by eye. */}
       <Tooltip title="AA-SI Workbench — NOAA Fisheries" placement="bottom-start">
         <Box
           sx={{
+            width: theme.aa.size.sideStrip,
+            flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
-            px: 1,
-            mr: 0.5,
-            /* No colour or hover recolour here any more: the mark carries its
-               own palette now, and a `&:hover { color }` on a parent that the
-               child ignores is a rule that looks live and is not. Opacity is
-               the acknowledgement that still works on a coloured emblem. */
+            justifyContent: 'center',
+            /* No colour or hover recolour here: the mark carries its own
+               palette, and a `&:hover { color }` on a parent that the child
+               ignores is a rule that looks live and is not. Opacity is the
+               acknowledgement that still works on a coloured emblem. */
             opacity: 0.95,
             transition: 'opacity .12s',
             '&:hover': { opacity: 1 },
             '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
           }}
         >
-          <NoaaMark size={19} />
+          <NoaaMark />
         </Box>
       </Tooltip>
 
-      {menus.map((menu) => {
-        const isOpen = openId === menu.id;
-        return (
-          <Box key={menu.id}>
-            <Button
-              ref={(el) => {
-                buttonRefs.current[menu.id] = el;
-              }}
-              onClick={() => toggle(menu.id)}
-              onMouseEnter={() => handleEnter(menu.id)}
-              disableRipple
-              sx={{
-                minWidth: 0,
-                px: 1,
-                height: 24,
-                fontSize: 13,
-                fontWeight: 400,
-                lineHeight: 1,
-                color: theme.aa.color.text.primary,
-                backgroundColor: isOpen
-                  ? theme.aa.color.bg.hover
-                  : 'transparent',
-                '&:hover': { backgroundColor: theme.aa.color.bg.hover },
-              }}
-            >
-              {menu.label}
-            </Button>
+      {/* The buttons carry their own spacing so the bar itself can have none —
+          a `gap` on the bar would land between the mark's slot and the first
+          label too, and put the mark 2px off the column it is aligned to. */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, minWidth: 0 }}>
+        {menus.map((menu) => {
+          const isOpen = openId === menu.id;
+          return (
+            <Box key={menu.id}>
+              <Button
+                ref={(el) => {
+                  buttonRefs.current[menu.id] = el;
+                }}
+                onClick={() => toggle(menu.id)}
+                onMouseEnter={() => handleEnter(menu.id)}
+                disableRipple
+                sx={{
+                  minWidth: 0,
+                  px: 1,
+                  height: 24,
+                  fontSize: 13,
+                  fontWeight: 400,
+                  lineHeight: 1,
+                  color: theme.aa.color.text.primary,
+                  backgroundColor: isOpen
+                    ? theme.aa.color.bg.hover
+                    : 'transparent',
+                  '&:hover': { backgroundColor: theme.aa.color.bg.hover },
+                }}
+              >
+                {menu.label}
+              </Button>
 
-            <Menu
-              open={isOpen}
-              anchorEl={buttonRefs.current[menu.id] ?? undefined}
-              onClose={close}
-              disableScrollLock
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-              transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-              MenuListProps={{ dense: true }}
-            >
-              {menu.items.map((item) =>
-                item.divider ? (
-                  <Divider key={item.id} sx={{ my: 0.5 }} />
-                ) : (
-                  <MenuItem
-                    key={item.id}
-                    disabled={item.disabled}
-                    onClick={() => dispatch(item)}
-                    title={item.panelId ? undefined : item.label}
-                    {...(isCheckable(item)
-                      ? { role: 'menuitemradio', 'aria-checked': isChecked(item) }
-                      : {})}
-                  >
-                    {/* A tick column, present on every row in a menu that has
-                        any checkable item, so labels stay aligned. */}
-                    {menuHasChecks(menu.items) && (
+              <Menu
+                open={isOpen}
+                anchorEl={buttonRefs.current[menu.id] ?? undefined}
+                onClose={close}
+                disableScrollLock
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                MenuListProps={{ dense: true }}
+              >
+                {menu.items.map((item) =>
+                  item.divider ? (
+                    <Divider key={item.id} sx={{ my: 0.5 }} />
+                  ) : (
+                    <MenuItem
+                      key={item.id}
+                      disabled={item.disabled}
+                      onClick={() => dispatch(item)}
+                      title={item.panelId ? undefined : item.label}
+                      {...(isCheckable(item)
+                        ? { role: 'menuitemradio', 'aria-checked': isChecked(item) }
+                        : {})}
+                    >
+                      {/* A tick column, present on every row in a menu that has
+                          any checkable item, so labels stay aligned. */}
+                      {menuHasChecks(menu.items) && (
+                        <Box
+                          component="span"
+                          aria-hidden
+                          sx={{
+                            width: 16,
+                            flexShrink: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            color: theme.aa.color.accent.main,
+                          }}
+                        >
+                          {isChecked(item) && <CheckOutlined sx={{ fontSize: 14 }} />}
+                        </Box>
+                      )}
                       <Box
                         component="span"
-                        aria-hidden
-                        sx={{
-                          width: 16,
-                          flexShrink: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          color: theme.aa.color.accent.main,
-                        }}
+                        sx={{ flex: 1, whiteSpace: 'nowrap', pr: 3 }}
                       >
-                        {isChecked(item) && <CheckOutlined sx={{ fontSize: 14 }} />}
+                        {item.label}
                       </Box>
-                    )}
-                    <Box
-                      component="span"
-                      sx={{ flex: 1, whiteSpace: 'nowrap', pr: 3 }}
-                    >
-                      {item.label}
-                    </Box>
-                    {item.shortcut && (
-                      <Typography
-                        component="span"
-                        sx={{
-                          fontSize: 11.5,
-                          color: theme.aa.color.text.muted,
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {item.shortcut}
-                      </Typography>
-                    )}
-                  </MenuItem>
-                ),
-              )}
-            </Menu>
-          </Box>
-        );
-      })}
+                      {item.shortcut && (
+                        <Typography
+                          component="span"
+                          sx={{
+                            fontSize: 11.5,
+                            color: theme.aa.color.text.muted,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {item.shortcut}
+                        </Typography>
+                      )}
+                    </MenuItem>
+                  ),
+                )}
+              </Menu>
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }
