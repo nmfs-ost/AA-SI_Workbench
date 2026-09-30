@@ -6,7 +6,7 @@ import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 
 import { useLayout } from '../../../context/LayoutContext';
-import { useActiveAsset } from '../../../state/activeAsset';
+import { useActiveSubject } from '../../../state/activeSubject';
 import {
   clearSelection,
   createPipeline,
@@ -34,11 +34,21 @@ export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const { openPanel } = useLayout();
   const theme = useTheme();
   const state = usePipelines();
-  const asset = useActiveAsset();
+  const subject = useActiveSubject();
+  const asset = subject?.asset ?? null;
   const [createOpen, setCreateOpen] = useState(false);
 
-  const injectedInput = asset?.fileName ?? null;
-  const injectedSource = asset ? `${asset.survey} · ${asset.sonar}` : null;
+  /* An NCEI file is injected by name (the first tools look it up in NCEI); a
+     product in the bucket — one Prepare EchoData just made, or one picked in
+     Derived — by its gs:// URI, which every aa-* tool reads directly. */
+  const product =
+    !asset && subject && /^gs:\/\/.+\.(nc|zarr)\/?$/i.test(subject.uri) ? subject : null;
+  const injectedInput = asset?.fileName ?? product?.uri ?? null;
+  const injectedSource = asset
+    ? `${asset.survey} · ${asset.sonar}`
+    : product
+      ? product.origin
+      : null;
 
   const selectedPipelines = state.pipelines.filter((p) => state.selected.has(p.id));
 

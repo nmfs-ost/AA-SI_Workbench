@@ -24,11 +24,17 @@ dependencies = [
   "boto3>=1.34",
   # Recipe discovery (reads aa-recipe-manager YAML for display only):
   "pyyaml>=6.0",
+  # The console tools (see the note below).
+  "aalibrary>=1.2.0; python_version >= '3.13'",
 ]
-# NOTE: the NCEI providers reuse `aalibrary` (the same library aa-find uses).
-# Install it into this environment as well, e.g.
+# The console tools. aalibrary provides every aa-* tool the Workbench runs
+# (the Prepare EchoData card: aa-request, aa-fetch, aa-ed, aa-combine, aa-sv,
+# aa-graph, aa-upload, aa-metadata) and the NCEI helpers aa-find uses. It is not
+# on PyPI, so install it first, from the AA-SI repository or a local clone:
 #   pip install "git+https://github.com/nmfs-ost/AA-SI_aalibrary.git"
-# or run the backend inside the venv where aa-find already works.
+#   pip install -e ../AA-SI_aalibrary          # a checkout you are changing
+# It needs Python 3.13, hence the marker: on 3.11/3.12 (CI) the API still runs
+# and the card says the tools are missing. `aa-workbench check` confirms.
 
 [project.optional-dependencies]
 dev = [

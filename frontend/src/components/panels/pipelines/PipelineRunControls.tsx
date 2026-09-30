@@ -156,7 +156,8 @@ export function PipelineRunControls({
           </Typography>
         ) : (
           <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
-            No input file — select one in the NCEI panel and it is injected automatically.
+            No input file — select one in NCEI, or a product in Prepare EchoData or Derived, and
+            it is injected automatically.
           </Typography>
         )}
       </Box>

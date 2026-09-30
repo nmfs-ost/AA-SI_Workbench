@@ -227,6 +227,11 @@ class GcsProvider:
             # console creates — is noise once folders are listed separately.
             if blob.name.endswith("/"):
                 continue
+            # `<product>.aa.json` is the provenance the console tools publish
+            # beside each product so it can be read without downloading it.
+            # It describes its neighbour; listed, it would double every row.
+            if blob.name.endswith(".aa.json"):
+                continue
             relative = blob.name[len(root) :] if root else blob.name
             entries.append(
                 DerivedEntry(

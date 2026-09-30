@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import _paths
+from .baseline import router as baseline_router
 from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
@@ -77,6 +78,9 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(store_router)
     app.include_router(tools_router)
+    # The baseline operation: survey + time range -> EchoData asset in the
+    # bucket, run as a chain of ordinary jobs.
+    app.include_router(baseline_router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:

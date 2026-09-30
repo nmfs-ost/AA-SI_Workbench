@@ -80,8 +80,9 @@ const STRIP_LABEL: Record<DockSide, string> = {
   /* Was 'Data sources', which stopped being true when the Project panel joined
      the strip: repositories and documentation are not a source of survey data.
      This is the strip's accessible name, so it is the sentence a screen-reader
-     user hears before the icons — it has to cover what is actually there. */
-  left: 'Data sources and project links',
+     user hears before the icons — it has to cover what is actually there.
+     The Prepare EchoData workflow now leads the strip, hence "workflow". */
+  left: 'Baseline workflow, data sources and project links',
   right: 'Inspectors',
   bottom: 'Output and diagnostics',
 };

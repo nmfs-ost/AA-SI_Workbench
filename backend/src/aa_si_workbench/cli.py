@@ -5,6 +5,7 @@ Commands:
   aa-workbench serve      Same, with options (--port/--host/--source/--open).
   aa-workbench dev        Run the frontend + backend with hot reload (developers).
   aa-workbench build      Build the frontend for production.
+  aa-workbench check      Is everything the Workbench runs installed? (pre-flight)
 
 The `serve` path is the deployment story: a single process on a single port,
 no Node, no second terminal, no proxy, no CORS. The compiled UI is served by
@@ -61,6 +62,65 @@ def _build_frontend() -> None:
     subprocess.run([npm, "run", "build"], cwd=fe, check=True, env=env)
 
 
+def _ui_is_stale(dist) -> bool:  # noqa: ANN001 - a Path
+    """True when the UI sources are newer than the build about to be served.
+
+    `serve` used to build only when there was no build at all, so updating the
+    checkout (a pull, or unpacking a new copy over the old one) kept serving
+    the old UI with nothing to say so. Only a source checkout's own dist/ is
+    compared; a bundled or overridden build has no sources here to be newer.
+    """
+    fe = _paths.frontend_dir()
+    if fe is None or dist.resolve() != (fe / "dist").resolve():
+        return False
+    built = (dist / "index.html").stat().st_mtime
+    for base in (fe / "src", fe / "index.html", fe / "package.json"):
+        candidates = base.rglob("*") if base.is_dir() else [base]
+        for path in candidates:
+            try:
+                if path.is_file() and path.stat().st_mtime > built:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def cmd_check(_args: argparse.Namespace) -> None:
+    """The pre-flight: the console tools, who you are, where products go."""
+    from .api.baseline import get_config
+
+    config = get_config()
+    width = max(len(t.name) for t in config.tools)
+    print("\n  AA-SI Workbench — pre-flight\n")
+    for tool in config.tools:
+        mark = "ok " if tool.present else "MISSING"
+        print(f"  {tool.name:<{width}}  {mark}")
+    try:
+        from importlib.metadata import version
+
+        print(f"\n  aalibrary        {version('aalibrary')}")
+    except Exception:  # noqa: BLE001 - not installed is reported above
+        print("\n  aalibrary        not installed")
+    who = config.user or "(unknown: products go under unknown-user/)"
+    print(f"  signed in as     {who}")
+    print(f"  products go to   gs://{config.bucket}/{config.prefixTemplate}")
+    print(f"  working folders  {config.runRoot}")
+    dist = _paths.frontend_dist_dir()
+    if dist is None:
+        ui = "not built (serve will build it)"
+    elif _ui_is_stale(dist):
+        ui = "out of date (serve will rebuild it)"
+    else:
+        ui = f"built ({dist})"
+    print(f"  UI               {ui}")
+    if config.problems:
+        print("\n  Problems:")
+        for problem in config.problems:
+            print(f"   - {problem}")
+        raise SystemExit(1)
+    print("\n  Ready.\n")
+
+
 def cmd_build(_args: argparse.Namespace) -> None:
     _build_frontend()
     print(f"UI built at: {_paths.frontend_dist_dir()}")
@@ -84,6 +144,17 @@ def cmd_serve(args: argparse.Namespace) -> None:
         dist = _paths.frontend_dist_dir()
         if dist is None:
             _fail("Build finished but produced no dist/. See the errors above.")
+    elif not args.no_build and _ui_is_stale(dist):
+        print("The UI sources are newer than the built UI — rebuilding…")
+        try:
+            _build_frontend()
+        except (SystemExit, subprocess.CalledProcessError, OSError) as exc:
+            # An old UI is better than no server: say so and carry on.
+            print(
+                f"aa-workbench: the rebuild failed ({exc}); serving the existing "
+                "build, which may be out of date. `aa-workbench build` retries.",
+                file=sys.stderr,
+            )
 
     url = f"http://{args.host}:{args.port}"
     banner = (
@@ -222,6 +293,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_build = sub.add_parser("build", help="Build the frontend for production.")
     p_build.set_defaults(func=cmd_build)
+
+    p_check = sub.add_parser(
+        "check",
+        help="Pre-flight: are the console tools installed? Where do products go?",
+    )
+    p_check.set_defaults(func=cmd_check)
 
     return parser
 

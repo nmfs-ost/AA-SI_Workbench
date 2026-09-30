@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
 import {
@@ -35,6 +35,7 @@ import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
 import { useLayout } from '../../context/LayoutContext';
 import { setActiveArtifact } from '../../state/activeSubject';
+import { useRevealRequest } from '../../state/derivedReveal';
 import { sendToTerminal } from '../../state/terminal';
 import { panelColumns, panelDensity } from './panelStyles';
 import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
@@ -194,6 +195,7 @@ function DerivedRow({
     <>
       <Box
         title={entry.uri}
+        data-path={entry.path}
         onClick={onActivate}
         onContextMenu={menu.onContextMenu}
         sx={{
@@ -318,6 +320,9 @@ function DerivedRow({
  * link for *this* object rather than the bucket, the metadata inspection this
  * panel already feeds, and an `aa-store` command typed into the terminal.
  */
+/** The last "show in bucket" request acted on, across mounts of the panel. */
+let revealedNonce = 0;
+
 export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
 
@@ -366,6 +371,46 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /* "Show in bucket" from elsewhere (the Prepare card's results): list each
+     folder down to the object afresh — it is new since this panel last looked
+     — open them, and select it. */
+  const reveal = useRevealRequest();
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!reveal || !status?.available || reveal.nonce <= revealedNonce) return;
+    revealedNonce = reveal.nonce; // a remount must not replay an old request
+    const root = `gs://${status.bucket}/${status.prefix}`;
+    if (!reveal.uri.startsWith(root)) {
+      setError(`${reveal.uri} is outside the bucket this panel shows (${root}).`);
+      return;
+    }
+    const target = reveal.uri.slice(root.length).replace(/\/$/, '');
+    const parts = target.split('/');
+    const folders = parts.slice(0, -1).map((_, i) => `${parts.slice(0, i + 1).join('/')}/`);
+    let live = true;
+    void (async () => {
+      await fetchPrefix('');
+      for (const folder of folders) {
+        if (!live) return;
+        await fetchPrefix(folder);
+      }
+      if (!live) return;
+      setQuery('');
+      setExpanded((current) => new Set([...current, ...folders]));
+      setSelected(target);
+      requestAnimationFrame(() => {
+        listRef.current
+          ?.querySelector(`[data-path="${CSS.escape(target)}"]`)
+          ?.scrollIntoView({ block: 'center' });
+      });
+    })();
+    return () => {
+      live = false;
+    };
+    // Keyed on the request, not the listing it causes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.nonce, status?.available]);
 
   const toggle = useCallback(
     (entry: DerivedEntry) => {
@@ -558,7 +603,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
             <Box sx={{ width: panelColumns.actions, flexShrink: 0 }} />
           </Box>
 
-          <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, py: 0.25 }}>
+          <Box ref={listRef} sx={{ flex: 1, overflow: 'auto', minHeight: 0, py: 0.25 }}>
             {rows.map(({ entry, depth }) => (
               <DerivedRow
                 key={entry.path}

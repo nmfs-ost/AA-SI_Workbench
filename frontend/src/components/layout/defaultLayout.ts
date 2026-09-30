@@ -53,36 +53,45 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   // `syncSidebarChrome` in useLayoutController hides the header and locks it
   // against drops, because the icon strip beside it already names and switches
   // between them.
+  // Prepare EchoData leads the group: the baseline workflow, fronted on a
+  // fresh layout. It is wider than a browser needs because its time range is
+  // a drawing, and a drawing of a survey wants the pixels.
+  api.addPanel({
+    id: 'prepare',
+    component: 'prepare',
+    title: 'Prepare EchoData',
+    position: { referencePanel: 'pipelines', direction: 'left' },
+    initialWidth: 400,
+  });
   api.addPanel({
     id: 'ncei',
     component: 'ncei',
     title: 'NCEI',
-    position: { referencePanel: 'pipelines', direction: 'left' },
-    initialWidth: 360,
+    position: { referencePanel: 'prepare', direction: 'within' },
   });
   api.addPanel({
     id: 'files',
     component: 'files',
     title: 'Files',
-    position: { referencePanel: 'ncei', direction: 'within' },
+    position: { referencePanel: 'prepare', direction: 'within' },
   });
   api.addPanel({
     id: 'derived',
     component: 'derived',
     title: 'Derived',
-    position: { referencePanel: 'ncei', direction: 'within' },
+    position: { referencePanel: 'prepare', direction: 'within' },
   });
   api.addPanel({
     id: 'omao',
     component: 'omao',
     title: 'OMAO',
-    position: { referencePanel: 'ncei', direction: 'within' },
+    position: { referencePanel: 'prepare', direction: 'within' },
   });
   api.addPanel({
     id: 'resources',
     component: 'resources',
     title: 'Project',
-    position: { referencePanel: 'ncei', direction: 'within' },
+    position: { referencePanel: 'prepare', direction: 'within' },
   });
 
   // Right sidebar.
@@ -151,7 +160,7 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   // Surface the primary tab in each dock.
   api.getPanel('terminal')?.api.setActive();
   api.getPanel('metadata')?.api.setActive();
-  api.getPanel('ncei')?.api.setActive();
+  api.getPanel('prepare')?.api.setActive();
 }
 
 /**
@@ -233,13 +242,14 @@ export function buildVerticalLayout(api: DockviewApi): void {
   // Left dock — data sources. Splits the top cell, so it ends where the tools
   // dock begins.
   api.addPanel({
-    id: 'ncei',
-    component: 'ncei',
-    title: 'NCEI',
+    id: 'prepare',
+    component: 'prepare',
+    title: 'Prepare EchoData',
     position: { referencePanel: 'pipelines', direction: 'left' },
-    initialWidth: 360,
+    initialWidth: 400,
   });
   for (const [id, title] of [
+    ['ncei', 'NCEI'],
     ['files', 'Files'],
     ['derived', 'Derived'],
     ['omao', 'OMAO'],
@@ -249,7 +259,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
       id,
       component: id,
       title,
-      position: { referencePanel: 'ncei', direction: 'within' },
+      position: { referencePanel: 'prepare', direction: 'within' },
     });
   }
 
@@ -276,7 +286,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
 
   api.getPanel('terminal')?.api.setActive();
   api.getPanel('metadata')?.api.setActive();
-  api.getPanel('ncei')?.api.setActive();
+  api.getPanel('prepare')?.api.setActive();
 }
 
 /** Build whichever arrangement the user has chosen. */

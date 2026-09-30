@@ -35,7 +35,7 @@ interface Props {
  * absent. The deprecated `execCommand` path is the fallback that keeps the
  * button working rather than failing silently.
  */
-async function copyText(value: string): Promise<boolean> {
+export async function copyText(value: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);

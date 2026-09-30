@@ -50,8 +50,11 @@ export interface AssetMetadata {
  * 'Terminal' is the fourth: the terminal's links select a subject exactly as
  * the browsers do, and reporting one of the others would be a small lie in the
  * one place whose whole job is saying where something came from.
+ *
+ * 'Prepare' is a product the Prepare EchoData card just made, selected from
+ * its results.
  */
-export type SubjectOrigin = 'NCEI' | 'Derived' | 'Files' | 'Terminal';
+export type SubjectOrigin = 'NCEI' | 'Derived' | 'Files' | 'Terminal' | 'Prepare';
 
 export interface ActiveSubject {
   /**

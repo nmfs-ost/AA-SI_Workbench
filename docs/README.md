@@ -4,6 +4,8 @@
   the components fit together.
 - [`guides/getting-started.md`](guides/getting-started.md) — for people using the
   Workbench.
+- [`guides/prepare-echodata.md`](guides/prepare-echodata.md) — the baseline
+  workflow: an NCEI time range made into one EchoData asset in the bucket.
 - [`guides/connecting-ncei.md`](guides/connecting-ncei.md) — pointing the NCEI
   panel at real data (S3 or the BigQuery cache).
 - [`guides/updating-the-environment.md`](guides/updating-the-environment.md) —

@@ -22,6 +22,7 @@ export type BuiltinPanelId =
   | 'configuration'
   | 'calibration'
   | 'processingQueue'
+  | 'prepare'
   | 'ncei'
   | 'files'
   | 'derived'

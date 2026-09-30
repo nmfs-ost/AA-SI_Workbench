@@ -6,6 +6,7 @@ import { DataObjectOutlined } from '@mui/icons-material';
 import { PanelPlaceholder } from './PanelPlaceholder';
 import { AssetView } from './metadata/AssetView';
 import { StoreView } from './metadata/StoreView';
+import { ProvenanceView } from './metadata/ProvenanceView';
 import { useActiveSubject } from '../../state/activeSubject';
 
 /**
@@ -38,13 +39,19 @@ export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
       <PanelPlaceholder
         icon={DataObjectOutlined}
         title="Metadata"
-        description="Select a file in NCEI, or a store in Derived or Files, to describe it."
+        description="Select a file in NCEI, a product of Prepare EchoData, or a store in Derived or Files, to describe it."
       />
     );
   }
 
   if (subject.inspectable) return <StoreView subject={subject} />;
   if (subject.asset) return <AssetView asset={subject.asset} />;
+  /* A product file — the Prepare card's EchoData and Sv, an echogram, a
+     NetCDF picked in Derived or Files: the console tools wrote how it was
+     made into it, and `aa-metadata` reads that back. */
+  if (/^(gs|file):\/\//.test(subject.uri) && /\.(nc|netcdf4|png|html|json)$/i.test(subject.label)) {
+    return <ProvenanceView subject={subject} />;
+  }
 
   /* Selected, but nothing here can describe it: a raw file on disk, a NetCDF
      export, an object of some other kind. Saying so beats an empty panel that

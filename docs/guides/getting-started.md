@@ -39,6 +39,14 @@ aa-workbench --source cache     # use the fast BigQuery NCEI source (needs GCP)
 That's the whole thing to teach a new user: install once, run `aa-workbench`,
 open the URL.
 
+## The first thing to do: Prepare EchoData
+
+The panel the Workbench opens on turns a stretch of an NCEI survey into one
+EchoData asset (and its Sv) in the project bucket: choose a survey, choose a
+time range, press **Prepare EchoData**. See
+[prepare-echodata.md](./prepare-echodata.md). `aa-workbench check` confirms the
+console tools it runs are installed.
+
 ## NCEI data source
 
 By default the NCEI panel reads the **public** `noaa-wcsd-pds` bucket

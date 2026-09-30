@@ -1,6 +1,7 @@
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
 import {
+  CallMergeRounded,
   FolderOpenOutlined,
   DataObjectOutlined,
   PlaylistPlayOutlined,
@@ -32,6 +33,7 @@ import { CalibrationPanel } from './calibration/CalibrationPanel';
 import { MetadataPanel } from './MetadataPanel';
 import { ProcessingQueuePanel } from './ProcessingQueuePanel';
 import { NceiPanel } from './ncei/NceiPanel';
+import { PreparePanel } from './prepare/PreparePanel';
 import { DerivedPanel } from './DerivedPanel';
 import { OmaoPanel } from './OmaoPanel';
 import { ResourcesPanel } from './resources/ResourcesPanel';
@@ -74,7 +76,19 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     dynamic: true,
   },
 
-  // Left region — data sources.
+  // Left region — the baseline workflow, then the data sources.
+  /* First, and fronted on a fresh layout: the operation almost everything else
+     starts from (an NCEI time range -> one EchoData asset in the bucket). It
+     sits with the sources because it is where their data becomes an asset;
+     the browsers below it are for looking, this is for making. */
+  {
+    id: 'prepare',
+    title: 'Prepare EchoData',
+    icon: CallMergeRounded,
+    description: 'The baseline: an NCEI time range, made into one EchoData asset in the bucket.',
+    region: 'left',
+    component: PreparePanel,
+  },
   {
     id: 'ncei',
     title: 'NCEI',

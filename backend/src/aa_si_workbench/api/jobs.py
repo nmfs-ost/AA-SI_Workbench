@@ -195,6 +195,10 @@ class JobRequest(BaseModel):
     label: str = ""
     #: Working directory. Must be an existing directory; defaults to $HOME.
     cwd: str = ""
+    #: Extra environment for the child. Only the tools' own ``AA_*`` settings
+    #: (AA_CACHE_DIR, AA_NAMING, AA_REUSE, ...) — never PATH, LD_PRELOAD or
+    #: anything else that changes *which* program runs.
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -220,6 +224,7 @@ class _Job:
     dropped: int = 0
     process: subprocess.Popen | None = None
     cancelled: bool = False
+    env: dict[str, str] = field(default_factory=dict)
 
 
 _jobs: OrderedDict[str, _Job] = OrderedDict()
@@ -419,6 +424,7 @@ def _spawn(job: _Job) -> None:
     """Start one queued job. Caller holds the lock."""
     env = {
         **os.environ,
+        **job.env,
         "PYTHONUNBUFFERED": "1",
         "NO_COLOR": "1",
         "TERM": "dumb",
@@ -439,7 +445,9 @@ def _spawn(job: _Job) -> None:
             # Own process group, so cancelling reaches the tool's children too.
             start_new_session=os.name != "nt",
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
+        # ValueError: Popen refuses a NUL byte in an argument or the
+        # environment. Left queued, one such job would stop the queue for good.
         job.state = "failed"
         job.error = f"Could not start: {exc}"
         job.finished_at = _now()
@@ -451,11 +459,15 @@ def _spawn(job: _Job) -> None:
 
     threads = [
         threading.Thread(
-            target=_pump_stdout, args=(job, process.stdout), daemon=True,
+            target=_pump_stdout,
+            args=(job, process.stdout),
+            daemon=True,
             name=f"{job.tool}-out",
         ),
         threading.Thread(
-            target=_pump_stderr, args=(job, process.stderr), daemon=True,
+            target=_pump_stderr,
+            args=(job, process.stderr),
+            daemon=True,
             name=f"{job.tool}-err",
         ),
     ]
@@ -482,11 +494,29 @@ def _drain_queue() -> None:
 # --------------------------------------------------------------------------- #
 # Public operations
 # --------------------------------------------------------------------------- #
+_ENV_KEY = re.compile(r"AA_[A-Z0-9_]+")
+
+
+def _checked_env(env: dict[str, str]) -> dict[str, str]:
+    bad = [key for key in env if not _ENV_KEY.fullmatch(key)]
+    if bad:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only AA_* settings may be passed to a tool, not {', '.join(bad)}.",
+        )
+    if any("\x00" in str(value) for value in env.values()):
+        raise HTTPException(status_code=400, detail="A setting contains a NUL byte.")
+    return {key: str(value) for key, value in env.items()}
+
+
 def submit(request: JobRequest, resumed_from: str = "") -> _Job:
     program = resolve_tool(request.tool)
     cwd = _resolve_cwd(request.cwd)
     args = [str(item) for item in request.args]
+    if any("\x00" in arg for arg in args):
+        raise HTTPException(status_code=400, detail="An argument contains a NUL byte.")
     tool = Path(program).name
+    env = _checked_env(request.env)
 
     job = _Job(
         id=uuid.uuid4().hex[:12],
@@ -495,6 +525,7 @@ def submit(request: JobRequest, resumed_from: str = "") -> _Job:
         command=[program, *args],
         cwd=cwd,
         resumed_from=resumed_from,
+        env=env,
     )
     with _lock:
         _jobs[job.id] = job
@@ -557,7 +588,11 @@ def resume(job_id: str) -> _Job:
             )
         args = job.command[1:]
         request = JobRequest(
-            tool=job.tool, args=args, label=f"{job.label} (resumed)", cwd=job.cwd
+            tool=job.tool,
+            args=args,
+            label=f"{job.label} (resumed)",
+            cwd=job.cwd,
+            env=dict(job.env),
         )
     return submit(request, resumed_from=job_id)
 
@@ -609,6 +644,23 @@ def _status(job: _Job, since: int = 0) -> JobStatus:
         )
 
 
+def status_of(job_id: str, since: int = 0) -> JobStatus | None:
+    """A job's status for another module (the baseline runner), or None."""
+    with _lock:
+        job = _jobs.get(job_id)
+    return _status(job, since) if job is not None else None
+
+
+def tail_of(job_id: str, count: int = 8) -> list[str]:
+    """The last few stderr lines of a job, for a failure message."""
+    with _lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return []
+        lines = [line for line in job.lines if not line.startswith(("$ ", "--- "))]
+        return lines[-count:]
+
+
 def _reset_for_tests() -> None:
     global _jobs
     with _lock:
@@ -629,8 +681,7 @@ def list_jobs() -> JobList:
     """
     with _lock:
         jobs = [
-            _status(job, since=job.dropped + len(job.lines))
-            for job in _jobs.values()
+            _status(job, since=job.dropped + len(job.lines)) for job in _jobs.values()
         ]
         return JobList(
             jobs=jobs,

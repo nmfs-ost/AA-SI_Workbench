@@ -65,6 +65,7 @@ function fakeApi() {
 const ALL_PANELS = [
   'pipelines',
   'recipes',
+  'prepare',
   'ncei',
   'files',
   'derived',
@@ -124,13 +125,15 @@ describe('both layouts', () => {
     }
   });
 
-  it('group the four sources together', () => {
+  it('group the sources with Prepare EchoData, which leads the left dock', () => {
     for (const build of [buildHorizontalLayout, buildVerticalLayout]) {
       const f = fakeApi();
       build(f.api);
-      for (const id of ['files', 'derived', 'omao']) {
-        expect(f.find(id)).toMatchObject({ reference: 'ncei', direction: 'within' });
+      for (const id of ['ncei', 'files', 'derived', 'omao', 'resources']) {
+        expect(f.find(id)).toMatchObject({ reference: 'prepare', direction: 'within' });
       }
+      // Added first in its group, so it is the tab a fresh layout fronts.
+      expect(f.ids().indexOf('prepare')).toBeLessThan(f.ids().indexOf('ncei'));
     }
   });
 });
@@ -140,7 +143,7 @@ describe('horizontal layout', () => {
   buildHorizontalLayout(f.api);
 
   it('puts sources left and the inspector right', () => {
-    expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'pipelines' });
+    expect(f.find('prepare')).toMatchObject({ direction: 'left', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
       direction: 'right',
       reference: 'pipelines',
@@ -165,12 +168,12 @@ describe('horizontal layout', () => {
 
   it('adds the tools dock last, so the side docks run past it to the floor', () => {
     const order = f.ids();
-    expect(order.indexOf('terminal')).toBeGreaterThan(order.indexOf('ncei'));
+    expect(order.indexOf('terminal')).toBeGreaterThan(order.indexOf('prepare'));
     expect(order.indexOf('terminal')).toBeGreaterThan(order.indexOf('metadata'));
   });
 
   it('sizes the side docks by width', () => {
-    expect(f.find('ncei')?.initialWidth).toBeGreaterThan(0);
+    expect(f.find('prepare')?.initialWidth).toBeGreaterThan(0);
     expect(f.find('metadata')?.initialWidth).toBeGreaterThan(0);
   });
 });
@@ -184,12 +187,12 @@ describe('vertical layout', () => {
     // owns everything gives a band the width of the window. Reorder these and
     // the layout silently becomes the landscape one.
     const order = f.ids();
-    expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('ncei'));
+    expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('prepare'));
     expect(order.indexOf('terminal')).toBeLessThan(order.indexOf('metadata'));
   });
 
   it('places the side docks exactly where the landscape layout does', () => {
-    expect(f.find('ncei')).toMatchObject({ direction: 'left', reference: 'pipelines' });
+    expect(f.find('prepare')).toMatchObject({ direction: 'left', reference: 'pipelines' });
     expect(f.find('metadata')).toMatchObject({
       direction: 'right',
       reference: 'pipelines',
@@ -206,7 +209,7 @@ describe('vertical layout', () => {
   });
 
   it('sizes the sides by width and the tools dock by height', () => {
-    expect(f.find('ncei')?.initialWidth).toBeGreaterThan(0);
+    expect(f.find('prepare')?.initialWidth).toBeGreaterThan(0);
     expect(f.find('metadata')?.initialWidth).toBeGreaterThan(0);
     expect(f.find('terminal')?.initialHeight).toBeGreaterThan(0);
   });
@@ -223,10 +226,10 @@ describe('buildLayout', () => {
     // that decides how wide the tools dock ends up.
     const v = fakeApi();
     buildLayout(v.api, 'vertical');
-    expect(v.ids().indexOf('terminal')).toBeLessThan(v.ids().indexOf('ncei'));
+    expect(v.ids().indexOf('terminal')).toBeLessThan(v.ids().indexOf('prepare'));
 
     const h = fakeApi();
     buildLayout(h.api, 'horizontal');
-    expect(h.ids().indexOf('terminal')).toBeGreaterThan(h.ids().indexOf('ncei'));
+    expect(h.ids().indexOf('terminal')).toBeGreaterThan(h.ids().indexOf('prepare'));
   });
 });

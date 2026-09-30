@@ -213,7 +213,54 @@ function buildCatalog(): Catalog {
   return { vessels, surveys, sonars, files };
 }
 
+/**
+ * A real survey in the sample data: HB1603 on the Henry B. Bigelow, the survey
+ * the console tools' own examples use, so a demo on sample data shows the
+ * names people will see for real. The timing is illustrative, not NCEI's: a
+ * file every ~20 minutes for six days, quiet each night around midnight, and
+ * one long transit. Generated from its own seed so the rest of the sample
+ * catalogue is unchanged.
+ */
+function addHB1603(catalog: Catalog): void {
+  const rand = mulberry32(0x1603);
+  const vesselId = 'Henry_B._Bigelow';
+  const survey: Survey = { id: 'HB1603', name: 'HB1603', vesselId, year: 2016 };
+  const surveys = catalog.surveys.get(vesselId) ?? [];
+  if (surveys.some((s) => s.id === survey.id)) return;
+  catalog.surveys.set(vesselId, [...surveys, survey].sort((a, b) => a.name.localeCompare(b.name)));
+  catalog.sonars.set(`${vesselId}/HB1603`, [{ id: 'EK60', name: 'EK60' }]);
+
+  const files: RawFile[] = [];
+  let t = Date.UTC(2016, 6, 1, 0, 3, 17);
+  const end = Date.UTC(2016, 6, 7, 0, 0, 0);
+  const transit = [Date.UTC(2016, 6, 4, 14, 10), Date.UTC(2016, 6, 4, 21, 35)];
+  let lat = 41.2;
+  let lon = -69.1;
+  while (t < end) {
+    const d = new Date(t);
+    const quiet = d.getUTCHours() === 2 && d.getUTCMinutes() < 50;
+    if (!quiet && !(t >= transit[0] && t < transit[1])) {
+      const stamp =
+        `D${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1, 2)}${pad(d.getUTCDate(), 2)}` +
+        `-T${pad(d.getUTCHours(), 2)}${pad(d.getUTCMinutes(), 2)}${pad(d.getUTCSeconds(), 2)}`;
+      lat += (rand() - 0.45) * 0.02;
+      lon += (rand() - 0.5) * 0.03;
+      files.push({
+        name: `HB1603_L1-${stamp}.raw`,
+        sizeBytes: Math.round((24 + rand() * 3) * 1024 * 1024),
+        acquiredAt: d.toISOString().replace('.000Z', 'Z'),
+        lat: Number(lat.toFixed(5)),
+        lon: Number(lon.toFixed(5)),
+      });
+    }
+    t += (20 * 60 + Math.floor(rand() * 40)) * 1000;
+    if (t >= transit[0] && t < transit[1]) t = transit[1] + Math.floor(rand() * 600) * 1000;
+  }
+  catalog.files.set(`${vesselId}/HB1603/EK60`, files);
+}
+
 const CATALOG = buildCatalog();
+addHB1603(CATALOG);
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

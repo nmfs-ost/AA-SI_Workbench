@@ -116,7 +116,7 @@ export function ParamControl({ param, value, onChange, injectedInput }: Props) {
             </InputAdornment>
           ),
         }}
-        helperText={injected ? 'Injected from the NCEI selection' : param.help}
+        helperText={injected ? 'Injected from the current selection' : param.help}
         sx={{
           ...fieldSx,
           '& .MuiInputBase-input': {
