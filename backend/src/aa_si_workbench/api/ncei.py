@@ -223,10 +223,10 @@ class CacheProvider:
         from aalibrary.utils.helpers import normalize_ship_name
 
         ship_norm = normalize_ship_name(ship_name=vessel_id)
-        # NOTE: `file_size` is assumed to exist in ncei_cache (the folder-size
-        # cache implies it). If your column is named differently, adjust it here.
+        # The cache's size column is `size_bytes` (what aalibrary's
+        # get_folder_prefix_size_in_ncei_cache sums); there is no `file_size`.
         query = f"""
-            SELECT file_name, file_datetime, file_size
+            SELECT file_name, file_datetime, size_bytes AS file_size
             FROM `{NCEI_CACHE_TABLE}`
             WHERE ship_name_normalized = @ship
               AND survey_name = @survey
