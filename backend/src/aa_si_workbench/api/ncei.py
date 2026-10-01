@@ -41,7 +41,7 @@ T = TypeVar("T")
 # Small helpers
 # --------------------------------------------------------------------------- #
 def _display_name(ncei_name: str) -> str:
-    """"Reuben_Lasker" -> "Reuben Lasker" for display; id keeps the raw form."""
+    """ "Reuben_Lasker" -> "Reuben Lasker" for display; id keeps the raw form."""
     return ncei_name.replace("_", " ").strip()
 
 
@@ -61,16 +61,42 @@ def _acquired_at_from_name(file_name: str) -> str:
         return ""
     d, t = match.groups()
     dt = datetime(
-        int(d[0:4]), int(d[4:6]), int(d[6:8]),
-        int(t[0:2]), int(t[2:4]), int(t[4:6]),
+        int(d[0:4]),
+        int(d[4:6]),
+        int(d[6:8]),
+        int(t[0:2]),
+        int(t[2:4]),
+        int(t[4:6]),
         tzinfo=UTC,
     )
     return dt.isoformat().replace("+00:00", "Z")
 
 
+def _present(value: object) -> bool:
+    """False for the gaps a BigQuery column brings through pandas.
+
+    A NULL arrives as None, NaN (a float) or NaT depending on the column type.
+    Sorting a list with one of those among the names raises
+    "'<' not supported between instances of 'str' and 'float'".
+    """
+    if value is None:
+        return False
+    try:
+        if value != value:  # NaN and NaT are not equal to themselves
+            return False
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip() not in ("", "nan", "NaN", "NaT", "None")
+
+
+def _names(values: object) -> list[str]:
+    """Distinct non-empty names, sorted; NULLs from the cache dropped."""
+    return sorted({str(v).strip() for v in (values or []) if _present(v)})
+
+
 def _iso_from_cache_value(value: object) -> str:
     """Normalize a BigQuery file_datetime (str or Timestamp) to ISO-8601 UTC."""
-    if value is None:
+    if not _present(value):
         return ""
     text = str(value).strip().replace(" ", "T")
     if text and not text.endswith("Z") and "+" not in text:
@@ -170,7 +196,7 @@ class CacheProvider:
         names = ncei_cache_utils.get_all_ship_names_in_ncei_cache(
             normalize=False, gcp_bq_client=self._bq
         )
-        return [Vessel(id=n, name=_display_name(n)) for n in sorted(set(names))]
+        return [Vessel(id=n, name=_display_name(n)) for n in _names(names)]
 
     def list_surveys(self, vessel_id: str) -> list[Survey]:
         from aalibrary.utils import ncei_cache_utils
@@ -180,7 +206,7 @@ class CacheProvider:
         )
         return [
             Survey(id=n, name=n, vesselId=vessel_id, year=_year_from_survey(n))
-            for n in sorted(set(names))
+            for n in _names(names)
         ]
 
     def list_sonars(self, vessel_id: str, survey_id: str) -> list[SonarModel]:
@@ -189,7 +215,7 @@ class CacheProvider:
         names = ncei_cache_utils.get_all_echosounders_in_a_survey_in_ncei_cache(
             ship_name=vessel_id, survey_name=survey_id, gcp_bq_client=self._bq
         )
-        return [SonarModel(id=n, name=n) for n in sorted(set(names))]
+        return [SonarModel(id=n, name=n) for n in _names(names)]
 
     def list_raw_files(
         self, vessel_id: str, survey_id: str, sonar_id: str
@@ -218,17 +244,24 @@ class CacheProvider:
                 bigquery.ScalarQueryParameter("sonar", "STRING", sonar_id),
             ]
         )
-        df = self._bq.query(query, job_config=job_config).result().to_dataframe(
-            create_bqstorage_client=False
+        df = (
+            self._bq.query(query, job_config=job_config)
+            .result()
+            .to_dataframe(create_bqstorage_client=False)
         )
         files: list[RawFile] = []
         for _, row in df.iterrows():
+            name = row.get("file_name")
+            if not _present(name):
+                continue
             size = row.get("file_size")
+            # A NULL datetime falls back to the D{date}-T{time} in the name.
+            when = _iso_from_cache_value(row.get("file_datetime"))
             files.append(
                 RawFile(
-                    name=str(row["file_name"]),
-                    sizeBytes=int(size) if size is not None else 0,
-                    acquiredAt=_iso_from_cache_value(row.get("file_datetime")),
+                    name=str(name),
+                    sizeBytes=int(size) if _present(size) else 0,
+                    acquiredAt=when or _acquired_at_from_name(str(name)),
                 )
             )
         return files
