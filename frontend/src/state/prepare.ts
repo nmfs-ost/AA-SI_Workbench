@@ -59,6 +59,10 @@ export interface PrepareState {
   gapFactor: number;
   strict: boolean;
   keepLocal: boolean;
+  /** The working folder on the workstation; '' means the server's default. */
+  workRoot: string;
+  /** Delete each kind of working file once no later stage reads it. */
+  freeAsYouGo: boolean;
   echogramOptions: EchogramOptions;
   /** EK80 calibration (aa-sv --waveform_mode / --encode_mode); unused otherwise. */
   waveformMode: 'CW' | 'BB';
@@ -82,6 +86,8 @@ const DEFAULTS = {
   gapFactor: 6,
   strict: false,
   keepLocal: false,
+  workRoot: '',
+  freeAsYouGo: true,
   echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'viridis' },
   waveformMode: 'CW' as const,
   encodeMode: 'complex' as const,
@@ -142,6 +148,8 @@ interface Saved {
   gapFactor?: number;
   strict?: boolean;
   keepLocal?: boolean;
+  workRoot?: string;
+  freeAsYouGo?: boolean;
   echogramOptions?: EchogramOptions;
   waveformMode?: 'CW' | 'BB';
   encodeMode?: 'complex' | 'power';
@@ -164,6 +172,8 @@ function save(): void {
     gapFactor: state.gapFactor,
     strict: state.strict,
     keepLocal: state.keepLocal,
+    workRoot: state.workRoot,
+    freeAsYouGo: state.freeAsYouGo,
     echogramOptions: state.echogramOptions,
     waveformMode: state.waveformMode,
     encodeMode: state.encodeMode,
@@ -270,7 +280,8 @@ export async function selectSonar(sonar: SonarModel | null): Promise<void> {
 
 export function update(patch: Partial<Pick<PrepareState,
   'start' | 'end' | 'sv' | 'echogram' | 'format' | 'base' | 'bucket' | 'gapSeconds' |
-  'gapFactor' | 'strict' | 'keepLocal' | 'echogramOptions' | 'waveformMode' | 'encodeMode'>>): void {
+  'gapFactor' | 'strict' | 'keepLocal' | 'workRoot' | 'freeAsYouGo' | 'echogramOptions' |
+  'waveformMode' | 'encodeMode'>>): void {
   set(patch);
 }
 
@@ -278,13 +289,12 @@ export function setRange(from: number, to: number): void {
   set({ start: formatUtc(from), end: formatUtc(to) });
 }
 
-/** Advanced settings back to their defaults; the products and name stay. */
+/** Advanced settings back to their defaults; the products, name and working space stay. */
 export function resetOptions(): void {
   set({
     gapSeconds: DEFAULTS.gapSeconds,
     gapFactor: DEFAULTS.gapFactor,
     strict: DEFAULTS.strict,
-    keepLocal: DEFAULTS.keepLocal,
     bucket: DEFAULTS.bucket,
     echogramOptions: DEFAULTS.echogramOptions,
     waveformMode: DEFAULTS.waveformMode,
@@ -324,6 +334,9 @@ export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest 
     echogramOptions: s.echogramOptions,
     waveformMode: s.waveformMode,
     encodeMode: s.encodeMode,
+    workRoot: s.workRoot.trim(),
+    freeAsYouGo: s.freeAsYouGo,
+    expectedBytes: Math.max(0, Math.round(plan.bytes)),
   };
 }
 

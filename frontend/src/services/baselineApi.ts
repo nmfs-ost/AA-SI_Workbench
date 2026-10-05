@@ -44,6 +44,47 @@ export interface BaselineRequest {
   echogramOptions: EchogramOptions;
   waveformMode: 'CW' | 'BB';
   encodeMode: 'complex' | 'power';
+  /** Where the run's working files go on the workstation; '' for the server's default. */
+  workRoot: string;
+  /** Delete each kind of working file once no later stage reads it. Off with keepLocal. */
+  freeAsYouGo: boolean;
+  /** The raw files' total size as listed: what the working-space estimate scales. */
+  expectedBytes: number;
+}
+
+/** Where a run would work, what it would need at most, and whether that fits. */
+export interface Workspace {
+  root: string;
+  defaultRoot: string;
+  exists: boolean;
+  /** e.g. ext4, xfs; fuse.gcsfuse and tmpfs are refused. */
+  filesystem: string;
+  mountPoint: string;
+  freeBytes: number;
+  totalBytes: number;
+  rawBytes: number;
+  /** The most working space the run holds at once, as asked. */
+  needBytes: number;
+  needKeepingBytes: number;
+  needFreeingBytes: number;
+  freeing: boolean;
+  memoryBytes: number;
+  memoryNeedBytes: number;
+  /** Whether the installed aa-combine/aa-sv/aa-graph stream; null when unknown. */
+  streaming: boolean | null;
+  /** Why a run cannot start there; '' when it can. */
+  problem: string;
+  warnings: string[];
+}
+
+/** The working space a run has used. */
+export interface WorkUsage {
+  root: string;
+  needBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  peakBytes: number;
+  freedBytes: number;
 }
 
 export interface ToolState {
@@ -68,6 +109,8 @@ export interface StagePreview {
   level: string;
   description: string;
   command: string[];
+  /** Working files removed once this stage succeeds, relative to the run's folder. */
+  frees?: string[];
 }
 
 export type AssetKind = 'echodata' | 'sv' | 'echogram' | 'request' | 'report';
@@ -84,6 +127,8 @@ export interface Preview {
   destination: string;
   stages: StagePreview[];
   assets: Asset[];
+  /** The folder the run's own folder is made in. */
+  workRoot?: string;
 }
 
 export type StageState = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
@@ -120,6 +165,7 @@ export interface RunStatus {
   createdAt: string;
   finishedAt: string;
   request: BaselineRequest;
+  work?: WorkUsage;
 }
 
 export interface Provenance {
@@ -133,6 +179,7 @@ export interface Provenance {
 export interface BaselineApi {
   getConfig(): Promise<BaselineConfig>;
   preview(request: BaselineRequest): Promise<Preview>;
+  workspace(request: BaselineRequest): Promise<Workspace>;
   start(request: BaselineRequest): Promise<RunStatus>;
   get(id: string): Promise<RunStatus>;
   list(): Promise<RunStatus[]>;
@@ -177,6 +224,8 @@ const serverApi: BaselineApi = {
   getConfig: () => call('/api/baseline/config'),
   preview: (request) =>
     call('/api/baseline/preview', { method: 'POST', body: JSON.stringify(request) }),
+  workspace: (request) =>
+    call('/api/baseline/workspace', { method: 'POST', body: JSON.stringify(request) }),
   start: (request) =>
     call('/api/baseline/runs', { method: 'POST', body: JSON.stringify(request) }),
   get: (id) => call(`/api/baseline/runs/${encodeURIComponent(id)}`),
@@ -230,8 +279,14 @@ function simEnabled(id: string, r: BaselineRequest): boolean {
   return true;
 }
 
+const SIM_ROOT = '~/aa-workbench-runs';
+
+function simRoot(r: BaselineRequest): string {
+  return r.workRoot.trim() || SIM_ROOT;
+}
+
 function simCommand(id: string, r: BaselineRequest, base: string, dest: string): string[] {
-  const scratch = `~/aa-workbench-runs/${base}-<run>`;
+  const scratch = `${simRoot(r)}/${base}-<run>`;
   const fmt = single(r) ? 'nc' : r.format;
   const o = r.echogramOptions;
   switch (id) {
@@ -262,6 +317,68 @@ function simCommand(id: string, r: BaselineRequest, base: string, dest: string):
     default:
       return ['aa-upload', `${scratch}/${base}.yaml`, dest];
   }
+}
+
+/** What the server's frees_after names: freed as it goes, unless files are kept. */
+function simFrees(id: string, r: BaselineRequest, base: string): string[] {
+  if (!r.freeAsYouGo || r.keepLocal) return [];
+  if (id === 'convert') return ['raw/*.raw'];
+  if (id === 'combine' && !single(r)) return ['raw/*.nc'];
+  if (id === 'sv') return [`cache/**/${base}.${single(r) ? 'nc' : r.format}`];
+  return [];
+}
+
+/*
+ * The stand-in's working-space arithmetic. The server's (workspace.py) is the
+ * real one; these are its constants, so the sample card shows the same story.
+ */
+const SIM_FREE = 412e9;
+const SIM_TOTAL = 500e9;
+const SIM_MEMORY = 32e9;
+
+export function simSpaceNeeded(raw: number, oneFile: boolean, sv: boolean, freeing: boolean): number {
+  const perFile = oneFile ? 0 : 2.2 * raw;
+  const combined = 2.2 * raw;
+  const svBytes = sv ? 4.5 * raw : 0;
+  const peak = freeing
+    ? Math.max(raw + (perFile || combined), perFile + combined, combined + svBytes)
+    : raw + perFile + combined + svBytes;
+  return Math.floor(peak * 1.15);
+}
+
+function simWorkspace(r: BaselineRequest): Workspace {
+  const freeing = r.freeAsYouGo && !r.keepLocal;
+  const keep = simSpaceNeeded(r.expectedBytes, single(r), r.sv, false);
+  const free = simSpaceNeeded(r.expectedBytes, single(r), r.sv, true);
+  const need = freeing ? free : keep;
+  const root = simRoot(r);
+  let problem = '';
+  if (!root.startsWith('/') && !root.startsWith('~')) {
+    problem = `The working folder must be a full path (from /): '${root}'`;
+  } else if (need > SIM_FREE) {
+    problem =
+      `This range needs about ${(need / 1e9).toFixed(0)} GB of working space at most, and ` +
+      `${root} has ${(SIM_FREE / 1e9).toFixed(0)} GB free. Choose a folder on a bigger disk, or a shorter range.`;
+  }
+  return {
+    root,
+    defaultRoot: SIM_ROOT,
+    exists: true,
+    filesystem: 'ext4',
+    mountPoint: '/home',
+    freeBytes: SIM_FREE,
+    totalBytes: SIM_TOTAL,
+    rawBytes: r.expectedBytes,
+    needBytes: need,
+    needKeepingBytes: keep,
+    needFreeingBytes: free,
+    freeing,
+    memoryBytes: SIM_MEMORY,
+    memoryNeedBytes: (1 << 30) + 8 * (1 << 20) * r.expectedFiles.length,
+    streaming: true,
+    problem,
+    warnings: [],
+  };
 }
 
 function simAssets(r: BaselineRequest, base: string, dest: string, recipe = '<recipe>'): Asset[] {
@@ -301,6 +418,12 @@ function advance(sim: SimRun): RunStatus {
   const r = s.request;
   const dest = s.destination;
   let clock = (Date.now() - sim.started) / 1000;
+  if (s.work) {
+    const total = Object.values(SIM_SECONDS).reduce((a, b) => a + b, 0);
+    const share = Math.min(1, clock / total);
+    const used = Math.round(s.work.needBytes * 0.8 * Math.sin(Math.PI * Math.min(share, 0.95)));
+    s.work = { ...s.work, usedBytes: used, peakBytes: Math.max(s.work.peakBytes, used) };
+  }
   for (const stage of s.stages) {
     if (stage.state === 'skipped') continue;
     const need = SIM_SECONDS[stage.id] ?? 1;
@@ -379,9 +502,15 @@ const simulatedApi: BaselineApi = {
       stages: STAGES.filter((s) => simEnabled(s.id, r)).map((s) => ({
         ...s,
         command: simCommand(s.id, r, base, dest),
+        frees: simFrees(s.id, r, base),
       })),
       assets: simAssets(r, base, dest),
+      workRoot: simRoot(r),
     };
+  },
+  async workspace(r) {
+    await delay(80);
+    return simWorkspace(r);
   },
   async start(r) {
     await delay(150);
@@ -392,7 +521,7 @@ const simulatedApi: BaselineApi = {
       base,
       state: 'running',
       destination: simDest(r, base),
-      scratch: `~/aa-workbench-runs/${base}-${id}`,
+      scratch: `${simRoot(r)}/${base}-${id}`,
       stages: STAGES.map((s) => ({
         ...s,
         state: simEnabled(s.id, r) ? 'pending' : 'skipped',
@@ -412,6 +541,14 @@ const simulatedApi: BaselineApi = {
       createdAt: nowIso(),
       finishedAt: '',
       request: r,
+      work: {
+        root: simRoot(r),
+        needBytes: simWorkspace(r).needBytes,
+        freeBytes: SIM_FREE,
+        usedBytes: 0,
+        peakBytes: 0,
+        freedBytes: 0,
+      },
     };
     simRuns.set(id, { status, started: Date.now(), cancelled: false });
     return advance(simRuns.get(id)!);

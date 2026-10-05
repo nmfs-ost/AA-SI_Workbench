@@ -20,6 +20,7 @@ import {
   FolderOpenOutlined,
   RadioButtonUncheckedRounded,
   RemoveCircleOutlineRounded,
+  SaveOutlined,
 } from '@mui/icons-material';
 
 import { CopyPathButton } from '../CopyPathButton';
@@ -29,6 +30,7 @@ import { BASELINE_SIMULATED, imageUrl } from '../../../services/baselineApi';
 import { cancelRun } from '../../../state/prepare';
 import { formatDuration, formatUtc, parseUtc } from './plan';
 import { KIND_ICON } from './DestinationStep';
+import { formatSize } from './WorkspaceStep';
 import { FileName, LevelChip, Note, PathText } from './ui';
 
 interface Props {
@@ -174,6 +176,8 @@ export function RunView({ run, runError, onInspect, onReveal, onQueue, onDone, o
           ))}
         </Box>
       </Collapse>
+
+      {running && run.work && run.work.root && <WorkLine run={run} />}
 
       {run.notes.length > 0 && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
@@ -528,6 +532,40 @@ function Thumbnail({ asset }: { asset: Asset }) {
         onError={() => setFailed(true)}
         sx={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
       />
+    </Box>
+  );
+}
+
+/**
+ * The working space a running run holds, measured every few seconds: what it
+ * holds now, the most so far, and the estimate the card started it on.
+ */
+function WorkLine({ run }: { run: RunStatus }) {
+  const theme = useTheme();
+  const c = theme.aa.color;
+  const work = run.work!;
+  const share = work.needBytes ? Math.min(1, work.usedBytes / work.needBytes) : 0;
+  return (
+    <Box title={`Working folder: ${run.scratch}`}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <SaveOutlined sx={{ fontSize: 13, color: c.syntax.entity }} />
+        <Typography sx={{ fontSize: 11, color: c.text.secondary, fontVariantNumeric: 'tabular-nums' }}>
+          Working space {formatSize(work.usedBytes)}
+          <Box component="span" sx={{ color: c.text.muted }}>
+            {' '}· at most {formatSize(work.peakBytes)}
+            {work.needBytes ? ` of about ${formatSize(work.needBytes)}` : ''}
+            {work.freedBytes ? ` · ${formatSize(work.freedBytes)} freed` : ''}
+          </Box>
+        </Typography>
+      </Box>
+      {work.needBytes > 0 && (
+        <LinearProgress
+          variant="determinate"
+          value={share * 100}
+          aria-label="Working space in use, against the estimate"
+          sx={{ mt: 0.5, height: 3, borderRadius: 2, backgroundColor: alpha(c.text.muted, 0.18) }}
+        />
+      )}
     </Box>
   );
 }

@@ -7,6 +7,21 @@ handoff (the emblem, the terminal toolbar, the account) is kept as
 
 ---
 
+## Since then: working space (memory fix follow-up)
+
+aalibrary's memory fix made aa-combine, aa-sv and aa-graph stream, so a run's
+memory is about 1 GB for any length and disk is the limit. The card has a fifth
+step, **Working space** (`WorkspaceStep.tsx`, `api/workspace.py`,
+`POST /api/baseline/workspace`): the working folder (editable; gcsfuse mounts
+and tmpfs refused), the most space the range needs against what is free, *Free
+space as it goes* (`frees_after` in baseline.py; shown in the commands and the
+copied script), *Keep the working files* (moved here from Advanced), and the
+memory mode, probed from the installed aalibrary. A run that cannot fit is
+refused with a 409 before it starts; a run reports the space it used.
+`aa-workbench check` prints the same facts. The estimate's factors (2.2x raw per
+EchoData, 4.5x for Sv, +15%) come from synthetic EK60; check them against the
+first real long runs (their notes say peak vs estimate).
+
 ## What was asked
 
 Make the baseline operation — an NCEI survey's time range, combined into one

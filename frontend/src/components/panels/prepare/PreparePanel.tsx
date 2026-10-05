@@ -30,6 +30,7 @@ import { ProductsStep } from './ProductsStep';
 import { RangeStep } from './RangeStep';
 import { RunView } from './RunView';
 import { SourceStep } from './SourceStep';
+import { WorkspaceStep, formatSize, useWorkspace } from './WorkspaceStep';
 import { baseProblem, defaultBase, destinationUri, formatDuration, parseUtc } from './plan';
 import { Disclosure, Note, Step } from './ui';
 
@@ -103,7 +104,16 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
     : [];
 
   const request = plan && sourceReady && !baseError ? buildRequest(s, plan) : null;
-  const blocker = whyNot(s, { rangeOk, plan: Boolean(plan), baseError, bucket, gaps: plan?.gaps.length ?? 0 });
+  const space = useWorkspace(request);
+  const ws = space.workspace;
+  const blocker = whyNot(s, {
+    rangeOk,
+    plan: Boolean(plan),
+    baseError,
+    bucket,
+    gaps: plan?.gaps.length ?? 0,
+    workspaceProblem: space.error || ws?.problem || '',
+  });
 
   const inspect = (asset: Asset) => {
     const label = asset.uri.replace(/\/$/, '').split('/').pop() ?? asset.uri;
@@ -273,7 +283,6 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                 title="Destination"
                 done={Boolean(request && folder)}
                 summary={bucket ? `gs://${bucket}` : undefined}
-                rail={false}
               >
                 {folder ? (
                   <DestinationStep
@@ -287,6 +296,34 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                 ) : (
                   <Typography sx={{ fontSize: 11, color: c.text.muted }}>
                     {bucket ? 'Named once a survey and range are chosen.' : 'Waiting for the Workbench bucket…'}
+                  </Typography>
+                )}
+              </Step>
+              <Step
+                n={5}
+                title="Working space"
+                done={Boolean(request && ws && !ws.problem && !space.error)}
+                summary={
+                  ws && ws.rawBytes > 0
+                    ? `${formatSize(ws.needBytes)} of ${formatSize(ws.freeBytes)} free`
+                    : undefined
+                }
+                rail={false}
+              >
+                {request ? (
+                  <WorkspaceStep
+                    workspace={ws}
+                    error={space.error}
+                    busy={space.busy}
+                    workRoot={s.workRoot}
+                    defaultRoot={ws?.defaultRoot || s.config?.runRoot || ''}
+                    freeAsYouGo={s.freeAsYouGo}
+                    keepLocal={s.keepLocal}
+                    onChange={update}
+                  />
+                ) : (
+                  <Typography sx={{ fontSize: 11, color: c.text.muted }}>
+                    Shown once a survey and range are chosen.
                   </Typography>
                 )}
               </Step>
@@ -372,7 +409,14 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
 /** The first thing standing between the card and a run, in words. '' when ready. */
 function whyNot(
   s: PrepareState,
-  x: { rangeOk: boolean; plan: boolean; baseError: string; bucket: string; gaps: number },
+  x: {
+    rangeOk: boolean;
+    plan: boolean;
+    baseError: string;
+    bucket: string;
+    gaps: number;
+    workspaceProblem: string;
+  },
 ): string {
   if (s.configError) return 'The Workbench API is not reachable.';
   if (s.config && !s.config.ready) return 'The console tools this needs are not installed.';
@@ -386,6 +430,7 @@ function whyNot(
   if (x.baseError) return x.baseError;
   if (!x.bucket) return 'Waiting for the Workbench bucket…';
   if (s.strict && x.gaps > 0) return 'Strict QC is on and the range has a gap.';
+  if (x.workspaceProblem) return `Working space: ${x.workspaceProblem.split('. ')[0].replace(/\.$/, '')}.`;
   return '';
 }
 

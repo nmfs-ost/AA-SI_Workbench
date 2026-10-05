@@ -43,14 +43,23 @@ request document asks for exactly that window, and after the fetch the runner
 checks that exactly those files arrived — so what the card promised is what
 was combined, or the run stops and says which files are missing.
 
-Scratch space
+Working space
 -------------
 Raw files and the per-file EchoData live in a per-run scratch folder under
-``AASI_RUN_ROOT`` (default ``~/aa-workbench-runs``), with ``AA_CACHE_DIR``
-pointed inside it so the tools' staging and download cache land there too. On
-success the folder is removed unless the user asked to keep it: it is this
-run's own working data, never a user's file. On failure it is kept, because
-it is the evidence.
+the working folder the card names (default ``AASI_RUN_ROOT``, itself
+``~/aa-workbench-runs`` by default), with ``AA_CACHE_DIR`` pointed inside it so
+the tools' staging and download cache land there too. On success the folder is
+removed unless the user asked to keep it: it is this run's own working data,
+never a user's file. On failure it is kept, because it is the evidence (less
+what *Free space as it goes* had already deleted).
+
+With tools that stream, memory no longer limits the length of a range; the
+disk under that folder does. So the card shows where the folder is, how much
+the range needs at most and how much is free (see workspace.py), and a run
+that cannot fit is refused before it starts. *Free space as it goes* deletes
+each kind of working file as soon as no later stage reads it (``frees_after``
+names them, and the preview shows them, so the copied script does the same).
+Each run reports the working space it actually used.
 """
 
 from __future__ import annotations
@@ -69,7 +78,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from . import jobs
+from . import jobs, workspace
 
 router = APIRouter(prefix="/api/baseline", tags=["baseline"])
 
@@ -139,6 +148,14 @@ class BaselineRequest(BaseModel):
     #: Ignored for other echosounders.
     waveformMode: Literal["CW", "BB"] = "CW"
     encodeMode: Literal["complex", "power"] = "complex"
+    #: Where the run's working files go, on this machine: an absolute path,
+    #: or "" for the server's default (AASI_RUN_ROOT).
+    workRoot: str = ""
+    #: Delete each kind of working file once no later stage reads it.
+    #: Off whenever keepLocal is on.
+    freeAsYouGo: bool = True
+    #: The raw files' total size as listed, for the working-space estimate.
+    expectedBytes: int = Field(default=0, ge=0)
 
 
 class ToolState(BaseModel):
@@ -163,6 +180,9 @@ class StagePreview(BaseModel):
     level: str
     description: str
     command: list[str]
+    #: Working files deleted once this stage succeeds (free space as it
+    #: goes): patterns relative to the run's folder; "**/" means any depth.
+    frees: list[str] = Field(default_factory=list)
 
 
 class Preview(BaseModel):
@@ -170,6 +190,45 @@ class Preview(BaseModel):
     destination: str
     stages: list[StagePreview]
     assets: list[dict]
+    #: The folder the run's own folder is made in.
+    workRoot: str = ""
+
+
+class Workspace(BaseModel):
+    """What the card shows about where a run works, and whether it fits."""
+
+    root: str
+    defaultRoot: str
+    exists: bool
+    filesystem: str
+    mountPoint: str
+    freeBytes: int
+    totalBytes: int
+    rawBytes: int
+    #: The most working space the run holds at once, as asked.
+    needBytes: int
+    #: The same, keeping everything / freeing as it goes.
+    needKeepingBytes: int
+    needFreeingBytes: int
+    freeing: bool
+    memoryBytes: int
+    memoryNeedBytes: int
+    #: Whether the installed aa-combine/aa-sv/aa-graph stream; None: unknown.
+    streaming: bool | None
+    #: Why a run cannot start here; '' when it can.
+    problem: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WorkUsage(BaseModel):
+    """The working space a run has used, as it goes."""
+
+    root: str = ""
+    needBytes: int = 0
+    freeBytes: int = 0
+    usedBytes: int = 0
+    peakBytes: int = 0
+    freedBytes: int = 0
 
 
 class StageStatus(BaseModel):
@@ -214,6 +273,7 @@ class RunStatus(BaseModel):
     createdAt: str
     finishedAt: str = ""
     request: BaselineRequest
+    work: WorkUsage = Field(default_factory=WorkUsage)
 
 
 # --------------------------------------------------------------------------- #
@@ -271,6 +331,27 @@ def run_root() -> Path:
     return Path(
         os.getenv("AASI_RUN_ROOT", str(Path.home() / "aa-workbench-runs"))
     ).expanduser()
+
+
+def work_root(req: BaselineRequest) -> Path:
+    """The folder a run's own folder is made in: the card's choice or the default."""
+    text = req.workRoot.strip()
+    if not text:
+        return run_root()
+    if "\x00" in text or "\n" in text:
+        raise HTTPException(status_code=400, detail="Not a folder path.")
+    try:
+        path = Path(text).expanduser()
+    except RuntimeError as exc:  # ~someone who does not exist
+        raise HTTPException(
+            status_code=400, detail=f"Not a folder path: {exc}"
+        ) from exc
+    if not path.is_absolute():
+        raise HTTPException(
+            status_code=400,
+            detail=f"The working folder must be a full path (from /): {text!r}",
+        )
+    return Path(os.path.normpath(path))
 
 
 def destination(req: BaselineRequest, base: str, user: str) -> str:
@@ -394,6 +475,11 @@ class Context:
             return str(found[0])
         name = self.req.expectedFiles[0] if self.req.expectedFiles else "<file>.raw"
         return str(self.raw_dir / name)
+
+    @property
+    def freeing(self) -> bool:
+        """Free space as it goes: asked for, and nothing asked to be kept."""
+        return self.req.freeAsYouGo and not self.req.keepLocal
 
     @property
     def request_doc(self) -> Path:
@@ -542,6 +628,52 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
     raise ValueError(stage_id)
 
 
+def frees_after(stage_id: str, ctx: Context) -> list[str]:
+    """Working files no later stage reads, deleted once *stage_id* succeeds.
+
+    Patterns relative to the run's folder. The raw files are read only by
+    the conversion; the per-file EchoData only by the combine; and the local
+    copy of the combined EchoData (the tools keep what they upload in their
+    cache, which is where aa-sv reads it) only by aa-sv. The Sv's own copy is
+    what aa-graph reads, and goes with the folder at the end.
+    """
+    if not ctx.freeing:
+        return []
+    if stage_id == "convert":
+        return ["raw/*.raw"]
+    if stage_id == "combine" and not ctx.single:
+        return ["raw/*.nc"]
+    if stage_id == "sv":
+        name = ctx.combined.rsplit("/", 1)[-1]
+        return [f"cache/**/{name}"]
+    return []
+
+
+def _free(ctx: Context, patterns: list[str]) -> int:
+    """Delete what *patterns* match inside the run's folder; bytes freed."""
+    root = ctx.scratch.resolve()
+    freed = 0
+    for pattern in patterns:
+        for path in sorted(ctx.scratch.glob(pattern)):
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if resolved == root or root not in resolved.parents:
+                continue  # never anything outside this run's own folder
+            if path.is_dir() and not path.is_symlink():
+                size = workspace.tree_bytes(path)
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                try:
+                    size = path.lstat().st_size
+                    path.unlink()
+                except OSError:
+                    continue
+            freed += size
+    return freed
+
+
 def planned_assets(ctx: Context) -> list[Asset]:
     req = ctx.req
     assets = [
@@ -598,6 +730,7 @@ class _Run:
     assets: list[Asset] = field(default_factory=list)
     cancel_requested: bool = False
     current_job: str = ""
+    work: WorkUsage = field(default_factory=WorkUsage)
 
 
 _runs: dict[str, _Run] = {}
@@ -619,6 +752,7 @@ def _status(run: _Run) -> RunStatus:
             createdAt=run.created_at,
             finishedAt=run.finished_at,
             request=run.ctx.req,
+            work=run.work.model_copy(),
         )
 
 
@@ -686,6 +820,18 @@ def _verify_fetch(ctx: Context) -> tuple[str, str]:
     return "", note
 
 
+#: Seconds between measurements of a run's folder while a stage runs.
+MEASURE_SECONDS = 5.0
+
+
+def _measure(run: _Run) -> None:
+    """How much of the working space the run holds now, and at most so far."""
+    used = workspace.tree_bytes(run.ctx.scratch)
+    with _lock:
+        run.work.usedBytes = used
+        run.work.peakBytes = max(run.work.peakBytes, used)
+
+
 def _finish(run: _Run, state: str, error: str = "") -> None:
     with _lock:
         run.state = state
@@ -751,8 +897,12 @@ def _execute_stages(run: _Run) -> None:
             except HTTPException:
                 pass
 
+        measured = 0.0
         while True:
             status = jobs.status_of(job.id, since=10**9)
+            if time.monotonic() - measured >= MEASURE_SECONDS:
+                _measure(run)
+                measured = time.monotonic()
             with _lock:
                 _watch(stage, ctx, total_raw)
                 if status and status.progress and status.progress.total:
@@ -768,6 +918,7 @@ def _execute_stages(run: _Run) -> None:
         with _lock:
             stage.finishedAt = _now()
             run.current_job = ""
+        _measure(run)
         if status is None or status.state != "succeeded":
             reason = ""
             if status is not None:
@@ -837,6 +988,12 @@ def _execute_stages(run: _Run) -> None:
         if stage.id == "combine" and not reused:
             with _lock:
                 stage.detail = "Written to the bucket."
+        patterns = frees_after(stage.id, ctx)
+        if patterns:
+            freed = _free(ctx, patterns)
+            with _lock:
+                run.work.freedBytes += freed
+            _measure(run)
 
     # Everything the tools wrote, by the URIs they printed.
     assets = [
@@ -872,6 +1029,13 @@ def _execute_stages(run: _Run) -> None:
         )
     with _lock:
         run.assets = assets
+        work = run.work
+        line = f"Working space: {workspace.human(work.peakBytes)} at most"
+        if work.needBytes:
+            line += f" (estimated {workspace.human(work.needBytes)})"
+        if work.freedBytes:
+            line += f"; {workspace.human(work.freedBytes)} freed as it went"
+        run.notes.append(line + ".")
     if not ctx.req.keepLocal:
         shutil.rmtree(ctx.scratch, ignore_errors=True)
         with _lock:
@@ -895,6 +1059,93 @@ def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
     return Context(
         req=req, base=base, dest=dest, scratch=scratch or run_root() / f"{base}-preview"
     )
+
+
+def workspace_report(req: BaselineRequest) -> Workspace:
+    """Where the run would work, what it would need, and whether that fits."""
+    root = work_root(req)
+    single = len(req.expectedFiles) == 1
+    freeing = req.freeAsYouGo and not req.keepLocal
+    raw = req.expectedBytes
+    need_keep = workspace.space_needed(raw, single=single, sv=req.sv, freeing=False)
+    need_free = workspace.space_needed(raw, single=single, sv=req.sv, freeing=True)
+    need = need_free if freeing else need_keep
+    mount = workspace.mount_of(root)
+    free, total = workspace.disk_space(root)
+    try:
+        tool = jobs.resolve_tool("aa-combine")
+    except HTTPException:
+        tool = ""
+    streaming = workspace.tools_stream(tool) if tool else None
+    memory = workspace.memory_total()
+    memory_need = workspace.memory_needed(raw, len(req.expectedFiles), streaming)
+    H = workspace.human
+
+    problem = workspace.folder_problem(root, mount)
+    warnings: list[str] = []
+    if not problem and raw and free and need > free:
+        problem = (
+            f"This range needs about {H(need)} of working space at most, and "
+            f"{root} has {H(free)} free."
+        )
+        if not freeing and need_free <= free and not req.keepLocal:
+            problem += f" Free space as it goes needs about {H(need_free)}: turn it on."
+        else:
+            problem += " Choose a folder on a bigger disk, or a shorter range."
+    if not problem and streaming is False and memory and memory_need:
+        text = (
+            f"The installed console tools hold the whole range in memory: about "
+            f"{H(memory_need)} for this one, on a machine with {H(memory)}. "
+            "aalibrary with the memory fix streams it instead (about 1 GB for any "
+            "length)."
+        )
+        if memory_need > workspace.MEMORY_HEADROOM * memory:
+            problem = text + " Update aalibrary, or choose a shorter range."
+        else:
+            warnings.append(text)
+    caution = workspace.folder_warning(root, mount)
+    if caution and not problem:
+        warnings.append(caution)
+    return Workspace(
+        root=str(root),
+        defaultRoot=str(run_root()),
+        exists=workspace.is_dir(root),
+        filesystem=mount.fstype if mount else "",
+        mountPoint=mount.point if mount else "",
+        freeBytes=free,
+        totalBytes=total,
+        rawBytes=raw,
+        needBytes=need,
+        needKeepingBytes=need_keep,
+        needFreeingBytes=need_free,
+        freeing=freeing,
+        memoryBytes=memory,
+        memoryNeedBytes=memory_need,
+        streaming=streaming,
+        problem=problem,
+        warnings=warnings,
+    )
+
+
+def _device(path: Path) -> int | None:
+    try:
+        return os.stat(workspace.nearest_existing(path)).st_dev
+    except OSError:
+        return None
+
+
+def _still_needed_on(root: Path) -> int:
+    """Working space running runs on *root*'s file system have yet to take."""
+    device = _device(root)
+    if device is None:
+        return 0
+    with _lock:
+        running = [
+            (Path(run.work.root), run.work.needBytes - run.work.usedBytes)
+            for run in _runs.values()
+            if run.state == "running" and run.work.root and run.work.needBytes
+        ]
+    return sum(max(0, left) for where, left in running if _device(where) == device)
 
 
 def _tool_states() -> list[ToolState]:
@@ -941,7 +1192,8 @@ def get_config() -> BaselineConfig:
 @router.post("/preview", response_model=Preview)
 def post_preview(req: BaselineRequest) -> Preview:
     """The exact argv each stage would run, before anything runs."""
-    ctx = _context(req, scratch=run_root() / "<run>")
+    root = work_root(req)
+    ctx = _context(req, scratch=root / "<run>")
     stages = [
         StagePreview(
             id=s.id,
@@ -950,6 +1202,7 @@ def post_preview(req: BaselineRequest) -> Preview:
             level=s.level,
             description=s.description,
             command=[s.tool, *stage_args(s.id, ctx)],
+            frees=frees_after(s.id, ctx),
         )
         for s in STAGES
         if enabled(s.id, req, ctx.single)
@@ -959,7 +1212,14 @@ def post_preview(req: BaselineRequest) -> Preview:
         destination=ctx.dest,
         stages=stages,
         assets=[a.model_dump() for a in planned_assets(ctx)],
+        workRoot=str(root),
     )
+
+
+@router.post("/workspace", response_model=Workspace)
+def post_workspace(req: BaselineRequest) -> Workspace:
+    """Where a run of this request would work, and whether it would fit."""
+    return workspace_report(req)
 
 
 @router.post("/runs", response_model=RunStatus)
@@ -976,8 +1236,32 @@ def post_run(req: BaselineRequest) -> RunStatus:
     for stage in STAGES:
         if enabled(stage.id, req, base_ctx.single):
             stage_args(stage.id, base_ctx)
-    scratch = run_root() / f"{base_ctx.base}-{run_id}"
-    scratch.mkdir(parents=True, exist_ok=True)
+    # Refused here, not an hour in: a folder that cannot be used, a range
+    # that cannot fit in it, or tools that would hold it all in memory.
+    report = workspace_report(req)
+    if report.problem:
+        raise HTTPException(status_code=409, detail=report.problem)
+    # Runs already going in the same file system will still take what they
+    # have not used yet of their own estimate.
+    others = _still_needed_on(Path(report.root))
+    if report.rawBytes and others and report.needBytes + others > report.freeBytes:
+        H = workspace.human
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This range needs about {H(report.needBytes)} of working space, and "
+                f"runs already going in the same place will still take about "
+                f"{H(others)} of the {H(report.freeBytes)} free there. Wait for them "
+                "to finish, or choose a folder on another disk."
+            ),
+        )
+    scratch = Path(report.root) / f"{base_ctx.base}-{run_id}"
+    try:
+        scratch.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=409, detail=f"Cannot make the working folder {scratch}: {exc}"
+        ) from exc
     ctx = Context(req=req, base=base_ctx.base, dest=base_ctx.dest, scratch=scratch)
     stages = [
         StageStatus(
@@ -991,6 +1275,9 @@ def post_run(req: BaselineRequest) -> RunStatus:
         for s in STAGES
     ]
     run = _Run(id=run_id, ctx=ctx, stages=stages)
+    run.work = WorkUsage(
+        root=report.root, needBytes=report.needBytes, freeBytes=report.freeBytes
+    )
     with _lock:
         _runs[run_id] = run
         if len(_runs) > _MAX_RUNS:
@@ -1165,5 +1452,6 @@ def get_image(uri: str = Query(..., min_length=1)):
 
 
 def _reset_for_tests() -> None:
+    workspace._reset_for_tests()
     with _lock:
         _runs.clear()

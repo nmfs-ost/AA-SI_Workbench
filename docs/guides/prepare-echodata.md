@@ -35,16 +35,56 @@ convert to echopype EchoData, L2A calibrate.
    `<survey>_<echosounder>_<from>-<to>`, for example
    `HB1603_EK60_20160703T060000-20160703T120000`. Below it, the folder as it will
    look afterwards.
-5. **Prepare EchoData.** One button. It says why when it cannot run yet.
+5. **Working space.** Where the run works on this workstation, and whether the
+   range fits there (below).
+6. **Prepare EchoData.** One button. It says why when it cannot run yet.
 
 **Advanced settings** holds the few real choices most runs never touch: the gap
 rule, strict QC (stop at gaps instead of recording them), the echogram's colour
-scale, EK80 calibration modes (shown for EK80 surveys only), another bucket, and
-keeping the local working files.
+scale, EK80 calibration modes (shown for EK80 surveys only) and another bucket.
 
 **Console commands** shows the exact `aa-*` commands the run will execute, built
 by the same server function that runs them, and copies them as a shell script
 that runs on its own.
+
+## Working space: how long a range can be
+
+A run works through a folder on the workstation: the raw files, the per-file
+EchoData, and local copies of the combined EchoData and the Sv on their way to
+the bucket. With aalibrary's memory fix, aa-combine, aa-sv and aa-graph stream
+the range through that folder a slice at a time, so memory stays about 1 GB
+whatever the length (the card's *Memory* line says so, or says the installed
+tools are older and how much memory they would need). What limits a long range
+is the free space under the folder. The step shows:
+
+- **The working folder** (default `~/aa-workbench-runs`, or `AASI_RUN_ROOT`).
+  Type another full path to use a bigger disk; it is made when the run starts.
+  A folder on the bucket's **gcsfuse mount is refused**, because the tools
+  rewrite their files in place, which a bucket mount does only by copying each
+  whole file locally first, and a failed run would leave partial files in the
+  bucket. A folder **in memory** (tmpfs, such as `/dev/shm`) gets a warning:
+  files there take RAM. The products still go to the bucket either way; this
+  is only where the work happens.
+- **Needs at most / free.** The most space the range holds at once, against the
+  free space there. It is an estimate from the raw size (each EchoData is about
+  2.2 times the raw size, the Sv about 4.5 times, plus 15%). A range that does
+  not fit is refused before anything is downloaded.
+- **Free space as it goes** (on by default). Each kind of working file is
+  deleted as soon as no later tool reads it: the raw files once converted, the
+  per-file EchoData once combined, and the local copy of the EchoData once Sv is
+  made. Kept until the end, they add up (about 11 times the raw size, with
+  the allowance); freed, the most at once is the EchoData and the Sv together
+  (about 7.7 times). The products are unaffected. A run that fails keeps its
+  folder, less what was already deleted (so the raw files are gone once
+  conversion has succeeded).
+  The console commands show each deletion (*then deletes …*), and the copied
+  script makes the same ones.
+- **Keep the raw files and per-file EchoData.** Keeps the run's folder after a
+  success (it is always kept after a failure). Turns freeing off.
+
+While a run goes, the card shows the working space it holds and the most so
+far; the finished run notes what it actually used against the estimate.
+`aa-workbench check` prints the folder's free space and the memory mode.
 
 ## While it runs, and after
 
@@ -77,9 +117,9 @@ identity is checked against them.
 | Echogram | `aa-graph` | L2A | A PNG of that Sv, named after it. |
 | Record | `aa-upload` | | The request document, kept with the products. |
 
-Scratch space is `~/aa-workbench-runs/<asset>-<run>/` (`AASI_RUN_ROOT`), with
-the tools' cache inside it. It is removed after a successful run (unless *Keep
-the raw files* is on) and kept after a failure, as evidence.
+Scratch space is `<working folder>/<asset>-<run>/` (see *Working space*),
+with the tools' cache inside it. It is removed after a successful run (unless
+*Keep the raw files* is on) and kept after a failure, as evidence.
 
 ## Settings
 
@@ -87,7 +127,7 @@ the raw files* is on) and kept after a failure, as evidence.
 |---|---|---|
 | `AASI_DERIVED_BUCKET` | `ggn-nmfs-aa-dev-1-data` | The bucket the Derived panel shows, and where the card writes. |
 | `AASI_BASELINE_BUCKET` | (the Derived bucket) | Write somewhere else than the Derived panel shows. |
-| `AASI_RUN_ROOT` | `~/aa-workbench-runs` | Scratch folders. |
+| `AASI_RUN_ROOT` | `~/aa-workbench-runs` | The default working folder (the card can name another). |
 | `AASI_PROVENANCE_TIMEOUT` | `120` | Seconds `aa-metadata` may take for the Metadata panel. |
 
 ## Requirements
@@ -106,6 +146,10 @@ so a file the cache does not know can never be promised.
 
 - **"aa-fetch delivered 3 of the 5 files…"** — the BigQuery cache does not list
   them (yet). Use `--source cache` so the card plans from the same list.
+- **"This range needs about … of working space"** — choose a folder on a bigger
+  disk, turn on *Free space as it goes*, or choose a shorter range.
+- **"… is on the gcsfuse mount of a bucket"** — choose a folder on the
+  workstation's own disk; the products still go to the bucket.
 - **A gap warning** — the combine bridges it and records it in the QC report.
   Turn on strict QC to refuse instead, or narrow the range.
 - **"The Workbench server was restarted…"** — runs are kept in the server's

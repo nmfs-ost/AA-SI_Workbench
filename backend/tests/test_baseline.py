@@ -47,15 +47,33 @@ TOOLS = {
     "aa-combine": """
         if os.environ.get("FAKE_COMBINE_FAIL"):
             print("QC: transit gap between files", file=sys.stderr); sys.exit(4)
-        print(args[args.index("-o") + 1])
+        workdir = Path(args[args.index("--workdir") + 1])
+        target = args[args.index("-o") + 1]
+        if os.environ.get("FAKE_CHECK_FREED"):
+            assert not list(workdir.glob("*.raw")), "raw files outlived the conversion"
+            assert list(workdir.glob("*.nc")), "per-file EchoData freed too early"
+        # As the real tools do: what is uploaded stays in the tools' cache.
+        cached = Path(os.environ["AA_CACHE_DIR"]) / "gcs" / target.split("/", 2)[2]
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(b"combined" * 1000)
+        print(target)
     """,
     "aa-sv": """
         dest = args[args.index("--dest") + 1]
-        base = args[0].rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        name = args[0].rsplit("/", 1)[-1]
+        base = name.rsplit(".", 1)[0]
+        if os.environ.get("FAKE_CHECK_FREED"):
+            cache = Path(os.environ["AA_CACHE_DIR"])
+            assert not list(Path("raw").glob("*.nc")), "per-file outlived the combine"
+            assert list(cache.rglob(name)), "combined freed too early"
         print(f"{dest}{base}_1a2b3c4d.nc")
     """,
     "aa-graph": """
         dest = args[args.index("--dest") + 1]
+        if os.environ.get("FAKE_CHECK_FREED"):
+            combined = args[0].rsplit("/", 1)[-1].replace("_1a2b3c4d", "")
+            assert not list(Path(os.environ["AA_CACHE_DIR"]).rglob(combined)), \
+                "the local combined copy outlived aa-sv"
         print(dest + args[0].rsplit("/", 1)[-1].replace(".nc", ".png"))
     """,
     "aa-upload": """
@@ -85,6 +103,8 @@ def tools(tmp_path, monkeypatch):
     monkeypatch.setenv("AASI_PRINCIPAL", "jane.doe@noaa.gov")
     monkeypatch.setenv("FAKE_FILES", ",".join(FILES))
     monkeypatch.setattr(baseline, "POLL_SECONDS", 0.05)
+    # The stand-ins are not aalibrary; say the tools stream (see test_workspace).
+    monkeypatch.setattr(baseline.workspace, "tools_stream", lambda tool: True)
     jobs._reset_for_tests()
     baseline._reset_for_tests()
     from aa_si_workbench.api import identity
@@ -378,3 +398,146 @@ def test_a_nul_byte_cannot_wedge_the_job_queue(tools):
         ).status_code
         == 400
     )
+
+
+# --------------------------------------------------------------------------- #
+# Working space
+# --------------------------------------------------------------------------- #
+def test_files_are_freed_as_soon_as_no_later_stage_reads_them(tools, monkeypatch):
+    """The stand-ins fail if anything is freed late, or early."""
+    monkeypatch.setenv("FAKE_CHECK_FREED", "1")
+    client = TestClient(create_app())
+    run = _wait(client, client.post("/api/baseline/runs", json=REQUEST).json()["id"])
+    assert run["state"] == "succeeded", run["error"]
+    assert run["work"]["freedBytes"] > 0 and run["work"]["peakBytes"] > 0
+    assert any(note.startswith("Working space:") for note in run["notes"])
+
+
+def test_keeping_the_files_turns_freeing_off(tools, monkeypatch):
+    monkeypatch.setenv("FAKE_CHECK_FREED", "1")
+    client = TestClient(create_app())
+    request = REQUEST | {"keepLocal": True}
+    preview = client.post("/api/baseline/preview", json=request).json()
+    assert all(stage["frees"] == [] for stage in preview["stages"])
+    run = _wait(client, client.post("/api/baseline/runs", json=request).json()["id"])
+    assert run["state"] == "failed"  # the stand-in saw raw files at the combine
+    assert "outlived the conversion" in run["error"]
+
+
+def test_preview_names_what_is_freed_and_where_the_run_works(tools, tmp_path):
+    client = TestClient(create_app())
+    root = tmp_path / "big-disk"
+    preview = client.post(
+        "/api/baseline/preview", json=REQUEST | {"workRoot": str(root)}
+    ).json()
+    frees = {stage["id"]: stage["frees"] for stage in preview["stages"]}
+    assert frees["convert"] == ["raw/*.raw"]
+    assert frees["combine"] == ["raw/*.nc"]
+    assert frees["sv"] == [f"cache/**/{preview['base']}.nc"]
+    assert preview["workRoot"] == str(root)
+    fetch = next(s for s in preview["stages"] if s["id"] == "fetch")
+    assert fetch["command"][fetch["command"].index("-o") + 1].startswith(str(root))
+
+
+def test_a_chosen_working_folder_is_used_and_made(tools, tmp_path):
+    client = TestClient(create_app())
+    root = tmp_path / "elsewhere" / "runs"
+    request = REQUEST | {"workRoot": str(root), "keepLocal": True}
+    run = _wait(client, client.post("/api/baseline/runs", json=request).json()["id"])
+    assert run["state"] == "succeeded", run["error"]
+    assert Path(run["scratch"]).parent == root
+    assert run["work"]["root"] == str(root)
+
+
+def test_a_relative_working_folder_is_refused(tools):
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/baseline/workspace", json=REQUEST | {"workRoot": "runs/here"}
+    )
+    assert response.status_code == 400 and "full path" in response.json()["detail"]
+
+
+def test_a_range_that_cannot_fit_is_refused_before_it_starts(tools, monkeypatch):
+    monkeypatch.setattr(baseline.workspace, "disk_space", lambda path: (10**9, 10**11))
+    client = TestClient(create_app())
+    big = REQUEST | {"expectedBytes": 500 * 10**6}  # needs ~3.9 GB freed as it goes
+    report = client.post("/api/baseline/workspace", json=big).json()
+    assert report["needBytes"] == report["needFreeingBytes"] > 10**9
+    assert report["needKeepingBytes"] > report["needFreeingBytes"]
+    assert "1.0 GB free" in report["problem"]
+    response = client.post("/api/baseline/runs", json=big)
+    assert response.status_code == 409 and "working space" in response.json()["detail"]
+    assert client.get("/api/baseline/runs").json() == []
+
+
+def test_turning_freeing_on_is_suggested_when_it_would_fit(tools, monkeypatch):
+    monkeypatch.setattr(
+        baseline.workspace, "disk_space", lambda path: (4 * 10**9, 10**11)
+    )
+    client = TestClient(create_app())
+    request = REQUEST | {"expectedBytes": 400 * 10**6, "freeAsYouGo": False}
+    report = client.post("/api/baseline/workspace", json=request).json()
+    assert "turn it on" in report["problem"]
+    report = client.post(
+        "/api/baseline/workspace", json=request | {"freeAsYouGo": True}
+    ).json()
+    assert report["problem"] == ""
+
+
+def test_a_bucket_mount_is_refused_as_working_folder(tools, monkeypatch, tmp_path):
+    mount = baseline.workspace.Mount(str(tmp_path), "fuse.gcsfuse", "my-bucket")
+    monkeypatch.setattr(baseline.workspace, "mount_of", lambda path: mount)
+    client = TestClient(create_app())
+    request = REQUEST | {"workRoot": str(tmp_path / "runs")}
+    report = client.post("/api/baseline/workspace", json=request).json()
+    assert "gcsfuse" in report["problem"] and report["filesystem"] == "fuse.gcsfuse"
+    assert client.post("/api/baseline/runs", json=request).status_code == 409
+
+
+def test_tools_that_hold_the_range_in_memory_are_named(tools, monkeypatch):
+    monkeypatch.setattr(baseline.workspace, "tools_stream", lambda tool: False)
+    monkeypatch.setattr(baseline.workspace, "memory_total", lambda: 32 * 10**9)
+    monkeypatch.setattr(baseline.workspace, "disk_space", lambda path: (10**12, 10**12))
+    client = TestClient(create_app())
+    small = client.post(
+        "/api/baseline/workspace", json=REQUEST | {"expectedBytes": 10**8}
+    ).json()
+    assert small["problem"] == "" and "whole range in memory" in small["warnings"][0]
+    large = client.post(
+        "/api/baseline/workspace", json=REQUEST | {"expectedBytes": 3 * 10**9}
+    ).json()
+    assert "Update aalibrary" in large["problem"]
+    assert large["memoryNeedBytes"] == 16 * 3 * 10**9
+
+
+def test_unusable_folder_paths_are_a_400_not_a_crash(tools):
+    client = TestClient(create_app())
+    for root in ("~no-such-user-here/runs", "runs/here"):
+        response = client.post(
+            "/api/baseline/workspace", json=REQUEST | {"workRoot": root}
+        )
+        assert response.status_code == 400, root
+
+
+def test_runs_going_in_the_same_place_count_against_the_free_space(
+    tools, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        baseline.workspace, "disk_space", lambda path: (6 * 10**9, 10**11)
+    )
+    client = TestClient(create_app())
+    request = REQUEST | {"expectedBytes": 500 * 10**6}  # about 3.9 GB each
+    assert client.post("/api/baseline/workspace", json=request).json()["problem"] == ""
+    # A run already going in the same folder, with most of its estimate to come.
+    ctx = baseline.Context(
+        req=baseline.BaselineRequest(**request),
+        base="x",
+        dest="gs://b/",
+        scratch=tmp_path,
+    )
+    other = baseline._Run(id="other", ctx=ctx, stages=[])
+    other.work = baseline.WorkUsage(root=str(tmp_path / "runs"), needBytes=3 * 10**9)
+    with baseline._lock:
+        baseline._runs["other"] = other
+    response = client.post("/api/baseline/runs", json=request)
+    assert response.status_code == 409 and "already going" in response.json()["detail"]

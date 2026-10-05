@@ -105,6 +105,7 @@ def cmd_check(_args: argparse.Namespace) -> None:
     print(f"  signed in as     {who}")
     print(f"  products go to   gs://{config.bucket}/{config.prefixTemplate}")
     print(f"  working folders  {config.runRoot}")
+    _print_working_space(config.runRoot)
     dist = _paths.frontend_dist_dir()
     if dist is None:
         ui = "not built (serve will build it)"
@@ -119,6 +120,34 @@ def cmd_check(_args: argparse.Namespace) -> None:
             print(f"   - {problem}")
         raise SystemExit(1)
     print("\n  Ready.\n")
+
+
+def _print_working_space(root: str) -> None:
+    """Free space under the working folder, its file system, and the memory mode."""
+    from pathlib import Path
+
+    from .api import jobs, workspace
+
+    path = Path(root).expanduser()
+    free, total = workspace.disk_space(path)
+    mount = workspace.mount_of(path)
+    kind = f", {mount.fstype}" if mount else ""
+    space = f"{workspace.human(free)} free of {workspace.human(total)}{kind}"
+    print(f"                   {space}")
+    problem = workspace.folder_problem(path, mount)
+    if problem:
+        print(f"                   ! {problem}")
+    try:
+        streaming = workspace.tools_stream(jobs.resolve_tool("aa-combine"))
+    except Exception:  # noqa: BLE001 - a missing tool is reported above
+        streaming = None
+    mode = {
+        True: "streamed (about 1 GB for any length of range)",
+        False: "whole range in memory: update aalibrary for the memory fix",
+        None: "unknown (could not ask the installed aalibrary)",
+    }[streaming]
+    print(f"  memory           {mode}")
+    print(f"  this machine     {workspace.human(workspace.memory_total())} of memory")
 
 
 def cmd_build(_args: argparse.Namespace) -> None:

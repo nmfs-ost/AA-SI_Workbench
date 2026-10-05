@@ -143,7 +143,7 @@ export function AdvancedSection({ s, bucketDefault }: { s: PrepareState; bucketD
       </Box>
 
       <Box>
-        <Caption>Storage</Caption>
+        <Caption>Bucket</Caption>
         <TextField
           size="small"
           fullWidth
@@ -155,11 +155,7 @@ export function AdvancedSection({ s, bucketDefault }: { s: PrepareState; bucketD
           inputProps={{ spellCheck: false }}
           sx={{ ...compactFieldSx, mt: 1, '& .MuiInputBase-input': { fontFamily: theme.aa.font.mono, fontSize: 11.5 } }}
         />
-        {hint('Leave empty for the bucket the Derived panel shows.')}
-        <Box sx={{ mt: 1 }}>
-          {toggle('Keep the raw files and per-file EchoData', s.keepLocal, (v) => update({ keepLocal: v }))}
-          {hint('Off: the local working folder is removed once the products are in the bucket. It is always kept when a run fails.')}
-        </Box>
+        {hint('Leave empty for the bucket the Derived panel shows. Working files: see Working space.')}
       </Box>
 
       <Box>
