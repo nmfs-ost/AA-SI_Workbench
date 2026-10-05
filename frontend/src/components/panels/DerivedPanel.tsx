@@ -623,8 +623,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                   /* Publish to the right dock. A store selected here is the
                      artifact of the entire acquire → convert → assemble
                      sector, and until this line existed clicking it changed
-                     nothing anywhere — the Metadata panel could only ever be
-                     about an NCEI raw file. The URI, not the path: a bare
+                     nothing anywhere. The URI, not the path: a bare
                      path resolves against whatever directory the reader
                      happens to be standing in. */
                   setActiveArtifact({

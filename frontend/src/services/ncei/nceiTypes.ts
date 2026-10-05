@@ -1,11 +1,9 @@
 /**
- * Domain types for the NCEI panel.
+ * Domain types for the NCEI catalogue, as Prepare EchoData uses it.
  *
- * These mirror the drill-down that `aa-find` performs over NCEI's S3 archive:
+ * These mirror the drill-down that `aa-find` performs over NCEI's archive:
  *   vessel -> survey -> sonar model (echosounder) -> .raw file
- * (S3 layout: data/raw/{vessel}/{survey}/{sonar}/{file}). The panel is the
- * graphical equivalent of that keyboard-driven browse, plus the fetch/combine
- * actions from aa-fetch / aa-combine.
+ * (S3 layout: data/raw/{vessel}/{survey}/{sonar}/{file}).
  */
 
 /** A survey vessel (NCEI ship folder), e.g. "Henry B. Bigelow". */
@@ -41,13 +39,3 @@ export interface RawFile {
   lat?: number;
   lon?: number;
 }
-
-/** The full location of a raw file, used to describe planned operations. */
-export interface CatalogContext {
-  vessel: Vessel | null;
-  survey: Survey | null;
-  sonar: SonarModel | null;
-}
-
-/** The two operations the panel can stage against a selection. */
-export type NceiActionKind = 'download-raw' | 'combine-nc';

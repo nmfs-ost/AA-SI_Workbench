@@ -62,7 +62,7 @@ export const issueTemplates: readonly IssueTemplateDef[] = [
         id: 'reproduce',
         label: 'Steps to reproduce',
         helperText: 'Minimal steps that trigger the behaviour.',
-        placeholder: '1. Open the NCEI panel\n2. Select a survey\n3. …',
+        placeholder: '1. Open Prepare EchoData\n2. Choose a survey and a time range\n3. …',
         required: true,
         multiline: true,
         rows: 3,

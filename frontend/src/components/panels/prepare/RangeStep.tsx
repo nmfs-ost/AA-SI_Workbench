@@ -12,7 +12,7 @@ import {
 import { ErrorOutlineRounded, WarningAmberRounded } from '@mui/icons-material';
 
 import { compactFieldSx } from '../panelStyles';
-import { formatBytes } from '../ncei/nceiService';
+import { formatBytes } from '../../../services/ncei/nceiService';
 import type { PlanFile, RangePlan } from './plan';
 import { extentOf, formatDuration, formatUtc, parseUtc } from './plan';
 import { Timeline } from './Timeline';

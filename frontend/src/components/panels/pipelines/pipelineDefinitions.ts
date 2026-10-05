@@ -29,112 +29,6 @@ const COLORMAPS = ['viridis', 'magma', 'inferno', 'jet', 'ocean'] as const;
 
 export const pipelineDefinitions: readonly PipelineDefinition[] = [
   {
-    id: 'ncei-to-combined-nc',
-    name: 'NCEI raw → combined .nc',
-    description:
-      'Fetch raw files from NCEI, convert each to EchoData, and combine them into a single derived NetCDF.',
-    tags: ['NCEI', 'combine', 'derived asset'],
-    inputKind: 'raw',
-    author: 'aa-si',
-    updatedAt: '2026-05-14T10:12:00Z',
-    stages: [
-      {
-        id: 'fetch',
-        tool: 'aa-fetch',
-        label: 'Fetch',
-        description: 'Download the selected raw files from the NCEI archive.',
-        params: [
-          {
-            id: 'input',
-            label: 'Input file',
-            type: 'file',
-            role: 'input',
-            default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
-            primary: true,
-          },
-          {
-            id: 'outputRoot',
-            label: 'Download directory',
-            type: 'path',
-            flag: '-o',
-            default: './downloads',
-            primary: true,
-            help: 'Parent directory for the per-run download folder.',
-          },
-          {
-            id: 'runName',
-            label: 'Run name',
-            type: 'string',
-            flag: '-n',
-            default: '',
-            placeholder: 'aa_fetch_<timestamp>',
-          },
-        ],
-      },
-      {
-        id: 'convert',
-        tool: 'aa-raw',
-        label: 'Convert',
-        description: 'Convert each raw file to an EchoData NetCDF.',
-        params: [
-          {
-            id: 'sonarModel',
-            label: 'Sonar model',
-            type: 'enum',
-            flag: '--sonar-model',
-            options: SONAR_MODELS,
-            default: 'EK60',
-            primary: true,
-          },
-          {
-            id: 'overwrite',
-            label: 'Overwrite existing',
-            type: 'boolean',
-            flag: '--overwrite',
-            default: false,
-          },
-        ],
-      },
-      {
-        id: 'combine',
-        tool: 'aa-combine',
-        label: 'Combine',
-        description:
-          'Combine the converted files into one EchoData set (needs ≥2 files, same sonar model, chronological order).',
-        params: [
-          {
-            id: 'output',
-            label: 'Output .nc',
-            type: 'string',
-            flag: '-o',
-            default: 'combined.nc',
-            primary: true,
-          },
-          {
-            id: 'channels',
-            label: 'Channels',
-            type: 'multi',
-            flag: '--channels',
-            options: CHANNELS,
-            default: [],
-            primary: true,
-            help: 'Leave empty to keep all channels.',
-          },
-          {
-            id: 'destination',
-            label: 'Upload destination',
-            type: 'path',
-            flag: '--upload',
-            default: 'gs://<derived-assets-bucket>/',
-            help: 'Where the derived asset is written.',
-          },
-        ],
-      },
-    ],
-  },
-
-  {
     id: 'sv-echogram',
     name: 'Sv + echogram',
     description:
@@ -156,7 +50,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
+            help: 'Injected from the selected product (Prepare EchoData or Derived).',
             primary: true,
           },
           {
@@ -259,7 +153,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
+            help: 'A raw file on this workstation (type its path). NCEI raw files come in through Prepare EchoData.',
             primary: true,
           },
           {
@@ -311,126 +205,6 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
   },
 
   {
-    id: 'full-transect-product',
-    name: 'Full transect product',
-    description:
-      'End-to-end: fetch from NCEI, convert, combine, compute Sv, and publish the derived asset with an echogram.',
-    tags: ['end-to-end', 'NCEI', 'publish'],
-    inputKind: 'raw',
-    author: 'aa-si',
-    updatedAt: '2026-07-01T13:20:00Z',
-    stages: [
-      {
-        id: 'fetch',
-        tool: 'aa-fetch',
-        label: 'Fetch',
-        description: 'Download raws for the selected range.',
-        params: [
-          {
-            id: 'input',
-            label: 'Input file',
-            type: 'file',
-            role: 'input',
-            default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
-            primary: true,
-          },
-          {
-            id: 'outputRoot',
-            label: 'Download directory',
-            type: 'path',
-            flag: '-o',
-            default: './downloads',
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: 'convert',
-        tool: 'aa-raw',
-        label: 'Convert',
-        description: 'Raw → EchoData.',
-        params: [
-          {
-            id: 'sonarModel',
-            label: 'Sonar model',
-            type: 'enum',
-            flag: '--sonar-model',
-            options: SONAR_MODELS,
-            default: 'EK60',
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: 'combine',
-        tool: 'aa-combine',
-        label: 'Combine',
-        description: 'Merge into one transect.',
-        params: [
-          {
-            id: 'output',
-            label: 'Output .nc',
-            type: 'string',
-            flag: '-o',
-            default: 'transect.nc',
-            primary: true,
-          },
-          {
-            id: 'channels',
-            label: 'Channels',
-            type: 'multi',
-            flag: '--channels',
-            options: CHANNELS,
-            default: [],
-          },
-        ],
-      },
-      {
-        id: 'sv',
-        tool: 'aa-sv',
-        label: 'Sv',
-        description: 'Compute Sv for the combined transect.',
-        params: [
-          {
-            id: 'waveform',
-            label: 'Waveform mode',
-            type: 'enum',
-            flag: '--waveform-mode',
-            options: ['CW', 'BB'],
-            default: 'CW',
-            primary: true,
-          },
-        ],
-      },
-      {
-        id: 'publish',
-        tool: 'aa-graph',
-        label: 'Publish',
-        description: 'Render the echogram and upload the derived asset.',
-        params: [
-          {
-            id: 'destination',
-            label: 'Upload destination',
-            type: 'path',
-            flag: '--upload',
-            default: 'gs://<derived-assets-bucket>/',
-            primary: true,
-          },
-          {
-            id: 'colormap',
-            label: 'Colormap',
-            type: 'enum',
-            flag: '--cmap',
-            options: COLORMAPS,
-            default: 'viridis',
-          },
-        ],
-      },
-    ],
-  },
-
-  {
     id: 'kmeans-classify',
     name: 'K-means classification',
     description:
@@ -452,7 +226,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
+            help: 'Injected from the selected product (Prepare EchoData or Derived).',
             primary: true,
           },
         ],
@@ -503,44 +277,6 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
    * ---------------------------------------------------------------- */
 
   {
-    id: 'download-raw',
-    name: 'Download raw files',
-    description:
-      'Fetch the selected raw files from NCEI to this workstation. No conversion, no processing \u2014 just get the data local.',
-    tags: ['NCEI', 'download'],
-    inputKind: 'raw',
-    author: 'aa-si',
-    updatedAt: '2026-07-20T00:00:00Z',
-    stages: [
-      {
-        id: 'fetch',
-        tool: 'aa-fetch',
-        label: 'Fetch',
-        description: 'Download the selected raw files from the NCEI archive.',
-        params: [
-          {
-            id: 'input',
-            label: 'Input file',
-            type: 'file',
-            role: 'input',
-            default: '',
-            help: 'Injected from the file selected in the NCEI panel.',
-            primary: true,
-          },
-          {
-            id: 'outputRoot',
-            label: 'Download directory',
-            type: 'path',
-            flag: '-o',
-            default: './downloads',
-            primary: true,
-            help: 'Parent directory for the per-run download folder.',
-          },
-        ],
-      },
-    ],
-  },
-  {
     id: 'raw-to-nc',
     name: 'Compute .nc',
     description:
@@ -562,7 +298,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the left window.',
+            help: 'A raw file on this workstation (type its path). NCEI raw files come in through Prepare EchoData.',
             primary: true,
           },
           {
@@ -608,7 +344,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the left window.',
+            help: 'Injected from the selected product (Prepare EchoData or Derived).',
             primary: true,
           },
           {
@@ -660,7 +396,7 @@ export const pipelineDefinitions: readonly PipelineDefinition[] = [
             type: 'file',
             role: 'input',
             default: '',
-            help: 'Injected from the file selected in the left window.',
+            help: 'Injected from the selected product (Prepare EchoData or Derived).',
             primary: true,
           },
           {

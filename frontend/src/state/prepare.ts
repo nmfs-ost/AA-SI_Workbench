@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-import type { RawFile, SonarModel, Survey, Vessel } from '../components/panels/ncei/nceiTypes';
-import { nceiSource } from '../components/panels/ncei/nceiService';
+import type { RawFile, SonarModel, Survey, Vessel } from '../services/ncei/nceiTypes';
+import { nceiSource } from '../services/ncei/nceiService';
 import {
   extentOf,
   formatUtc,

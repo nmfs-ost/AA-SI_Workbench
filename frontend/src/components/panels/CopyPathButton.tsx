@@ -6,10 +6,10 @@ import { CheckOutlined, ContentCopyOutlined } from '@mui/icons-material';
  * Copy an absolute path to the clipboard.
  *
  * One component so that every list of files in the application — local disk,
- * the NCEI archive, the derived bucket, an open editor tab — offers the same
+ * the derived bucket, an open editor tab — offers the same
  * affordance in the same place with the same feedback. "Absolute" means
  * whatever fully identifies the file in *its own* storage system: a POSIX path
- * on the workstation, an `s3://` URI in NCEI, a `gs://` URI in the bucket.
+ * on the workstation, a `gs://` URI in the bucket.
  * That distinction is the reason the label is configurable.
  *
  * It sits at the right edge of a row and stays invisible until the row is

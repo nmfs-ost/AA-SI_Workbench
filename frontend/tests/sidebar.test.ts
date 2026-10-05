@@ -14,7 +14,7 @@ const group = (...ids: string[]) => ({ panels: ids.map((id) => ({ id })) });
 
 /** Stands in for the panel registry, without importing it. */
 const REGIONS: Record<string, PanelRegion> = {
-  ncei: 'left',
+  prepare: 'left',
   files: 'left',
   derived: 'left',
   omao: 'left',
@@ -32,7 +32,7 @@ const regionOf = (id: string) =>
 
 describe('dockSideOfGroup', () => {
   it('names the sources dock', () => {
-    expect(dockSideOfGroup(group('ncei', 'files', 'derived', 'omao'), regionOf)).toBe(
+    expect(dockSideOfGroup(group('prepare', 'files', 'derived', 'omao'), regionOf)).toBe(
       'left',
     );
     expect(dockSideOfGroup(group('files'), regionOf)).toBe('left');
@@ -62,7 +62,7 @@ describe('dockSideOfGroup', () => {
   });
 
   it('leaves a mixed group alone, so a dragged-in panel stays reachable', () => {
-    expect(dockSideOfGroup(group('ncei', 'files', 'terminal'), regionOf)).toBe(null);
+    expect(dockSideOfGroup(group('prepare', 'files', 'terminal'), regionOf)).toBe(null);
     expect(dockSideOfGroup(group('files', 'metadata'), regionOf)).toBe(null);
     expect(
       dockSideOfGroup(group('metadata', 'editor:/home/u/notes.txt'), regionOf),

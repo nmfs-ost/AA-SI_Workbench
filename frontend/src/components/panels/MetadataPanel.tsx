@@ -4,7 +4,6 @@ import { Box, Typography, useTheme } from '@mui/material';
 import { DataObjectOutlined } from '@mui/icons-material';
 
 import { PanelPlaceholder } from './PanelPlaceholder';
-import { AssetView } from './metadata/AssetView';
 import { StoreView } from './metadata/StoreView';
 import { ProvenanceView } from './metadata/ProvenanceView';
 import { useActiveSubject } from '../../state/activeSubject';
@@ -13,18 +12,13 @@ import { useActiveSubject } from '../../state/activeSubject';
  * Metadata panel — what the active subject *is*.
  *
  * This is now a router rather than a view, because "the active subject" stopped
- * being one shape. Two things can be selected and they are described by
- * different means:
+ * being one shape. What can be selected is described by different means:
  *
- *   NCEI file  → catalogue metadata, already in memory from the search.
- *   Zarr store → `aa-store info --json`, one JSON line, read from the store.
+ *   Zarr store   → `aa-store info --json`, one JSON line, read from the store.
+ *   Product file → its provenance, read back by `aa-metadata`.
  *
- * The second is the one that was missing. The Derived panel could already find
- * a combined store — the artifact of the whole acquire → convert → assemble
- * sector — and clicking it did nothing anywhere, because this panel could only
- * be about an NCEI raw file. A store carries its own lineage in its root
- * attributes precisely so it can be understood long after the handle that
- * announced it was lost, and there was nothing here to read it.
+ * A store or product carries its own lineage precisely so it can be understood
+ * long after the handle that announced it was lost; this panel reads it.
  *
  * Routing on the subject rather than offering a source selector is deliberate:
  * the user has already chosen, by clicking a row in the left dock. Asking again
@@ -39,13 +33,12 @@ export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
       <PanelPlaceholder
         icon={DataObjectOutlined}
         title="Metadata"
-        description="Select a file in NCEI, a product of Prepare EchoData, or a store in Derived or Files, to describe it."
+        description="Select a product of Prepare EchoData, or a file or store in Derived or Files, to describe it."
       />
     );
   }
 
   if (subject.inspectable) return <StoreView subject={subject} />;
-  if (subject.asset) return <AssetView asset={subject.asset} />;
   /* A product file — the Prepare card's EchoData and Sv, an echogram, a
      NetCDF picked in Derived or Files: the console tools wrote how it was
      made into it, and `aa-metadata` reads that back. */

@@ -13,11 +13,11 @@ This is the first bookmark of the data lifecycle (Data Roadmap levels 0-2A):
 
 Why a server-side runner and not a row of buttons
 -------------------------------------------------
-The NCEI panel's sequence strip runs one stage per click, and the user presses
-"Run all" once per stage. That is right for a person exploring the tools and
-wrong for this operation, whose whole point is that it is one well-defined act:
-each stage consumes the path the previous one printed, and the chain must run
-unattended for an hour without the browser tab staying open. So the chain runs
+The old NCEI panel (removed; this card replaced it) ran one stage per click.
+That suits a person exploring the tools and not this operation, whose whole
+point is that it is one well-defined act: each stage consumes the path the
+previous one printed, and the chain must run unattended for an hour without the
+browser tab staying open. So the chain runs
 here, one job at a time through the ordinary job runner (every stage still
 shows up in the Processing Queue, with its exact argv and its log), and the UI
 only watches.

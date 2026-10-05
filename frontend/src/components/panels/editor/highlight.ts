@@ -3,7 +3,7 @@
  *
  * Why not CodeMirror or Monaco: the bundle is already 1.1 MB and xterm.js is
  * 300 kB of it. A code editor library would roughly double that for every user
- * of the app, including the ones who only ever browse NCEI — a poor trade for
+ * of the app, including the ones who only ever prepare EchoData — a poor trade for
  * colouring the occasional parameter file. This is a few hundred bytes and
  * covers the handful of languages a Workbench user actually edits.
  *

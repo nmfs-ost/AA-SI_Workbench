@@ -6,7 +6,7 @@ import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import RestartAltOutlined from '@mui/icons-material/RestartAltOutlined';
 
 import { ParamControl } from '../pipelines/ParamControl';
-import { useActiveAsset } from '../../../state/activeAsset';
+import { useActiveSubject } from '../../../state/activeSubject';
 import {
   initCalibration,
   resetCalibration,
@@ -27,7 +27,7 @@ import { calibrationDefaults, calibrationSections } from './calibrationSchema';
 export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
   const values = useCalibration();
-  const asset = useActiveAsset();
+  const subject = useActiveSubject();
 
   useEffect(() => {
     initCalibration(calibrationDefaults());
@@ -58,9 +58,9 @@ export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
         <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
           Calibration
         </Typography>
-        {asset && (
+        {subject && (
           <Chip
-            label={asset.sonar}
+            label={subject.origin}
             size="small"
             sx={{
               height: 17,
@@ -76,9 +76,9 @@ export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
         <Typography
           sx={{ fontSize: 11.5, color: theme.aa.color.text.secondary, mb: 0.5 }}
         >
-          {asset
-            ? `Applied to ${asset.fileName} (${asset.sonar}).`
-            : 'Select a file in the NCEI panel to calibrate against it.'}
+          {subject
+            ? `Applied to ${subject.label}.`
+            : 'Select an EchoData product (in Prepare EchoData or Derived) to calibrate against it.'}
         </Typography>
 
         <Alert severity="info" sx={{ fontSize: 11.5, mb: 1.75, py: 0.25 }}>

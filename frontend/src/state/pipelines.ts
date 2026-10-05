@@ -17,7 +17,7 @@ import { pipelineDefinitions } from '../components/panels/pipelines/pipelineDefi
  *
  * The Pipelines panel (center) owns selection and editing; the Configuration
  * panel (right) edits the same draft values — so they stay in lockstep. Uses the
- * same module-store pattern as activeAsset/mapTrack, which works regardless of
+ * same module-store pattern as activeSubject, which works regardless of
  * how Dockview mounts panels.
  *
  * Terminology:

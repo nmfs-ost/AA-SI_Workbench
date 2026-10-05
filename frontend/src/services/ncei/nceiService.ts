@@ -9,11 +9,11 @@
  *   listSonars(vessel, survey)         <- get_all_echosounders_in_a_survey
  *   listRawFiles(vessel, survey, sonar)<- get_all_raw_file_names_from_survey
  *
- * The panel talks only to this interface. Today it is backed by `mockNceiSource`
- * (deterministic sample data) so the UI is fully interactive without a server.
- * When the backend API lands, implement `NceiCatalogSource` against it (e.g. an
- * `apiNceiSource` that calls the aalibrary-backed endpoints) and change the one
- * `nceiSource` binding at the bottom of this file — nothing else needs to move.
+ * Prepare EchoData's Source and Time range steps talk only to this interface.
+ * It is backed by `apiNceiSource` (the backend's /api/ncei, which lists either
+ * the public S3 archive or the BigQuery cache) when the UI is built for the
+ * API, and by `mockNceiSource` (deterministic sample data) otherwise, so the
+ * card is fully interactive without a server.
  */
 
 import type { RawFile, SonarModel, Survey, Vessel } from './nceiTypes';
@@ -28,8 +28,6 @@ export interface NceiCatalogSource {
     surveyId: string,
     sonarId: string,
   ): Promise<RawFile[]>;
-  /** Channel names for a sonar model (for the aa-combine --channels subset). */
-  listChannels(sonarId: string): Promise<string[]>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -42,30 +40,6 @@ export interface NceiCatalogSource {
  * two must not drift.
  */
 export const NCEI_BUCKET = 'noaa-wcsd-pds';
-
-/** Key of a raw file within the bucket: data/raw/{ship}/{survey}/{sonar}/{file}. */
-export function nceiKey(
-  vesselId: string,
-  surveyId: string,
-  sonarId: string,
-  fileName: string,
-): string {
-  return `data/raw/${vesselId}/${surveyId}/${sonarId}/${fileName}`;
-}
-
-/**
- * The absolute address of a raw file in NCEI. This is what "copy path" means
- * for a remote object — an `s3://` URI is what boto3, the AWS CLI and
- * `aa-fetch` all accept, and what a colleague can act on.
- */
-export function nceiS3Uri(
-  vesselId: string,
-  surveyId: string,
-  sonarId: string,
-  fileName: string,
-): string {
-  return `s3://${NCEI_BUCKET}/${nceiKey(vesselId, surveyId, sonarId, fileName)}`;
-}
 
 /* ------------------------------------------------------------------ */
 /* Formatting                                                          */
@@ -100,12 +74,6 @@ function mulberry32(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-const SONAR_CHANNELS: Record<string, string[]> = {
-  EK60: ['GPT 18 kHz', 'GPT 38 kHz', 'GPT 70 kHz', 'GPT 120 kHz', 'GPT 200 kHz'],
-  EK80: ['WBT 18 kHz', 'WBT 38 kHz', 'WBT 70 kHz', 'WBT 120 kHz', 'WBT 200 kHz'],
-  ME70: [], // multibeam — channel subsetting not offered
-};
 
 interface Catalog {
   vessels: Vessel[];
@@ -271,8 +239,8 @@ function delay(ms: number): Promise<void> {
 /* ------------------------------------------------------------------ */
 
 /**
- * Deterministic in-memory implementation. Small delays are added so the panel's
- * loading states behave like real network calls (mirroring aa-find's spinners).
+ * Deterministic in-memory implementation. Small delays are added so the card's
+ * loading states behave like real network calls.
  */
 export const mockNceiSource: NceiCatalogSource = {
   async listVessels() {
@@ -292,10 +260,6 @@ export const mockNceiSource: NceiCatalogSource = {
     const list = CATALOG.files.get(`${vesselId}/${surveyId}/${sonarId}`) ?? [];
     // Sorted by name == chronological for D{YYYYMMDD}-T{HHMMSS} (what aa-combine wants).
     return [...list].sort((a, b) => a.name.localeCompare(b.name));
-  },
-  async listChannels(sonarId) {
-    await delay(40);
-    return SONAR_CHANNELS[sonarId] ?? [];
   },
 };
 

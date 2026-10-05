@@ -23,7 +23,6 @@ export type BuiltinPanelId =
   | 'calibration'
   | 'processingQueue'
   | 'prepare'
-  | 'ncei'
   | 'files'
   | 'derived'
   | 'omao'
@@ -31,8 +30,7 @@ export type BuiltinPanelId =
   | 'terminal'
   | 'log'
   | 'progress'
-  | 'console'
-  | 'map';
+  | 'console';
 
 /**
  * Panel ids are strings so that tools can be registered dynamically at runtime.

@@ -137,9 +137,9 @@ release: `aa-workbench check` lists the eight tools the card needs and says
 where products will go. If `aa-metadata` is missing, the installed aalibrary is
 older than the card, and the card says so rather than failing a run.
 
-The file listing the card plans from is the NCEI panel's (the public S3 archive
-by default, `--source cache` for the BigQuery cache); `aa-fetch` downloads by
-the BigQuery cache. Serving with `--source cache` makes the two the same list,
+The file listing the card plans from is the backend's NCEI catalogue (the
+public S3 archive by default, `--source cache` for the BigQuery cache);
+`aa-fetch` downloads by the BigQuery cache. Serving with `--source cache` makes the two the same list,
 so a file the cache does not know can never be promised.
 
 ## When something goes wrong

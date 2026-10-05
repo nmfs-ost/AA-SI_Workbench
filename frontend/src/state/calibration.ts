@@ -4,7 +4,7 @@ import type { ParamValue } from '../components/panels/calibration/calibrationSch
 
 /**
  * Calibration settings, held outside React so edits survive Dockview unmounting
- * a hidden tab. Same module-store pattern as activeAsset / mapTrack / pipelines.
+ * a hidden tab. Same module-store pattern as activeSubject / pipelines.
  */
 
 export type CalibrationValues = Record<string, ParamValue>;

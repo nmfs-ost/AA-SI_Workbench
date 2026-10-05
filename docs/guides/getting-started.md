@@ -49,9 +49,10 @@ console tools it runs are installed.
 
 ## NCEI data source
 
-By default the NCEI panel reads the **public** `noaa-wcsd-pds` bucket
-anonymously — no credentials. For the faster BigQuery cache (and the datetime
-range at full speed), add `--source cache`; that path needs GCP credentials.
+By default Prepare EchoData lists the **public** `noaa-wcsd-pds` bucket
+anonymously — no credentials. For the faster BigQuery cache, which is also the
+list `aa-fetch` downloads by, add `--source cache`; that path needs GCP
+credentials.
 See [connecting-ncei.md](./connecting-ncei.md) for the details and trade-offs.
 
 ## Keeping the toolset up to date

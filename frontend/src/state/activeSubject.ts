@@ -7,54 +7,32 @@ import type { LayerKind } from '../types/layers';
  *
  * Every panel in the right dock answers a question about one subject —
  * Metadata: what is it, Configuration: how shall it run, Calibration: with what
- * physics, Processing Queue: what happened. Until now three of the four read
- * `activeAsset`, which could only ever hold an NCEI raw file, and the fourth
- * read nothing. So selecting a combined store in the Derived panel changed
- * nothing anywhere: the left dock could find the artifact of the entire
- * acquire → convert → assemble sector and the right dock had no way to be
- * about it.
- *
- * This widens the subject rather than adding a parallel store beside it,
- * because two stores would mean every panel deciding which one wins and four
- * places to get that wrong.
+ * physics, Processing Queue: what happened. The subject is an artifact: a
+ * product Prepare EchoData made, or a file or store picked in Derived or Files,
+ * or a path a tool printed in the terminal. (It once could also be a single
+ * NCEI raw file, picked in the old NCEI panel; Prepare EchoData replaced that
+ * panel, and raw files are now its business, by time range.)
  *
  * Carrying `layer` is the part that earns its keep. It is the same `LayerKind`
  * the tool catalogue and a handle use, so a panel can compare what is selected
  * against what a stage consumes and say "this pipeline reads raw, you have
  * selected an l1 store" instead of building a command that fails a minute later
  * inside echopype.
- *
- * `activeAsset.ts` remains the NCEI-shaped view of this, so nothing that
- * already reads it had to change.
  */
-
-/** NCEI catalogue metadata. Unchanged shape — this is what NCEI search produces. */
-export interface AssetMetadata {
-  fileName: string;
-  vessel: string;
-  survey: string;
-  sonar: string;
-  sizeBytes: number;
-  acquiredAt: string; // ISO 8601
-  channels: string[];
-  /** NCEI S3 object key, e.g. data/raw/{vessel}/{survey}/{sonar}/{file}. */
-  s3Path: string;
-  source: 'NCEI';
-}
 
 /**
  * Which panel the selection came from. Rendered as a chip in the inspector, so
  * a reader can tell a store they clicked in the bucket from the same store
  * arrived at by clicking the path a tool printed.
  *
- * 'Terminal' is the fourth: the terminal's links select a subject exactly as
+ * 'Terminal': the terminal's links select a subject exactly as
  * the browsers do, and reporting one of the others would be a small lie in the
  * one place whose whole job is saying where something came from.
  *
  * 'Prepare' is a product the Prepare EchoData card just made, selected from
  * its results.
  */
-export type SubjectOrigin = 'NCEI' | 'Derived' | 'Files' | 'Terminal' | 'Prepare';
+export type SubjectOrigin = 'Derived' | 'Files' | 'Terminal' | 'Prepare';
 
 export interface ActiveSubject {
   /**
@@ -75,8 +53,6 @@ export interface ActiveSubject {
    * store and an Sv store are both inspectable and neither is the other.
    */
   inspectable: boolean;
-  /** Present only for an NCEI selection. */
-  asset?: AssetMetadata;
 }
 
 let current: ActiveSubject | null = null;
@@ -89,22 +65,6 @@ function emit(next: ActiveSubject | null): void {
 
 export function setActiveSubject(subject: ActiveSubject | null): void {
   emit(subject);
-}
-
-/** Select an NCEI catalogue file. Called by the NCEI panel. */
-export function setActiveAsset(asset: AssetMetadata | null): void {
-  if (!asset) {
-    emit(null);
-    return;
-  }
-  emit({
-    uri: `s3://noaa-wcsd-pds/${asset.s3Path}`,
-    label: asset.fileName,
-    layer: 'raw',
-    origin: 'NCEI',
-    inspectable: false,
-    asset,
-  });
 }
 
 /**
@@ -131,7 +91,6 @@ export function setActiveArtifact(input: {
     layer: zarr ? 'l1' : netcdf ? 'netcdf' : 'raw',
     origin: input.origin,
     inspectable: zarr,
-    asset: undefined,
   });
 }
 

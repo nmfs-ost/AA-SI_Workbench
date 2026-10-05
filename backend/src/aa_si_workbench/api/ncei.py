@@ -1,8 +1,8 @@
 """NCEI catalog endpoints.
 
-These wrap the same `aalibrary` helpers that `aa-find` uses, so the Workbench
-NCEI panel talks to the identical data. Two providers are available, chosen by
-the ``AASI_NCEI_SOURCE`` environment variable:
+These wrap the same `aalibrary` helpers that `aa-find` uses, so the
+Workbench's Prepare EchoData card plans from the identical data. Two providers
+are available, chosen by the ``AASI_NCEI_SOURCE`` environment variable:
 
   * ``s3``    (default) — lists the public ``noaa-wcsd-pds`` bucket anonymously
                via ``aalibrary.utils.ncei_utils``. Needs no credentials.
@@ -114,7 +114,6 @@ class NceiProvider(Protocol):
     def list_raw_files(
         self, vessel_id: str, survey_id: str, sonar_id: str
     ) -> list[RawFile]: ...
-    def list_channels(self, sonar_id: str) -> list[str]: ...
 
 
 class S3Provider:
@@ -174,12 +173,6 @@ class S3Provider:
                 )
         files.sort(key=lambda f: f.name)  # == chronological for D…-T… names
         return files
-
-    def list_channels(self, sonar_id: str) -> list[str]:
-        # Channel names live inside the raw/converted file config, not in the
-        # S3 listing. Returning [] means "all channels" for aa-combine. See the
-        # connecting-ncei guide for how to surface these later.
-        return []
 
 
 class CacheProvider:
@@ -266,9 +259,6 @@ class CacheProvider:
             )
         return files
 
-    def list_channels(self, sonar_id: str) -> list[str]:
-        return []
-
 
 @lru_cache(maxsize=1)
 def get_provider() -> NceiProvider:
@@ -320,8 +310,3 @@ def files(
     sonar: str = Query(..., min_length=1),
 ) -> list[RawFile]:
     return _run(lambda: get_provider().list_raw_files(vessel, survey, sonar))
-
-
-@router.get("/channels", response_model=list[str])
-def channels(sonar: str = Query(..., min_length=1)) -> list[str]:
-    return _run(lambda: get_provider().list_channels(sonar))

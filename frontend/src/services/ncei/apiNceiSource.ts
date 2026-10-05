@@ -46,6 +46,4 @@ export const apiNceiSource: NceiCatalogSource = {
     getJSON<RawFile[]>(
       `/api/ncei/files?${query({ vessel: vesselId, survey: surveyId, sonar: sonarId })}`,
     ),
-  listChannels: (sonarId) =>
-    getJSON<string[]>(`/api/ncei/channels?${query({ sonar: sonarId })}`),
 };

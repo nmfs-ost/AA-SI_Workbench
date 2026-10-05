@@ -1,15 +1,17 @@
-# Connecting the NCEI panel to real NCEI data
+# Connecting the NCEI catalogue to real NCEI data
 
-The NCEI panel talks to a single interface, `NceiCatalogSource`
-(`frontend/src/components/panels/ncei/nceiService.ts`). Out of the box it's
-backed by mock data; this guide switches it to your real archive via the
-backend API in `backend/src/aa_si_workbench/api/`.
+Prepare EchoData's Source and Time range steps list NCEI's vessels, surveys,
+echosounders and raw files through a single interface, `NceiCatalogSource`
+(`frontend/src/services/ncei/nceiService.ts`). Built for the API (what
+`aa-workbench build` and `serve` do), it reads the backend's `/api/ncei/*`;
+otherwise it uses built-in sample data. (The separate NCEI panel that used to
+browse the same catalogue was removed: Prepare EchoData replaced it.)
 
 ```
-NCEI panel ─▶ NceiCatalogSource ─┬─ mockNceiSource   (default: sample data)
-                                 └─ apiNceiSource ──▶ /api/ncei/* ──▶ FastAPI
-                                                                       ├─ S3Provider     (anonymous noaa-wcsd-pds)
-                                                                       └─ CacheProvider  (BigQuery ncei_cache)
+Prepare EchoData ─▶ NceiCatalogSource ─┬─ mockNceiSource   (sample data)
+                                       └─ apiNceiSource ──▶ /api/ncei/* ──▶ FastAPI
+                                                                             ├─ S3Provider     (anonymous noaa-wcsd-pds)
+                                                                             └─ CacheProvider  (BigQuery ncei_cache)
 ```
 
 The backend reuses the exact `aalibrary` helpers `aa-find` already uses, so the
@@ -76,7 +78,7 @@ That flips `nceiSource` from the mock to `apiNceiSource`. The adapter calls
 same-origin `/api/...`, which the dev server forwards to the backend (proxy in
 `vite.config.ts`, default target `http://localhost:8000`). No CORS needed.
 
-## Step 4 — Run both and check the panel
+## Step 4 — Run both and check the card
 
 ```bash
 # terminal 1
@@ -85,10 +87,9 @@ cd backend && uvicorn aa_si_workbench.api.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
-Open the app, select a vessel → survey → sonar in the **NCEI** tab. The lists,
-sizes, and the datetime range now come from the live bucket; clicking a file
-still populates Metadata. Errors (e.g. backend down) surface in the panel's
-error banner.
+Open the app, choose a vessel → survey → echosounder in **Prepare EchoData**.
+The lists, sizes and the survey timeline now come from the live archive.
+Errors (e.g. backend down) surface in the card's error banner.
 
 ---
 
@@ -103,23 +104,9 @@ export AASI_NCEI_SOURCE=cache
 uvicorn aa_si_workbench.api.main:app --reload --port 8000
 ```
 
-No frontend change is required. One caveat: the file query in `CacheProvider`
-assumes an `ncei_cache` column named `file_size`. If your schema names it
-differently, adjust the `SELECT` in `backend/src/aa_si_workbench/api/ncei.py`
-(the query is parameterized on ship/survey/sonar, so only the column name needs
-attention).
-
-## What is not wired yet
-
-- **Channels.** `/api/ncei/channels` returns `[]` (so aa-combine treats it as
-  "all channels"). Channel names live in the echosounder config inside each
-  file, not in the S3 listing or the cache, so surfacing them means reading a
-  representative file's metadata (e.g. via echopype) — a later addition.
-- **Download / Combine / Upload actions.** These still stage a preview only.
-  Wiring them means backend endpoints that invoke the rest of the pipeline
-  (`aa-fetch` for downloads; `aa-fetch → aa-raw → aa-combine` then a GCS upload
-  for the derived `.nc`). Those steps need the GCP metadata DB and the
-  derived-assets bucket, unlike the anonymous browse above.
+No frontend change is required. `aa-workbench serve --source cache` does the
+same. The cache is also the list `aa-fetch` downloads by, so planning from it
+means the card can never promise a file the fetch cannot find.
 
 ## Deploying on the Cloud Workstation
 
@@ -131,11 +118,11 @@ backend's absolute URL and add that origin to `AASI_CORS_ORIGINS`.
 
 ## Troubleshooting
 
-- **Panel says it can't reach the API** — backend not running, or the proxy
-  target is wrong. Check terminal 1 and `VITE_AASI_API_PROXY`.
+- **The card says it can't reach the API** — backend not running, or the
+  proxy target is wrong. Check terminal 1 and `VITE_AASI_API_PROXY`.
 - **`API 502: NCEI backend error: No module named 'aalibrary'`** — the backend
   env doesn't have `aalibrary`; install it or use the aa-find venv.
 - **Cache mode 502 on BigQuery auth** — run `gcloud auth application-default
   login` and confirm `AALIBRARY_GCP_PROJECT_ID`.
-- **Cache mode errors on `file_size`** — adjust the column name in the
-  `CacheProvider` query as noted above.
+- **Cache mode lists nothing for a survey** — the cache does not have it
+  (yet); serve without `--source cache` to browse the public S3 archive.

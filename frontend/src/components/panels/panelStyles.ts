@@ -1,25 +1,23 @@
 import type { SxProps, Theme } from '@mui/material';
 
 /**
- * One density scale for the three browsers — NCEI, Files, Derived.
+ * One density scale for the left dock's panels: Prepare EchoData, Files,
+ * Derived.
  *
- * They do the same job on different storage (a public S3 archive, the
+ * They do related jobs on different storage (the NCEI archive, the
  * workstation's disk, a GCS bucket of derived products) and sit in the same
- * dock, one icon apart, so reading as three different applications was the
- * problem. Files and Derived had already converged by hand; NCEI hadn't, in two
- * specific ways worth recording because both are easy to reintroduce:
+ * dock, one icon apart, so reading as different applications is the problem
+ * this solves. Two ways it is easy to reintroduce:
  *
- *  1. Its search controls are MUI `TextField`s, and a `TextField` with no
- *     explicit `fontSize` inherits `body1` — about 14.9px against the 12px the
- *     trees use. That is the "the text looks too big" everyone sees first, and
- *     it comes from *not* styling something rather than from styling it wrong.
- *  2. Its file rows were two lines (name above size · timestamp) where a tree
- *     row is one, so an NCEI row stood roughly 38px against 24px and half as
- *     many files fitted on screen.
+ *  1. A MUI `TextField` with no explicit `fontSize` inherits `body1` — about
+ *     14.9px against the 12px the trees use. That is the "the text looks too
+ *     big" everyone sees first, and it comes from *not* styling something
+ *     rather than from styling it wrong.
+ *  2. Two-line rows (name above size · timestamp) where a tree row is one: a
+ *     row stands roughly 38px against 24px and half as many fit on screen.
  *
- * The scale below is the tree's, nudged up: rows went 22 -> 24 to give NCEI's
- * checkbox somewhere to sit without crowding the filename, which costs Files
- * and Derived two pixels a row and buys all three the same rhythm.
+ * The scale below is the tree's, nudged up: rows are 24px, which leaves a
+ * checkbox somewhere to sit without crowding the filename.
  *
  * These are numbers, not components. A panel still writes its own `sx`; it just
  * spends these values doing it, so "make the lists denser" is one edit here

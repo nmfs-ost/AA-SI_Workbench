@@ -1,8 +1,8 @@
 import { Autocomplete, Box, CircularProgress, TextField, Typography, useTheme } from '@mui/material';
 
-import type { SonarModel, Survey, Vessel } from '../ncei/nceiTypes';
-import { fuzzyFilterOptions } from '../ncei/fuzzy';
-import { NCEI_BUCKET } from '../ncei/nceiService';
+import type { SonarModel, Survey, Vessel } from '../../../services/ncei/nceiTypes';
+import { fuzzyFilterOptions } from '../../../services/ncei/fuzzy';
+import { NCEI_BUCKET } from '../../../services/ncei/nceiService';
 import { compactFieldSx, compactPopupSx } from '../panelStyles';
 import type { PrepareState } from '../../../state/prepare';
 import { selectSonar, selectSurvey, selectVessel } from '../../../state/prepare';
@@ -11,8 +11,8 @@ import { extentOf, formatUtc } from './plan';
 /**
  * Step 1: where the data comes from.
  *
- * The same drill-down as the NCEI panel (vessel → survey → echosounder), with
- * the same fuzzy search, because NCEI holds far too many surveys to scroll.
+ * The drill-down aa-find does (vessel → survey → echosounder), with fuzzy
+ * search, because NCEI holds far too many surveys to scroll.
  * An echosounder that is the survey's only one is chosen for you.
  */
 export function SourceStep({ s }: { s: PrepareState }) {

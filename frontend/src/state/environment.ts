@@ -16,7 +16,7 @@ import {
  * unmounts the moment the user closes the window. The status bar subscribes to
  * the same store, which is how a background update stays visible.
  *
- * Same module-store pattern as activeAsset / calibration / pipelines.
+ * Same module-store pattern as activeSubject / calibration / pipelines.
  */
 
 export interface EnvironmentState {

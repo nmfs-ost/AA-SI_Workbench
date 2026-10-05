@@ -66,7 +66,6 @@ const ALL_PANELS = [
   'pipelines',
   'recipes',
   'prepare',
-  'ncei',
   'files',
   'derived',
   'omao',
@@ -79,7 +78,6 @@ const ALL_PANELS = [
   'log',
   'progress',
   'console',
-  'map',
 ];
 
 describe('both layouts', () => {
@@ -129,11 +127,11 @@ describe('both layouts', () => {
     for (const build of [buildHorizontalLayout, buildVerticalLayout]) {
       const f = fakeApi();
       build(f.api);
-      for (const id of ['ncei', 'files', 'derived', 'omao', 'resources']) {
+      for (const id of ['files', 'derived', 'omao', 'resources']) {
         expect(f.find(id)).toMatchObject({ reference: 'prepare', direction: 'within' });
       }
       // Added first in its group, so it is the tab a fresh layout fronts.
-      expect(f.ids().indexOf('prepare')).toBeLessThan(f.ids().indexOf('ncei'));
+      expect(f.ids().indexOf('prepare')).toBeLessThan(f.ids().indexOf('files'));
     }
   });
 });

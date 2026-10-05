@@ -79,7 +79,7 @@ const INPUT_PARAM: ParamDef = {
   type: 'file',
   role: 'input',
   default: '',
-  help: 'Injected from the file selected in the NCEI panel.',
+  help: 'Injected from the selected product (Prepare EchoData or Derived).',
   primary: true,
 };
 
@@ -891,7 +891,7 @@ export function findTool(tool: string): ToolTemplate | undefined {
 
 /**
  * Build a StageDef from a template. The first stage of a pipeline gets the
- * injectable input parameter, so a new pipeline picks up the NCEI selection
+ * injectable input parameter, so a new pipeline picks up the selected product
  * exactly like the built-in ones.
  *
  * A stage that already declares a `target` role is left alone: it names its own

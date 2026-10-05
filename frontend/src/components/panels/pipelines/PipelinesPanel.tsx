@@ -6,7 +6,7 @@ import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 
 import { useLayout } from '../../../context/LayoutContext';
-import { useActiveSubject } from '../../../state/activeSubject';
+import { usePipelineInput } from '../../../state/pipelineInput';
 import {
   clearSelection,
   createPipeline,
@@ -24,8 +24,8 @@ import { defaultValues } from './pipelineTypes';
 /**
  * Pipelines panel — the saved console-tool workflows, as cards.
  *
- * Tick one or more cards and the file selected in the NCEI panel is injected as
- * their input automatically; the run controls directly beneath the header show
+ * Tick one or more cards and the selected product (from Prepare EchoData or
+ * Derived) is injected as their input automatically; the run controls directly beneath the header show
  * exactly what would run. Clicking a card focuses it, opening its settings in
  * the Configuration panel. A dashed card at the end (and the + in the header)
  * creates a new pipeline.
@@ -34,21 +34,10 @@ export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const { openPanel } = useLayout();
   const theme = useTheme();
   const state = usePipelines();
-  const subject = useActiveSubject();
-  const asset = subject?.asset ?? null;
+  const input = usePipelineInput();
   const [createOpen, setCreateOpen] = useState(false);
-
-  /* An NCEI file is injected by name (the first tools look it up in NCEI); a
-     product in the bucket — one Prepare EchoData just made, or one picked in
-     Derived — by its gs:// URI, which every aa-* tool reads directly. */
-  const product =
-    !asset && subject && /^gs:\/\/.+\.(nc|zarr)\/?$/i.test(subject.uri) ? subject : null;
-  const injectedInput = asset?.fileName ?? product?.uri ?? null;
-  const injectedSource = asset
-    ? `${asset.survey} · ${asset.sonar}`
-    : product
-      ? product.origin
-      : null;
+  const injectedInput = input?.value ?? null;
+  const injectedSource = input?.source ?? null;
 
   const selectedPipelines = state.pipelines.filter((p) => state.selected.has(p.id));
 

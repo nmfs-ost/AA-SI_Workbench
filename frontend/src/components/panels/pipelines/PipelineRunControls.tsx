@@ -106,7 +106,7 @@ export function PipelineRunControls({
   const disabledReason = !count
     ? 'Select at least one pipeline card'
     : !injectedInput
-      ? 'Select a file in the NCEI panel to supply the input'
+      ? 'Select a product (Prepare EchoData or Derived), or type the input in Configuration'
       : handWritten
         ? 'Some stages have hand-written commands — those are skipped; run them from the Terminal'
         : '';
@@ -156,8 +156,8 @@ export function PipelineRunControls({
           </Typography>
         ) : (
           <Typography sx={{ fontSize: 11.5, color: theme.aa.color.text.muted }}>
-            No input file — select one in NCEI, or a product in Prepare EchoData or Derived, and
-            it is injected automatically.
+            No input — select a product in Prepare EchoData or Derived and it is injected
+            automatically, or type one in Configuration.
           </Typography>
         )}
       </Box>

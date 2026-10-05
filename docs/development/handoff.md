@@ -4,6 +4,10 @@ Dense state summary for resuming work. **The source is ground truth** — re-rea
 actual files before acting; this repo has drifted from mid-session assumptions before
 (panels removed or moved between turns). Verify, don't assume.
 
+> **2026-10-05:** the NCEI panel (and its Steps strip, sequence helpers and
+> "NCEI actions") and the Map panel were removed; Prepare EchoData replaced
+> them. Sections below that describe them are history. See `HANDOFF.md`.
+
 ## Read this first
 This document is a map, not a substitute for the code. Read it top-to-bottom once at
 the start of a session, then use it as an index. Three habits matter more than

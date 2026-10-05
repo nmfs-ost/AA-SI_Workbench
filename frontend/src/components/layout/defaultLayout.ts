@@ -64,12 +64,6 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     initialWidth: 400,
   });
   api.addPanel({
-    id: 'ncei',
-    component: 'ncei',
-    title: 'NCEI',
-    position: { referencePanel: 'prepare', direction: 'within' },
-  });
-  api.addPanel({
     id: 'files',
     component: 'files',
     title: 'Files',
@@ -150,12 +144,6 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     title: 'Console',
     position: { referencePanel: 'terminal', direction: 'within' },
   });
-  api.addPanel({
-    id: 'map',
-    component: 'map',
-    title: 'Map',
-    position: { referencePanel: 'terminal', direction: 'within' },
-  });
 
   // Surface the primary tab in each dock.
   api.getPanel('terminal')?.api.setActive();
@@ -229,7 +217,6 @@ export function buildVerticalLayout(api: DockviewApi): void {
     ['log', 'Log'],
     ['progress', 'Progress'],
     ['console', 'Console'],
-    ['map', 'Map'],
   ] as const) {
     api.addPanel({
       id,
@@ -249,7 +236,6 @@ export function buildVerticalLayout(api: DockviewApi): void {
     initialWidth: 400,
   });
   for (const [id, title] of [
-    ['ncei', 'NCEI'],
     ['files', 'Files'],
     ['derived', 'Derived'],
     ['omao', 'OMAO'],

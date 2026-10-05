@@ -14,7 +14,7 @@ import { controlKindFor } from './recipeTypes';
  * Unlike `aa-fetch`/`aa-get`, `aa-recipe` is a genuine batch CLI (click-based,
  * meaningful exit codes, errors to stderr, no prompts — verified by running
  * it). Handing it to the terminal is a v1 convenience while the Workbench has
- * no job runner, **not** the hard interactivity constraint the NCEI actions
+ * no job runner, **not** the hard interactivity constraint aa-fetch and aa-get
  * carry. Do not extend the "never headless" rule to this tool; it is the first
  * candidate for the environment.py job-runner pattern.
  */

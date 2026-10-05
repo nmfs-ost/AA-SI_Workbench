@@ -29,7 +29,7 @@ import EditOutlined from '@mui/icons-material/EditOutlined';
 import { PanelPlaceholder } from '../PanelPlaceholder';
 import { RecipeConfiguration } from '../recipes/RecipeConfiguration';
 import { useConfigurationFocus } from '../../../state/configurationFocus';
-import { useActiveAsset } from '../../../state/activeAsset';
+import { usePipelineInput } from '../../../state/pipelineInput';
 import {
   currentConfig,
   deleteConfig,
@@ -163,7 +163,7 @@ export const ConfigurationPanel: FunctionComponent<IDockviewPanelProps> = () => 
 const PipelineConfiguration: FunctionComponent = () => {
   const theme = useTheme();
   const state = usePipelines();
-  const asset = useActiveAsset();
+  const input = usePipelineInput();
 
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -185,7 +185,7 @@ const PipelineConfiguration: FunctionComponent = () => {
   const values = state.drafts[pipelineId] ?? defaultValues(pipeline);
   const config = currentConfig(state, pipelineId);
   const dirty = isDirty(state, pipelineId);
-  const injectedInput = asset?.fileName ?? null;
+  const injectedInput = input?.value ?? null;
   const configs = state.configs[pipelineId] ?? [];
   const isBuiltin = config?.builtin === true;
 

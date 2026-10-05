@@ -7,6 +7,20 @@ handoff (the emblem, the terminal toolbar, the account) is kept as
 
 ---
 
+## Since then: the old NCEI panel and the Map panel are gone
+
+Prepare EchoData replaced the old NCEI panel (browse a survey, tick files,
+Download/Combine with a Steps strip), so it was removed with everything only it
+used: the sequence/combine helpers and their tests, `toolsApi.ts`, the
+`/api/ncei/channels` route, the single-raw-file selection (`setActiveAsset`,
+`activeAsset.ts`, `AssetView`), the Map panel and `mapTrack` (it only ever
+showed the sample data's mock positions), and the three stock pipelines that
+began with `aa-fetch` on an NCEI file name. The NCEI catalogue itself stays,
+moved to `frontend/src/services/ncei/` (Prepare's Source step uses it; the
+backend `/api/ncei` and `--source s3|cache` are unchanged). Pipelines now take
+the selected product (`state/pipelineInput.ts`, gs:// .nc/.zarr) or a typed
+path. `LAYOUT_VERSION` is 17, so saved layouts are rebuilt.
+
 ## Since then: working space (memory fix follow-up)
 
 aalibrary's memory fix made aa-combine, aa-sv and aa-graph stream, so a run's
@@ -35,7 +49,8 @@ is good in the left panel. Put the console tools in the requirements.
 
 **A new left-dock panel, *Prepare EchoData*** (`components/panels/prepare/`),
 first in the strip and fronted on a fresh layout (`LAYOUT_VERSION` 16). The
-NCEI, Files, Derived, OMAO and Project panels are unchanged beside it.
+Files, Derived, OMAO and Project panels are unchanged beside it (the NCEI
+panel has since been removed; see above).
 
 - A **route** across the top — NCEI → Time range (L0) → EchoData (L1) → Sv (L2A)
   → Bucket (GCS) — that lights up as the card gains answers and, during a run, as
@@ -110,9 +125,9 @@ New, from this session:
    make a repeated range cheap.
 4. **Other sources.** The card is NCEI-only; OMAO and bucket-resident raw data
    would be the same card with a different Source step.
-5. **The Pipelines panel still starts from NCEI files.** It now accepts a
-   product as input, but its stock pipelines begin at `aa-fetch`; one that
-   begins at L1 EchoData is the natural companion.
+5. **Pipelines start from products.** The stock pipelines that began at
+   `aa-fetch` are gone with the NCEI panel; the rest take the selected
+   EchoData/Sv product (or a typed path).
 
 The previous handoff's list, unchanged:
 

@@ -162,10 +162,11 @@ src/
 │   └── LayoutContext.tsx    # distributes the controller to chrome + surface
 ├── config/
 │   └── repo.ts              # GitHub org/repo — the only place they appear
-├── services/               # typed API clients: environmentApi, filesApi, terminalApi
+├── services/               # typed API clients: environmentApi, filesApi, terminalApi,
+│                            # baselineApi; ncei/ (the NCEI catalogue Prepare uses)
 ├── state/                   # module stores (useSyncExternalStore), not context:
-│                            # activeAsset, mapTrack, pipelines, calibration,
-│                            # dialogs, environment
+│                            # activeSubject, prepare, pipelines, pipelineInput,
+│                            # calibration, dialogs, environment
 └── components/
     ├── layout/              # AppShell, MenuBar, AppToolbar, DockLayout, StatusBar,
     │                        # defaultLayout, menuConfig, toolbarConfig

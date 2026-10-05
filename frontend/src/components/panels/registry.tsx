@@ -5,11 +5,9 @@ import {
   FolderOpenOutlined,
   DataObjectOutlined,
   PlaylistPlayOutlined,
-  TravelExploreOutlined,
   LayersOutlined,
   SailingOutlined,
   HubOutlined,
-  MapOutlined,
   DescriptionOutlined,
   AccountTreeOutlined,
   SettingsOutlined,
@@ -25,14 +23,12 @@ import type { PanelDefinition, PanelId } from '../../types';
 
 import { FilesPanel } from './FilesPanel';
 import { EditorPanel } from './editor/EditorPanel';
-import { MapPanel } from './MapPanel';
 import { PipelinesPanel } from './pipelines/PipelinesPanel';
 import { RecipesPanel } from './recipes/RecipesPanel';
 import { ConfigurationPanel } from './pipelines/ConfigurationPanel';
 import { CalibrationPanel } from './calibration/CalibrationPanel';
 import { MetadataPanel } from './MetadataPanel';
 import { ProcessingQueuePanel } from './ProcessingQueuePanel';
-import { NceiPanel } from './ncei/NceiPanel';
 import { PreparePanel } from './prepare/PreparePanel';
 import { DerivedPanel } from './DerivedPanel';
 import { OmaoPanel } from './OmaoPanel';
@@ -88,14 +84,6 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: 'The baseline: an NCEI time range, made into one EchoData asset in the bucket.',
     region: 'left',
     component: PreparePanel,
-  },
-  {
-    id: 'ncei',
-    title: 'NCEI',
-    icon: TravelExploreOutlined,
-    description: 'Search NCEI; download raws or combine into a derived .nc.',
-    region: 'left',
-    component: NceiPanel,
   },
   {
     id: 'files',
@@ -201,14 +189,6 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: 'Console output from tools and scripts.',
     region: 'bottom',
     component: ConsolePanel,
-  },
-  {
-    id: 'map',
-    title: 'Map',
-    icon: MapOutlined,
-    description: 'GPS track for the selected file on a map.',
-    region: 'bottom',
-    component: MapPanel,
   },
 ] as const;
 

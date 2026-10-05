@@ -99,7 +99,7 @@ export function ParamControl({ param, value, onChange, injectedInput }: Props) {
         fullWidth
         label={param.label}
         value={shown}
-        placeholder="Select a file in the NCEI panel"
+        placeholder="Select a product in Prepare EchoData or Derived, or type a path"
         onChange={(e) => onChange(e.target.value)}
         InputProps={{
           readOnly: injected,
