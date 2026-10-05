@@ -2,61 +2,132 @@
 
 **Active Acoustics Strategic Initiative (AA-SI) — Workbench**
 
-An open-source scientific workbench for working with active-acoustics
-(water-column sonar) data. The Workbench provides a browser-based, IDE-style
-workspace for browsing datasets, assembling and running processing workflows,
-inspecting metadata, and reviewing results — backed by a Python processing
-engine built on the open-source active-acoustics stack.
-
-> **Status:** early development. The application shell (windowing/docking
-> framework) and the repository scaffold are in place; scientific features are
-> being added incrementally.
+The Workbench is the AA-SI toolset in a browser window. You use it to turn a
+stretch of an NCEI survey into EchoData, Sv and echograms in your project's
+bucket, run the AA-SI console tools (`aa-sv`, `aa-clean`, `aa-mvbs`, `aa-nasc`,
+`aa-graph`, …) on those products, and see where each product came from. It
+runs on your Google Cloud Workstation, next to your data, and you open it in
+your browser.
 
 ---
 
-## Repository layout
+## Start it
 
-This is a monorepo. Each top-level component is developed and versioned together
-but can be built and deployed independently.
+This assumes your workstation was set up with the AA-SI setup script, which
+installs the AA-SI tools and the Workbench into the `venv313` environment. You
+only do steps 1–3 each time you want to use it.
 
-```
-AA-SI_Workbench/
-├── frontend/     Browser UI — React + TypeScript + Vite + MUI + Dockview
-├── backend/      Python package — processing engine + API service
-├── docs/         Project, architecture, user, and developer documentation
-├── notebooks/    Exploratory / example Jupyter notebooks
-├── data/         Local sample & reference data (contents are NOT committed)
-├── scripts/      Repository automation and developer helper scripts
-└── .github/      Issue/PR templates, CODEOWNERS, and CI workflows
-```
-
-See the `README.md` inside each directory for component-specific detail.
-
-## Quick start
-
-Prerequisites: **Node.js ≥ 18** (frontend) and **Python ≥ 3.11** (backend).
+**1. Activate the AA-SI environment** in a terminal on the workstation:
 
 ```bash
-# 1. Install & run the Workbench UI — from the repository root
-npm install            # installs the frontend workspace (via postinstall)
-npm run dev            # serves the Workbench UI at http://localhost:5173
-
-# 2. Backend (processing engine / API) — in a separate terminal
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest                 # run the test suite
+source ~/venv313/bin/activate
 ```
 
-A top-level `Makefile` wraps the most common tasks (`make setup`, `make dev`,
-`make lint`, `make test`).
+**2. Start the Workbench:**
 
-## Documentation
+```bash
+aa-workbench
+```
 
-Project documentation lives in [`docs/`](docs/). Start with
-[`docs/architecture/overview.md`](docs/architecture/overview.md) for the system
-design and [`docs/development/setup.md`](docs/development/setup.md) for a full
-development environment walk-through.
+The first start takes about 20 seconds while it builds the interface; after
+that it starts at once. Leave this terminal open: the Workbench runs as long as
+it does. (To stop it, press `Ctrl+C` there.)
+
+**3. Open it in your browser.** In the Google Cloud console, go to
+**Cloud Workstations → Workstations**. Next to your workstation, click the
+arrow beside **Launch** and choose **Connect to web app on port**, then enter
+**8000**.
+
+That opens an address like
+`https://8000-<your-workstation>.<cluster>.cloudworkstations.dev`. Bookmark it:
+next time, after steps 1 and 2, the bookmark is all you need.
+
+## Your first session
+
+1. **Choose your GCP project and bucket.** Click the cloud button at the right
+   of the status bar (bottom of the window). The Workbench lists the projects
+   and buckets your Google account can use; most people choose
+   **ggn-nmfs-aa-prod-1**. It remembers your choice.
+2. **Prepare EchoData** (the panel the Workbench opens on): choose a vessel,
+   survey and echosounder, then a time range, and press **Prepare EchoData**.
+   The raw files are fetched from NCEI, converted, combined, calibrated, and
+   saved to your bucket as one EchoData product with its Sv and an echogram.
+3. **Run a pipeline on a product.** In the **Products** panel (left), click a
+   product. It becomes the input of the **Pipelines** card in the middle. Open
+   a pipeline (MVBS, NASC, noise removal, masks, …), check what it will do, and
+   press **Run**. The results go into the bucket beside the input, each with its
+   product hash, and can be fed to the next pipeline.
+
+The **Terminal** (bottom) is a shell on the workstation in the same environment,
+for anything you would rather type.
+
+## What's in the window
+
+| Panel | What it's for |
+|---|---|
+| **Prepare EchoData** | An NCEI survey and time range → EchoData, Sv and an echogram in the bucket. |
+| **Products** | Your project's bucket: every product with its level (L1 EchoData, L2A Sv, L3 MVBS/NASC, …) and its product hash. Select one to run a pipeline on it. |
+| **Pipelines** | The AA-SI console tools chained and run on the selected product. |
+| **Configuration** | The settings of the open pipeline's tools, with each tool's own defaults and help. |
+| **Metadata** | How the selected product was made: its tools, settings, inputs and hashes. |
+| **Processing Queue** | Every tool the Workbench is running or has run, with its log. |
+| **Files** | The workstation's own files. |
+| **Terminal** | A shell in the AA-SI environment. |
+| **Project** | The AA-SI repositories, documentation, and who you are signed in as. |
+
+## Where your products go
+
+Products are written to the bucket you chose, under
+`derived_products/<you>/<vessel>/<survey>/<product>/`. While a run works, its
+temporary files are kept in `~/aa-workbench-runs` on the workstation and removed
+when it finishes (a Prepare run that fails keeps what it had, so you can see
+why). Nothing is written to anyone else's folder.
+
+## Keeping up to date
+
+**Tools → Update Python Environment (aa-setup)…** updates the AA-SI tools in
+your environment. To update the Workbench itself, pull the latest version of
+this repository and start it again; it rebuilds its interface on its own.
+
+## If something isn't right
+
+- **The browser says the page can't be reached.** The Workbench isn't running,
+  or you opened a different port. Check the terminal from step 2 is still
+  running, and that you connected to port 8000.
+- **Step 2 says the address or port is already in use.** The Workbench is
+  probably already running in another terminal; use that one. Or start it on
+  another port and connect to that port in step 3: `aa-workbench --port 8001`.
+- **"No Google credentials" or the Products panel can't reach the bucket.**
+  Sign in for the tools once, then reload the page:
+  `gcloud auth application-default login`
+- **Faster survey and file lists.** `aa-workbench serve --source cache` reads
+  the NCEI file list from the project's BigQuery cache, the same list the
+  download uses. It needs the Google sign-in above.
+- **Something else.** **Help → Report a Problem…** opens a prefilled issue
+  form for this repository.
+
+More detail: [`docs/guides/getting-started.md`](docs/guides/getting-started.md),
+[`docs/guides/prepare-echodata.md`](docs/guides/prepare-echodata.md),
+[`docs/guides/pipelines.md`](docs/guides/pipelines.md).
+
+---
+
+## For developers
+
+The repository holds the browser interface (`frontend/`: React, TypeScript,
+Vite, MUI, Dockview) and the Python service that serves it and runs the tools
+(`backend/`: FastAPI). Documentation is in [`docs/`](docs/).
+
+```bash
+cd backend && pip install -e ".[dev]"   # in your AA-SI environment
+aa-workbench dev                        # interface and service with live reload
+pytest                                  # backend tests (from backend/)
+cd ../frontend && npm test              # interface tests
+```
+
+See [`docs/development/setup.md`](docs/development/setup.md) for the full
+walk-through and [`docs/architecture/overview.md`](docs/architecture/overview.md)
+for how the pieces fit together.
 
 ## Contributing
 
@@ -64,12 +135,6 @@ Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) before opening an issue or pull
 request. Security issues should follow [`SECURITY.md`](SECURITY.md) and must not
 be reported through public issues.
-
-From inside the running app, **Help → Report a Problem… / Suggest an
-Improvement…** opens a prefilled issue form for this repository, and **Tools →
-Update Python Environment (aa-setup)…** refreshes the AA-SI toolset in your
-virtual environment — see
-[`docs/guides/updating-the-environment.md`](docs/guides/updating-the-environment.md).
 
 ## Citation
 
@@ -99,6 +164,4 @@ statement.
 
 ---
 
-<!-- TODO: fill in the owning NOAA Fisheries science center / program, the public
-     contact email, and the GitHub organization once the repository is homed. -->
 _Maintained by NOAA Fisheries — Active Acoustics Strategic Initiative._
