@@ -4,6 +4,7 @@ import type { DialogId } from '../../types';
 import { AboutDialog } from './AboutDialog';
 import { EnvironmentDialog } from './EnvironmentDialog';
 import { FeedbackDialog } from './FeedbackDialog';
+import { GcpDialog } from './GcpDialog';
 import { NewFileDialog } from './NewFileDialog';
 import { RenameDialog } from './RenameDialog';
 
@@ -30,6 +31,7 @@ export const dialogDefinitions: readonly DialogDefinition[] = [
   { id: 'about', component: AboutDialog },
   { id: 'environment', component: EnvironmentDialog },
   { id: 'feedback', component: FeedbackDialog },
+  { id: 'gcp', component: GcpDialog },
   { id: 'new-file', component: NewFileDialog },
   { id: 'rename', component: RenameDialog },
 ] as const;

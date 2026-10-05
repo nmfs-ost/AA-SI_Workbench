@@ -6,6 +6,7 @@ Commands:
   aa-workbench dev        Run the frontend + backend with hot reload (developers).
   aa-workbench build      Build the frontend for production.
   aa-workbench check      Is everything the Workbench runs installed? (pre-flight)
+  aa-workbench project    The GCP projects and buckets you can use; choose one.
 
 The `serve` path is the deployment story: a single process on a single port,
 no Node, no second terminal, no proxy, no CORS. The compiled UI is served by
@@ -103,7 +104,17 @@ def cmd_check(_args: argparse.Namespace) -> None:
         print("\n  aalibrary        not installed")
     who = config.user or "(unknown: products go under unknown-user/)"
     print(f"  signed in as     {who}")
-    print(f"  products go to   gs://{config.bucket}/{config.prefixTemplate}")
+    if config.bucket:
+        how = {
+            "chosen": "chosen in the Workbench",
+            "discovered": "the only bucket you can write to",
+            "environment": "from the environment",
+        }.get(config.bucketSource, config.bucketSource)
+        print(f"  GCP project      {config.project or '(unknown)'} ({how})")
+        print(f"  products go to   gs://{config.bucket}/{config.prefixTemplate}")
+    else:
+        print("  products go to   (no project and bucket chosen: run")
+        print("                   `aa-workbench project`, or choose in the Workbench)")
     print(f"  working folders  {config.runRoot}")
     _print_working_space(config.runRoot)
     dist = _paths.frontend_dist_dir()
@@ -148,6 +159,56 @@ def _print_working_space(root: str) -> None:
     }[streaming]
     print(f"  memory           {mode}")
     print(f"  this machine     {workspace.human(workspace.memory_total())} of memory")
+
+
+def cmd_project(args: argparse.Namespace) -> None:
+    """List the projects and buckets you can use; choose or forget one."""
+    from .api import gcp
+
+    if args.forget:
+        context = gcp.forget()
+        print(f"Forgotten. In force now: {_context_line(context)}")
+        return
+    if args.project or args.bucket:
+        try:
+            bucket = args.bucket or f"{args.project}-data"
+            context = gcp.choose(args.project or "", bucket)
+        except Exception as exc:  # noqa: BLE001 - HTTPException carries .detail
+            _fail(str(getattr(exc, "detail", exc)))
+        print(f"Chosen: {_context_line(context)}")
+        return
+
+    print("\n  Looking at what you can use (Google credentials of this machine)...\n")
+    found = gcp.discover(refresh=True)
+    if found.account:
+        print(f"  credentials      {found.account}")
+    for note in found.notes:
+        print(f"  note             {note}")
+    print()
+    for project in found.projects:
+        if not project.buckets and project.listedBy == "search":
+            continue
+        cache = {True: "NCEI cache", False: "", None: ""}[project.nceiCache]
+        print(f"  {project.id}  {project.name}  {cache}".rstrip())
+        for bucket in project.buckets:
+            access = "read+write" if bucket.write else "read" if bucket.read else "none"
+            print(f"      gs://{bucket.name:<40} {access}")
+        if not project.buckets:
+            print(f"      ({project.detail or 'no bucket you can use'})")
+    hidden = sum(1 for p in found.projects if not p.buckets and p.listedBy == "search")
+    if hidden:
+        print(f"\n  ({hidden} more projects you can see have no bucket you can use.)")
+    print(f"\n  In force: {_context_line(found.context)}")
+    if found.autoSelected:
+        print("  (chosen for you: the only bucket you can write to)")
+    print("  Choose:   aa-workbench project PROJECT_ID [--bucket NAME]\n")
+
+
+def _context_line(context) -> str:  # noqa: ANN001 - a GcpContext
+    if not context.bucket:
+        return "nothing chosen"
+    project = context.project or "(unknown project)"
+    return f"gs://{context.bucket} in {project} ({context.source})"
 
 
 def cmd_build(_args: argparse.Namespace) -> None:
@@ -328,6 +389,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pre-flight: are the console tools installed? Where do products go?",
     )
     p_check.set_defaults(func=cmd_check)
+
+    p_project = sub.add_parser(
+        "project",
+        help="List the GCP projects and buckets you can use; choose one.",
+    )
+    p_project.add_argument(
+        "project", nargs="?", default="", help="Project id to work in."
+    )
+    p_project.add_argument(
+        "--bucket", default="", help="Bucket (default: <project>-data)."
+    )
+    p_project.add_argument(
+        "--forget", action="store_true", help="Forget the choice."
+    )
+    p_project.set_defaults(func=cmd_project)
 
     return parser
 

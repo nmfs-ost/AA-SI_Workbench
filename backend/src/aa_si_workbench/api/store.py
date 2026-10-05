@@ -83,6 +83,7 @@ def _run(args: list[str]) -> tuple[int, str, str]:
             cwd=str(Path.home()),
             env={
                 **os.environ,
+                **_tool_env(),
                 "NO_COLOR": "1",
                 "TERM": "dumb",
                 "PYTHONUNBUFFERED": "1",
@@ -180,3 +181,9 @@ def verify(
 ) -> StoreResult:
     """Judge a store: 0 complete · 3 unfinished and resumable · 4 finished wrong."""
     return _describe("verify", uri, census=census, arrays=arrays, strict=strict)
+
+
+def _tool_env() -> dict[str, str]:
+    from .gcp import tool_env
+
+    return tool_env()

@@ -1,0 +1,4783 @@
+{
+ "aalibrary": "1.2.0",
+ "tools": {
+  "aa-abundance": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF Dataset containing 'Sv' and 'echo_range'.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given (default: <base>_<hash8>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Name of the range DataArray (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "try_calibrate",
+     "flags": [
+      "--try-calibrate"
+     ],
+     "help": "If 'echo_range' missing, attempt to compute Sv to obtain it.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing, different output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Warnings and errors only on stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After calibration: aa-nc | aa-sv | aa-abundance. The output is a 2-D metric (channel x ping_time), not Sv, so it ends the Sv chain.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-abundance",
+    "aa-abundance sv.nc -o sa.nc --no-overwrite"
+   ],
+   "kind": "echometric",
+   "options": {
+    "--no-overwrite": "exit 1 if the output exists and is a different product (an identical one is reused)",
+    "--output_path": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI.",
+    "--quiet": "warnings and errors only on stderr",
+    "--range-label": "variable holding range in metres (default: echo_range)",
+    "--try-calibrate": "if that variable is missing, open the input as EchoData and compute Sv first (echopype defaults; no EK80 modes)",
+    "-o": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI (argument, or one line on stdin), e.g. from aa-sv or aa-clean. It must contain 'Sv' (dB) on a range_sample dimension and the range variable named by --range-label (default echo_range).",
+   "role": "transform",
+   "science": [
+    "range_label",
+    "try_calibrate"
+   ],
+   "scienceText": {
+    "range_label": "Variable used as range (m) for dz and the integral.",
+    "try_calibrate": "Compute Sv from EchoData first when the range variable is missing; changes what is analysed."
+   },
+   "summary": "Area backscattering strength (Sa, dB re 1 m2 m-2) of each ping."
+  },
+  "aa-aggregation": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF Dataset containing 'Sv' and 'echo_range'.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given (default: <base>_<hash8>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Name of the range DataArray (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing, different output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Warnings and errors only on stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After calibration: aa-nc | aa-sv | aa-aggregation. The output is a 2-D metric (channel x ping_time), not Sv, so it ends the Sv chain.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-aggregation",
+    "aa-aggregation sv.nc -o ia.nc --no-overwrite"
+   ],
+   "kind": "echometric",
+   "options": {
+    "--no-overwrite": "exit 1 if the output exists and is a different product (an identical one is reused)",
+    "--output_path": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI.",
+    "--quiet": "warnings and errors only on stderr",
+    "--range-label": "variable holding range in metres (default: echo_range)",
+    "-o": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI (argument, or one line on stdin), e.g. from aa-sv or aa-clean. It must contain 'Sv' (dB) on a range_sample dimension and the range variable named by --range-label (default echo_range).",
+   "role": "transform",
+   "science": [
+    "range_label"
+   ],
+   "scienceText": {
+    "range_label": "Variable used as range (m) for dz and the integral."
+   },
+   "summary": "Index of aggregation (IA, m^-1) of backscatter along range, per ping."
+  },
+  "aa-attenuated": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing Sv (preferred) or a converted file that can be calibrated to Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for the mask NetCDF, used as given (default: <base>_<hash>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Also write Sv cleaned by the attenuated-signal mask as a second product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "400.0m",
+     "dest": "upper_limit_sl",
+     "flags": [
+      "--upper-limit-sl"
+     ],
+     "help": "Upper limit of deep scattering layer line, e.g., '400.0m' (default: 400.0m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "500.0m",
+     "dest": "lower_limit_sl",
+     "flags": [
+      "--lower-limit-sl"
+     ],
+     "help": "Lower limit of deep scattering layer line, e.g., '500.0m' (default: 500.0m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 15,
+     "dest": "num_side_pings",
+     "flags": [
+      "--num-side-pings"
+     ],
+     "help": "Number of side pings for comparison block (default: 15).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": "8.0dB",
+     "dest": "attenuation_signal_threshold",
+     "flags": [
+      "--attenuation-threshold"
+     ],
+     "help": "Attenuation threshold, e.g. --attenuation-threshold=-6dB (default: 8.0dB).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "depth",
+     "dest": "range_var",
+     "flags": [
+      "--range-var"
+     ],
+     "help": "Range/depth variable name (default: depth).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv and aa-depth: ... | aa-sv | aa-depth | aa-attenuated | aa-graph (draws the mask). Only the mask travels down the pipe.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-depth | aa-attenuated --apply",
+    "aa-attenuated sv_depth.nc --upper-limit-sl 50m --lower-limit-sl 100m --attenuation-threshold=-6dB"
+   ],
+   "kind": "mask",
+   "options": {
+    "--apply": "Also write the input's Sv with attenuated pings set to NaN (all other variables copied).",
+    "--output_path": "The mask file, used exactly as given (no extension added). Local path or gs:// URI. Does not move the --apply file.",
+    "-o": "The mask file, used exactly as given (no extension added). Local path or gs:// URI. Does not move the --apply file."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI that has the --range-var variable: depth (add it with aa-depth) or echo_range. An EchoData file without Sv is calibrated first with compute_Sv defaults (recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [
+    "attenuation_signal_threshold",
+    "lower_limit_sl",
+    "num_side_pings",
+    "range_var",
+    "upper_limit_sl"
+   ],
+   "scienceText": {
+    "attenuation_signal_threshold": "Flag a ping when ping median - block median is below this. Negative values need '=': --attenuation-threshold=-6dB.",
+    "lower_limit_sl": "Bottom of the comparison layer, e.g. 500m.",
+    "num_side_pings": "Pings on each side in the comparison block.",
+    "range_var": "Vertical variable: depth or echo_range.",
+    "upper_limit_sl": "Top of the comparison layer, e.g. 400m."
+   },
+   "summary": "Attenuated-ping mask for Sv; --apply also writes cleaned Sv."
+  },
+  "aa-center-of-mass": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF Dataset containing 'Sv' and 'echo_range'.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given (default: <base>_<hash8>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Name of the range DataArray (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "try_calibrate",
+     "flags": [
+      "--try-calibrate"
+     ],
+     "help": "If 'echo_range' missing, attempt to compute Sv to obtain it.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing, different output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Warnings and errors only on stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After calibration: aa-nc | aa-sv | aa-center-of-mass. The output is a 2-D metric (channel x ping_time), not Sv, so it ends the Sv chain.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-center-of-mass",
+    "aa-center-of-mass sv.nc -o cm.nc --no-overwrite"
+   ],
+   "kind": "echometric",
+   "options": {
+    "--no-overwrite": "exit 1 if the output exists and is a different product (an identical one is reused)",
+    "--output_path": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI.",
+    "--quiet": "warnings and errors only on stderr",
+    "--range-label": "variable holding range in metres (default: echo_range)",
+    "--try-calibrate": "if that variable is missing, open the input as EchoData and compute Sv first (echopype defaults; no EK80 modes)",
+    "-o": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI (argument, or one line on stdin), e.g. from aa-sv or aa-clean. It must contain 'Sv' (dB) on a range_sample dimension and the range variable named by --range-label (default echo_range).",
+   "role": "transform",
+   "science": [
+    "range_label",
+    "try_calibrate"
+   ],
+   "scienceText": {
+    "range_label": "Variable used as range (m): the weighted values, dz and the integral.",
+    "try_calibrate": "Compute Sv from EchoData first when the range variable is missing; changes what is analysed."
+   },
+   "summary": "Center of mass (CM, m): the sv-weighted mean range of backscatter."
+  },
+  "aa-clean": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the Sv .nc / .netcdf4 file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. '_clean' is appended to the stem.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 20,
+     "dest": "ping_num",
+     "flags": [
+      "--ping_num"
+     ],
+     "help": "Number of pings to use for background noise estimation.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": 20,
+     "dest": "range_sample_num",
+     "flags": [
+      "--range_sample_num"
+     ],
+     "help": "Number of range samples to use for background noise estimation.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "background_noise_max",
+     "flags": [
+      "--background_noise_max"
+     ],
+     "help": "Optional upper bound for background noise (e.g. \"-125dB\").",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 3.0,
+     "dest": "snr_threshold",
+     "flags": [
+      "--snr_threshold"
+     ],
+     "help": "SNR threshold in dB (default: 3.0). 'dB' suffix added automatically.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv: aa-nc | aa-sv | aa-clean | ... Tools downstream that read the variable Sv (aa-mvbs, aa-mvbs-index, aa-nasc, and aa-graph by default) still see the uncorrected Sv; the cleaned values are only in Sv_corrected (aa-graph --var Sv_corrected draws them).",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-clean",
+    "aa-clean sv.nc --ping_num 40 --range_sample_num 100 \\",
+    "    --background_noise_max=-125dB --snr_threshold 5"
+   ],
+   "kind": "sv",
+   "options": {
+    "--background_noise_max": "cap on the noise estimate, e.g. --background_noise_max=-125dB (write '=' before a negative value); default: no cap",
+    "--output_path": "Explicit output; '_clean' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_clean.nc). Local path or gs:// URI.",
+    "--ping_num": "pings per noise-estimation block (default: 20)",
+    "--range_sample_num": "range samples per block (default: 20)",
+    "--snr_threshold": "minimum signal-to-noise ratio, a plain number in dB (default: 3.0)",
+    "-o": "Explicit output; '_clean' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_clean.nc). Local path or gs:// URI."
+   },
+   "reads": "One flat Sv .nc/.netcdf4 path or gs:// URI, from aa-sv. It must contain Sv, echo_range and sound_absorption (not the EchoData file from aa-nc).",
+   "role": "transform",
+   "science": [
+    "background_noise_max",
+    "ping_num",
+    "range_sample_num",
+    "snr_threshold"
+   ],
+   "scienceText": {
+    "background_noise_max": "Upper limit on the noise estimate; '-125dB' and '-125.0dB' are the same value.",
+    "ping_num": "Pings per noise-estimation block.",
+    "range_sample_num": "Range samples per noise-estimation block.",
+    "snr_threshold": "Minimum SNR in dB; 3 and 3.0 are the same value."
+   },
+   "summary": "Remove background noise from Sv (De Robertis & Higginbottom 2007)."
+  },
+  "aa-coerce-time": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing the time coordinate to fix.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "ping_time",
+     "dest": "time_name",
+     "flags": [
+      "--time-name"
+     ],
+     "help": "Name of the time coordinate to coerce (default: ping_time).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 100,
+     "dest": "win_len",
+     "flags": [
+      "--win-len"
+     ],
+     "help": "Local window length for inferring next ping time (default: 100).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "report",
+     "flags": [
+      "--report"
+     ],
+     "help": "Print whether time reversals exist before/after.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Anywhere after aa-sv, typically before aa-mvbs: ... | aa-sv | aa-coerce-time | aa-mvbs ...",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-coerce-time --report",
+    "aa-coerce-time Sv.nc --time-name ping_time --win-len 120 -o Sv_timefix.nc"
+   ],
+   "kind": "sv",
+   "options": {
+    "--no-overwrite": "exit 1 instead of replacing a different existing output (replacing is the default)",
+    "--output_path": "Explicit output, used exactly as given. Local path or gs:// URI.",
+    "--report": "say on stderr whether reversals existed before/after",
+    "--time-name": "the time coordinate to fix (default ping_time)",
+    "--win-len": "pings before a reversal used for the median interval (default 100)",
+    "-o": "Explicit output, used exactly as given. Local path or gs:// URI."
+   },
+   "reads": "One NetCDF path or gs:// URI with the time coordinate (Sv, MVBS, ...).",
+   "role": "transform",
+   "science": [
+    "time_name",
+    "win_len"
+   ],
+   "scienceText": {
+    "time_name": "Time coordinate to coerce.",
+    "win_len": "Window (pings) for the median ping interval."
+   },
+   "summary": "Make a time coordinate strictly increasing (echopype.qc.coerce_increasing_time)."
+  },
+  "aa-depth": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc or .netcdf4 file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. Used as-is if provided (.nc added only when there is no suffix).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "depth_offset",
+     "flags": [
+      "--depth-offset"
+     ],
+     "help": "Offset (m) along depth for transducer position in water (default: None = surface). Overrides Platform vertical offsets if set.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "tilt",
+     "flags": [
+      "--tilt"
+     ],
+     "help": "Transducer tilt angle in degrees, 0 = vertical (default: None). Overrides Platform/Beam angles if set.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "downward",
+     "flags": [
+      "--downward"
+     ],
+     "help": "Transducers point downward (default: True). Use --no-downward to disable.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "downward",
+     "flags": [
+      "--no-downward"
+     ],
+     "help": "",
+     "kind": "_StoreFalseAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "echodata",
+     "flags": [
+      "--echodata"
+     ],
+     "help": "Path to the converted EchoData file (.nc/.netcdf4/.zarr) the Sv originated from. Required for the --use-* options.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_platform_vertical_offsets",
+     "flags": [
+      "--use-platform-vertical-offsets"
+     ],
+     "help": "Use EchoData Platform vertical offsets to compute transducer depth (EK60/EK80 only). Ignored if --depth-offset is given.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_platform_angles",
+     "flags": [
+      "--use-platform-angles"
+     ],
+     "help": "Use EchoData Platform angles to scale echo_range (EK60/EK80 only). Ignored if --tilt is given. Cannot be combined with --use-beam-angles.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_beam_angles",
+     "flags": [
+      "--use-beam-angles"
+     ],
+     "help": "Use EchoData Beam angles to scale echo_range (EK60/EK80 only). Ignored if --tilt is given. Cannot be combined with --use-platform-angles.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv, before tools that need depth (aa-detect-seafloor): aa-nc | aa-sv | aa-depth | ...",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-depth --depth-offset 5",
+    "aa-depth Sv.nc --echodata D20160703-T060000.nc --use-platform-vertical-offsets"
+   ],
+   "kind": "sv",
+   "options": {
+    "--depth-offset": "transducer depth below the surface, in metres",
+    "--echodata": "the EchoData (aa-nc output) the Sv came from; needed by the --use-* options. Its content enters the product hash.",
+    "--no-downward": "upward-looking transducers (default: downward)",
+    "--output_path": "Explicit output, used as given; '.nc' is added only when it has no suffix. Local path or gs:// URI.",
+    "--tilt": "transducer tilt from vertical, in degrees",
+    "--use-beam-angles": "tilt from Platform or Beam angles (EK60/EK80; not both)",
+    "--use-platform-angles": "tilt from Platform or Beam angles (EK60/EK80; not both)",
+    "--use-platform-vertical-offsets": "transducer depth from Platform (EK60/EK80)",
+    "-o": "Explicit output, used as given; '.nc' is added only when it has no suffix. Local path or gs:// URI."
+   },
+   "reads": "One Sv .nc/.netcdf4 path or gs:// URI (aa-sv output, or anything with echo_range).",
+   "role": "transform",
+   "science": [
+    "depth_offset",
+    "downward",
+    "tilt",
+    "use_beam_angles",
+    "use_platform_angles",
+    "use_platform_vertical_offsets"
+   ],
+   "scienceText": {
+    "depth_offset": "Transducer depth (m). Overrides the Platform vertical offsets.",
+    "downward": "Downward-looking by default; --no-downward (upward-looking) subtracts the echo_range term from the transducer depth.",
+    "echodata": "EchoData file: its content identity (not its path) enters the hash.",
+    "tilt": "Tilt from vertical (degrees). Overrides Platform/Beam angles.",
+    "use_beam_angles": "Tilt from the EchoData Beam group angles.",
+    "use_platform_angles": "Tilt from the EchoData Platform group angles.",
+    "use_platform_vertical_offsets": "Transducer depth from the EchoData Platform group."
+   },
+   "summary": "Add a depth variable to an Sv dataset (echopype.consolidate.add_depth)."
+  },
+  "aa-detect-seafloor": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .netcdf4 file containing Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save the bottom line (suffix forced to .nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite existing outputs.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "method",
+     "flags": [
+      "--method"
+     ],
+     "help": "Seafloor detection method key (e.g., 'basic', 'blackwell').",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": true,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "param",
+     "flags": [
+      "--param"
+     ],
+     "help": "Method parameters as key=value pairs.",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "emit_mask",
+     "flags": [
+      "--emit-mask"
+     ],
+     "help": "Also compute/save a 2D mask (True = below bottom).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Range/depth variable name used to build mask (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Write Sv with the samples below the bottom removed.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-depth: aa-nc | aa-sv | aa-depth | aa-detect-seafloor ... The next stage receives the bottom line. For the cleaned Sv, run the chain in steps and take its path from stderr, or use AA_NAMING=legacy.",
+   "examples": [
+    "SV=$(aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-depth)",
+    "aa-detect-seafloor \"$SV\" --method basic --param var_name=Sv \\",
+    "    \"channel=GPT   38 kHz 00907205c001-1 ES38B\" \"threshold=(-30,10)\" --emit-mask --apply"
+   ],
+   "kind": "seafloor",
+   "options": {
+    "--apply": "also write Sv with sub-bottom samples removed (kind sv)",
+    "--emit-mask": "also write the below-bottom mask (kind mask)",
+    "--method": "REQUIRED. Detector.",
+    "--no-overwrite": "exit 1, before writing anything, if any requested output exists and is not the identical product",
+    "--output_path": "Explicit bottom-line output; the extension is forced to .nc. Local path or gs:// URI. Does not move the mask/cleaned outputs.",
+    "--param": "Detector arguments. Both methods need var_name=Sv and channel=<an id from the 'channel' coordinate; quote it, it contains spaces>. basic: threshold (-50 = window -50..-40 dB; or (min,max)), offset_m (0.5), bin_skip_from_surface (200). blackwell: threshold (-75 or (Sv,theta,phi)), offset, r0, r1, wtheta, wphi.",
+    "--range-label": "variable compared with the bottom line (a depth) to build the mask. Default echo_range, which equals depth only when aa-depth applied no transducer depth offset, tilt, or Platform/Beam offsets or angles; otherwise use 'depth' (the tool warns when they differ).",
+    "-o": "Explicit bottom-line output; the extension is forced to .nc. Local path or gs:// URI. Does not move the mask/cleaned outputs."
+   },
+   "reads": "One Sv .nc/.netcdf4 path or gs:// URI that has a 'depth' variable (aa-depth output); 'blackwell' also needs angle_alongship/athwartship (aa-splitbeam-angle). A file without 'Sv' is calibrated as EchoData first (compute_Sv defaults, recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [
+    "method",
+    "param"
+   ],
+   "scienceText": {
+    "method": "Detector (echopype dispatcher key), e.g. basic, blackwell.",
+    "param": "Detector arguments, parsed as Python literals ('10m' stays text). Arguments left out are hashed with the method's own defaults (read from the installed echopype), so writing a default out, key order, and 5 vs 5.0 give the same hash; pass integers where echopype wants them (bin_skip_from_surface=200).",
+    "range_label": "Variable compared with the bottom line (depth). Changes only the --emit-mask and --apply outputs."
+   },
+   "summary": "Detect the seafloor line; optionally write a below-bottom mask and Sv without sub-bottom samples."
+  },
+  "aa-detect-shoal": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing Sv (preferred) or a converted file to calibrate.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for the shoal mask NetCDF, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Also write the Sv inside the shoals (mask applied).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Suppress logs; print only output path.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "method",
+     "flags": [
+      "--method"
+     ],
+     "help": "Shoal detection method name (dispatcher key), e.g., 'echoview', 'weill'.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": true,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "param",
+     "flags": [
+      "--param"
+     ],
+     "help": "Additional method parameters as key=value pairs.",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv/aa-clean: ... | aa-sv | aa-detect-shoal ... | aa-graph draws the mask. The next stage receives the mask.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-detect-shoal \\",
+    "    --method weill --param var_name=Sv \"channel=GPT   38 kHz 00907205c001-1 ES38B\" thr=-60 --apply"
+   ],
+   "kind": "mask",
+   "options": {
+    "--apply": "also write the Sv inside the shoals (kind sv)",
+    "--method": "REQUIRED. Detector. echoview also needs idim/jdim arrays and is not usable from the command line.",
+    "--no-overwrite": "exit 1, before writing anything, if the mask or the --apply output exists and is not the identical product",
+    "--output_path": "Explicit mask output, used exactly as given. Local path or gs:// URI. Does not move the --apply output.",
+    "--param": "Detector arguments. weill: var_name=Sv (required), channel=<id from the 'channel' coordinate; quote it> (required for multi-channel data), thr (-70 dB), maxvgap (5), maxhgap (0), minvlen (0), minhlen (0).",
+    "--quiet": "only warnings and errors on stderr",
+    "-o": "Explicit mask output, used exactly as given. Local path or gs:// URI. Does not move the --apply output."
+   },
+   "reads": "One Sv .nc path or gs:// URI (aa-sv, aa-clean ... output). A file without 'Sv' is calibrated as EchoData first (compute_Sv defaults, recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [
+    "method",
+    "param"
+   ],
+   "scienceText": {
+    "method": "Detector (echopype dispatcher key): weill or echoview.",
+    "param": "Detector arguments, parsed as Python literals ('12dB' stays text). Arguments left out are hashed with the method's own defaults (read from the installed echopype), so writing a default out, key order, and 5 vs 5.0 give the same hash."
+   },
+   "summary": "Detect shoals in Sv and write a shoal mask; optionally the Sv inside the shoals."
+  },
+  "aa-detect-transient": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing Sv (preferred) or a converted file that can be calibrated to Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for the mask NetCDF, used as given (default: <base>_<hash>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Also write Sv cleaned by the transient mask as a second product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "method",
+     "flags": [
+      "--method"
+     ],
+     "help": "Transient detection method name: fielding or matecho.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": true,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "param",
+     "flags": [
+      "--param"
+     ],
+     "help": "Method parameters as key=value pairs (e.g., r0=900 r1=1000 n=30).",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "depth",
+     "dest": "range_var",
+     "flags": [
+      "--range-var"
+     ],
+     "help": "Range/depth variable name (default: depth).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv and aa-depth: ... | aa-depth | aa-detect-transient --method matecho | aa-graph (draws the mask). Only the mask travels down the pipe.",
+   "examples": [
+    "aa-detect-transient sv_depth.nc --method matecho --param start_depth=220 window_meter=450 window_ping=100 percentile=25 delta_db=12",
+    "aa-detect-transient sv_depth.nc --apply --method fielding --param r0=900 r1=1000 n=30 \"thr=(3, 1)\" roff=20 jumps=5 maxts=-35"
+   ],
+   "kind": "mask",
+   "options": {
+    "--apply": "Also write the input's Sv with transient samples (mask False) set to NaN; valid samples are kept unchanged.",
+    "--method": "REQUIRED. The detector.",
+    "--output_path": "The mask file, used exactly as given (no extension added). Local path or gs:// URI. Does not move the --apply file.",
+    "--param": "Method parameters, parsed as Python literals. Plain numbers in m, dB or pings (r0=900, not r0=900m). Omitted keys take echopype's defaults. Put INPUT_PATH before --param (or end the list with --).",
+    "-o": "The mask file, used exactly as given (no extension added). Local path or gs:// URI. Does not move the --apply file."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI that has the range variable (depth by default; add it with aa-depth). An EchoData file without Sv is calibrated first with compute_Sv defaults (recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [],
+   "scienceText": {
+    "method": "fielding or matecho.",
+    "param": "fielding: r0, r1 (m, default 900, 1000), n (pings, 30), thr (dB pair, (3, 1)), roff (m, 20), jumps (m, 5), maxts (dB, -35), start (pings, 0). matecho: start_depth (m, 220), window_meter (m, 450), window_ping (pings, 100), percentile (25), delta_db (dB, 12), extend_ping (pings, 0), min_window (m, 20). Both: var_name (Sv). Omitted keys are recorded and hashed with echopype's default, so n=30 and leaving n out give the same hash. Unknown keys are refused.",
+    "range_var": "Vertical variable, passed as params['range_var'] unless --param range_var=... is given."
+   },
+   "summary": "Transient mask, fielding or matecho (True = VALID)."
+  },
+  "aa-dispersion": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file (.nc) dataset with Sv and echo_range.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given (default: <base>_<hash8>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Name of the range coordinate/variable (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing, different output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Warnings and errors only on stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After calibration: aa-nc | aa-sv | aa-dispersion. The output is a 2-D metric (channel x ping_time), not Sv, so it ends the Sv chain.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-dispersion",
+    "aa-dispersion sv.nc -o inertia.nc --no-overwrite"
+   ],
+   "kind": "echometric",
+   "options": {
+    "--no-overwrite": "exit 1 if the output exists and is a different product (an identical one is reused)",
+    "--output_path": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI.",
+    "--quiet": "warnings and errors only on stderr",
+    "--range-label": "variable holding range in metres (default: echo_range)",
+    "-o": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI (argument, or one line on stdin), e.g. from aa-sv or aa-clean. It must contain 'Sv' (dB) on a range_sample dimension and the range variable named by --range-label (default echo_range).",
+   "role": "transform",
+   "science": [
+    "range_label"
+   ],
+   "scienceText": {
+    "range_label": "Variable used as range (m) for dz and the integral."
+   },
+   "summary": "Inertia (I, m^2): spread of backscatter about its center of mass."
+  },
+  "aa-evenness": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF Dataset containing 'Sv' and 'echo_range'.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given (default: <base>_<hash8>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "echo_range",
+     "dest": "range_label",
+     "flags": [
+      "--range-label"
+     ],
+     "help": "Name of the range DataArray (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "try_calibrate",
+     "flags": [
+      "--try-calibrate"
+     ],
+     "help": "If 'echo_range' missing, attempt to compute Sv to obtain it.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing, different output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Warnings and errors only on stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After calibration: aa-nc | aa-sv | aa-evenness. The output is a 2-D metric (channel x ping_time), not Sv, so it ends the Sv chain.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-evenness",
+    "aa-evenness sv.nc -o ea.nc --no-overwrite"
+   ],
+   "kind": "echometric",
+   "options": {
+    "--no-overwrite": "exit 1 if the output exists and is a different product (an identical one is reused)",
+    "--output_path": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI.",
+    "--quiet": "warnings and errors only on stderr",
+    "--range-label": "variable holding range in metres (default: echo_range)",
+    "--try-calibrate": "if that variable is missing, open the input as EchoData and compute Sv first (echopype defaults; no EK80 modes)",
+    "-o": "Explicit output, used exactly as given (no suffix added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF path or gs:// URI (argument, or one line on stdin), e.g. from aa-sv or aa-clean. It must contain 'Sv' (dB) on a range_sample dimension and the range variable named by --range-label (default echo_range).",
+   "role": "transform",
+   "science": [
+    "range_label",
+    "try_calibrate"
+   ],
+   "scienceText": {
+    "range_label": "Variable used as range (m) for dz and the integral.",
+    "try_calibrate": "Compute Sv from EchoData first when the range variable is missing; changes what is analysed."
+   },
+   "summary": "Equivalent area (EA, m) of backscatter along range, per channel and ping."
+  },
+  "aa-freqdiff": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a dataset (NetCDF or Zarr) containing Sv with channel/frequency_nominal.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for mask NetCDF, used as given (default: <base>_<hash>.nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "freqABEq",
+     "flags": [
+      "--freqABEq"
+     ],
+     "help": "Expression for differencing by frequency, e.g. '38.0kHz - 120.0kHz>=10.0dB'.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "chanABEq",
+     "flags": [
+      "--chanABEq"
+     ],
+     "help": "Expression for differencing by channel names, e.g. '\"chan1\" - \"chan2\"<5dB'.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "Suppress informational logging; only print output path.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv (or aa-clean): ... | aa-sv | aa-freqdiff --freqABEq '...' | aa-graph",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-freqdiff --freqABEq '120kHz - 38kHz > 2dB'",
+    "aa-freqdiff sv.nc -o krill_mask.nc --chanABEq \\",
+    "    '\"GPT  120 kHz 00907205c002-1 ES120-7C\" - \"GPT   38 kHz 00907205c001-1 ES38B\" <= 5dB'"
+   ],
+   "kind": "mask",
+   "options": {
+    "--chanABEq": "Channel names in double quotes, exactly as in the channel coordinate.",
+    "--freqABEq": "Frequencies WITHOUT quotes, in Hz with an optional k/M/G prefix, matching frequency_nominal: '38kHz - 120kHz >= 10dB'.",
+    "--output_path": "Used exactly as given (no extension added). Local path or gs:// URI.",
+    "--quiet": "Only warnings and errors on stderr.",
+    "-o": "Used exactly as given (no extension added). Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF (or Zarr) path or gs:// URI with a channel coordinate and frequency_nominal, e.g. from aa-sv.",
+   "role": "transform",
+   "science": [
+    "chanABEq",
+    "freqABEq"
+   ],
+   "scienceText": {
+    "chanABEq": "Criterion by channel name. Give exactly one of the two.",
+    "freqABEq": "Criterion by frequency. Give exactly one of the two."
+   },
+   "summary": "Frequency-differencing mask: Sv(A) - Sv(B) <op> N dB."
+  },
+  "aa-graph": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "channel",
+     "flags": [
+      "--channel"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "frequency",
+     "flags": [
+      "--frequency"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "single",
+     "flags": [
+      "--single"
+     ],
+     "help": "Shortcut for --channel 0.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "vmin",
+     "flags": [
+      "--vmin"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "vmax",
+     "flags": [
+      "--vmax"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": "viridis",
+     "dest": "cmap",
+     "flags": [
+      "--cmap"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 10,
+     "dest": "figwidth",
+     "flags": [
+      "--figwidth"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": 3,
+     "dest": "rowheight",
+     "flags": [
+      "--rowheight"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_flip",
+     "flags": [
+      "--no-flip"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_pie",
+     "flags": [
+      "--no-pie"
+     ],
+     "help": "Suppress the pie-chart distribution row.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 2.6,
+     "dest": "pie_height",
+     "flags": [
+      "--pie-height"
+     ],
+     "help": "Pie row height in inches (default: 2.6).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": 1,
+     "dest": "decimate",
+     "flags": [
+      "--decimate"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "ymin",
+     "flags": [
+      "--ymin"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "ymax",
+     "flags": [
+      "--ymax"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 100,
+     "dest": "dpi",
+     "flags": [
+      "--dpi"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Last stage: ... | aa-sv | aa-graph, or ... | aa-clean | aa-graph --var Sv_corrected.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-graph --vmin -80 --vmax -30",
+    "... | aa-clean | aa-graph --var Sv_corrected",
+    "aa-graph gs://bucket/derived/x_35e8864f.nc --frequency 38000 --dest gs://bucket/figs/"
+   ],
+   "kind": "echogram",
+   "options": {
+    "--channel": "plot one channel only",
+    "--decimate": "plot every Nth ping (large files)",
+    "--dpi": "resolution (default 100)",
+    "--frequency": "plot one channel only",
+    "--output_path": "explicit output (.png, .svg or .pdf); local or gs://",
+    "--single": "plot one channel only",
+    "--var": "variable to plot (default: Sv, then other common names)",
+    "--vmax": "colour limits (defaults per variable, e.g. Sv -80/-30)",
+    "--vmin": "colour limits (defaults per variable, e.g. Sv -80/-30)",
+    "--ymax": "depth window",
+    "--ymin": "depth window",
+    "-o": "explicit output (.png, .svg or .pdf); local or gs://"
+   },
+   "reads": "One flat NetCDF path or gs:// URI (Sv, MVBS, NASC, a mask, ...). After aa-clean the file holds both Sv (unchanged) and Sv_corrected (cleaned): the default draws Sv; add --var Sv_corrected to see the cleaned data.",
+   "role": "representation",
+   "science": [
+    "channel",
+    "cmap",
+    "decimate",
+    "dpi",
+    "figwidth",
+    "frequency",
+    "no_flip",
+    "no_pie",
+    "pie_height",
+    "rowheight",
+    "single",
+    "var",
+    "vmax",
+    "vmin",
+    "ymax",
+    "ymin"
+   ],
+   "scienceText": {
+    "channel": "draw only channel index N",
+    "cmap": "matplotlib colour map",
+    "decimate": "draw every Nth ping",
+    "dpi": "resolution",
+    "figwidth": "figure width, inches",
+    "frequency": "draw only the channel nearest F Hz",
+    "no_flip": "don't put depth increasing downwards",
+    "no_pie": "no distribution (pie) row",
+    "pie_height": "height of the pie row, inches",
+    "rowheight": "height of each channel row, inches",
+    "single": "draw only the first channel",
+    "var": "variable drawn (default: Sv, then other common names)",
+    "vmax": "upper colour limit (default per variable, Sv -30 dB)",
+    "vmin": "lower colour limit (default per variable, Sv -80 dB)",
+    "ymax": "bottom of the depth window",
+    "ymin": "top of the depth window"
+   },
+   "summary": "Draw an echogram PNG of a NetCDF product (Sv, MVBS, masks, clusters)."
+  },
+  "aa-impulse": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .netcdf4 file containing Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save the mask (suffix forced to .nc). Default: <base>_<hash>.nc.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Also write Sv cleaned by the mask as a second product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "5m",
+     "dest": "depth_bin",
+     "flags": [
+      "--depth-bin"
+     ],
+     "help": "Depth bin size, e.g., '5m' (default: 5m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 2,
+     "dest": "num_side_pings",
+     "flags": [
+      "--num-side-pings"
+     ],
+     "help": "Number of side pings for two-sided comparison (default: 2).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": "10.0dB",
+     "dest": "impulse_noise_threshold",
+     "flags": [
+      "--impulse-threshold"
+     ],
+     "help": "Threshold above local context, e.g. '10.0dB' (default: 10.0dB).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "depth",
+     "dest": "range_var",
+     "flags": [
+      "--range-var"
+     ],
+     "help": "Range/depth variable name (default: depth).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_index_binning",
+     "flags": [
+      "--use-index-binning"
+     ],
+     "help": "Use index-based binning rather than physical bin sizes.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv and aa-depth: ... | aa-sv | aa-depth | aa-impulse | aa-graph (draws the mask). Only the mask travels down the pipe.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-depth | aa-impulse --apply --use-index-binning",
+    "aa-impulse sv_depth.nc --impulse-threshold 12dB --use-index-binning"
+   ],
+   "kind": "mask",
+   "options": {
+    "--apply": "Also write the input's Sv with impulse samples set to NaN (all other variables copied).",
+    "--output_path": "The mask file, used as given with the extension forced to .nc. Local path or gs:// URI. Does not move the --apply file.",
+    "-o": "The mask file, used as given with the extension forced to .nc. Local path or gs:// URI. Does not move the --apply file."
+   },
+   "reads": "One Sv NetCDF (.nc/.netcdf4) path or gs:// URI that has the --range-var variable: depth (add it with aa-depth) or echo_range. An EchoData file without Sv is calibrated first with compute_Sv defaults (recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [
+    "depth_bin",
+    "impulse_noise_threshold",
+    "num_side_pings",
+    "range_var",
+    "use_index_binning"
+   ],
+   "scienceText": {
+    "depth_bin": "Vertical averaging bin before the comparison, e.g. 5m.",
+    "impulse_noise_threshold": "dB above both neighbours that counts as impulse noise, e.g. 10dB.",
+    "num_side_pings": "Compare each ping with the ping this many pings before and after it.",
+    "range_var": "Vertical variable: depth or echo_range.",
+    "use_index_binning": "Bin by range_sample index (assumes uniform sample spacing per channel). Faster."
+   },
+   "summary": "Impulse-noise mask for Sv; --apply also writes cleaned Sv."
+  },
+  "aa-location": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of an Sv NetCDF (.nc) or compatible Dataset file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "echodata",
+     "flags": [
+      "--echodata"
+     ],
+     "help": "Path to the converted EchoData (NetCDF/Zarr) containing Platform/NMEA.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "MRU1",
+      "IDX"
+     ],
+     "default": null,
+     "dest": "datagram_type",
+     "flags": [
+      "--datagram-type"
+     ],
+     "help": "Optional datagram type ('MRU1' or 'IDX', EK only) for selecting nav records.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "<lambda>"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "nmea_sentence",
+     "flags": [
+      "--nmea-sentence"
+     ],
+     "help": "Optional NMEA sentence (e.g., 'GGA').",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv: ED=$(aa-nc x.raw --sonar_model EK60); aa-sv $ED | aa-location --echodata $ED",
+   "examples": [
+    "ED=$(aa-nc D20160703-T060000.raw --sonar_model EK60)",
+    "aa-sv \"$ED\" | aa-location --echodata \"$ED\"",
+    "aa-location Sv.nc --echodata ED.nc --nmea-sentence GGA -o Sv_loc.nc"
+   ],
+   "kind": "sv",
+   "options": {
+    "--datagram-type": "EK only: take position from MRU1 or IDX datagrams instead of NMEA (any case; cannot be combined with --nmea-sentence)",
+    "--echodata": "the EchoData (aa-nc output) the Sv came from. Needed in practice: without it the input itself is opened as EchoData, which an Sv file is not. Its content enters the product hash.",
+    "--nmea-sentence": "use only this NMEA sentence type",
+    "--output_path": "Explicit output, used exactly as given. Local path or gs:// URI.",
+    "-o": "Explicit output, used exactly as given. Local path or gs:// URI."
+   },
+   "reads": "One Sv .nc path or gs:// URI (aa-sv output, or aa-depth etc. downstream).",
+   "role": "transform",
+   "science": [
+    "datagram_type",
+    "nmea_sentence"
+   ],
+   "scienceText": {
+    "datagram_type": "Position source: MRU1 or IDX datagrams (EK only); default NMEA.",
+    "echodata": "EchoData file: its content identity (not its path) enters the hash.",
+    "nmea_sentence": "NMEA sentence type to use (e.g. GGA); default all."
+   },
+   "summary": "Add latitude/longitude to an Sv dataset (echopype.consolidate.add_location)."
+  },
+  "aa-min": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .netcdf4 file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output ('_mask-impulse-noise' is appended).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "5m",
+     "dest": "depth_bin",
+     "flags": [
+      "--depth_bin"
+     ],
+     "help": "Downsampling bin size along vertical range variable (default: 5m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 2,
+     "dest": "num_side_pings",
+     "flags": [
+      "--num_side_pings"
+     ],
+     "help": "Number of side pings for two-sided comparison (default: 2).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": "10.0dB",
+     "dest": "impulse_noise_threshold",
+     "flags": [
+      "--impulse_noise_threshold"
+     ],
+     "help": "Impulse noise threshold, as a string with units (default: \"10.0dB\").",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "depth",
+      "echo_range"
+     ],
+     "default": "depth",
+     "dest": "range_var",
+     "flags": [
+      "--range_var"
+     ],
+     "help": "Vertical axis range variable: \"depth\" or \"echo_range\" (default: depth).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_index_binning",
+     "flags": [
+      "--use_index_binning"
+     ],
+     "help": "Use index-based binning for speed (default: False).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv and aa-depth: ... | aa-sv | aa-depth | aa-min | aa-graph. Downstream tools that look for a variable called Sv will find this mask.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-depth | aa-min --use_index_binning",
+    "aa-min sv_depth.nc --impulse_noise_threshold 12dB --use_index_binning -o masks/run1.nc   # -> masks/run1_mask-impulse-noise.nc"
+   ],
+   "kind": "mask",
+   "options": {
+    "--output_path": "Explicit output; '_mask-impulse-noise' is appended to its stem and .nc forced, as always. Local path or gs:// URI.",
+    "-o": "Explicit output; '_mask-impulse-noise' is appended to its stem and .nc forced, as always. Local path or gs:// URI."
+   },
+   "reads": "One Sv NetCDF (.nc/.netcdf4) path or gs:// URI that has the --range_var variable: depth (add it with aa-depth) or echo_range.",
+   "role": "transform",
+   "science": [
+    "depth_bin",
+    "impulse_noise_threshold",
+    "num_side_pings",
+    "range_var",
+    "use_index_binning"
+   ],
+   "scienceText": {
+    "depth_bin": "Vertical averaging bin before the comparison, e.g. 5m.",
+    "impulse_noise_threshold": "dB above both neighbours that counts as impulse noise, e.g. 10dB.",
+    "num_side_pings": "Compare each ping with the ping this many pings before and after it.",
+    "range_var": "Vertical variable: depth or echo_range.",
+    "use_index_binning": "Bin by range_sample index (assumes uniform sample spacing per channel). Faster."
+   },
+   "summary": "Impulse-noise mask, stored under the variable name 'Sv'."
+  },
+  "aa-mvbs": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a Sv .nc / .netcdf4 file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. '_mvbs' is appended to the stem.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "echo_range",
+      "depth"
+     ],
+     "default": "echo_range",
+     "dest": "range_var",
+     "flags": [
+      "--range_var"
+     ],
+     "help": "Range coordinate to bin over (default: echo_range).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "20m",
+     "dest": "range_bin",
+     "flags": [
+      "--range_bin"
+     ],
+     "help": "Bin size along range dimension (default: 20m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "20s",
+     "dest": "ping_time_bin",
+     "flags": [
+      "--ping_time_bin"
+     ],
+     "help": "Bin size along ping_time dimension (default: 20s).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "map-reduce",
+      "coarsen",
+      "block"
+     ],
+     "default": "map-reduce",
+     "dest": "method",
+     "flags": [
+      "--method"
+     ],
+     "help": "Computation method for binning (default: map-reduce).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "reindex",
+     "flags": [
+      "--reindex"
+     ],
+     "help": "If set, reindex the result to match uniform bin edges (default: False).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "skipna",
+     "flags": [
+      "--no_skipna",
+      "--no-skipna"
+     ],
+     "help": "Include NaN values in mean calculations.",
+     "kind": "_StoreFalseAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "skipna",
+     "flags": [
+      "--skipna"
+     ],
+     "help": "Skip NaN values when averaging (default).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "fill_value",
+     "flags": [
+      "--fill_value"
+     ],
+     "help": "Fill value for empty bins (default: NaN).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [
+      "left",
+      "right"
+     ],
+     "default": "left",
+     "dest": "closed",
+     "flags": [
+      "--closed"
+     ],
+     "help": "Which side of the bin interval is closed (default: left).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "range_var_max",
+     "flags": [
+      "--range_var_max"
+     ],
+     "help": "Optional maximum value for range_var (default: None).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": [],
+     "dest": "flox_kwargs",
+     "flags": [
+      "--flox_kwargs",
+      "--flox-kwargs"
+     ],
+     "help": "Extra flox kwargs as KEY=VALUE pairs. Example: --flox_kwargs min_count=5",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "aa-nc | aa-sv [| aa-clean] | aa-mvbs | aa-graph. Averages the variable named Sv: after aa-clean that is still the uncorrected Sv (aa-clean puts the cleaned values in Sv_corrected).",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-mvbs",
+    "aa-mvbs sv.nc --range_bin 5m --ping_time_bin 1min",
+    "aa-sv ed.nc | aa-depth | aa-mvbs --range_var depth --range_bin 10m"
+   ],
+   "kind": "mvbs",
+   "options": {
+    "--closed": "closed side of each bin (default: left)",
+    "--fill_value": "value for empty bins, in LINEAR sv: echopype converts it to dB (1e-12 -> -120 dB, 0 -> -inf; default: NaN)",
+    "--flox_kwargs": "extra flox options, e.g. min_count=5",
+    "--method": "flox strategy; performance only, not hashed (default: map-reduce)",
+    "--no_skipna": "ignore NaN samples in the means (default: skip)",
+    "--output_path": "Explicit output; '_mvbs' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_mvbs.nc). Local path or gs:// URI.",
+    "--ping_time_bin": "time bin size, a pandas frequency such as 20s or 1min (default: 20s)",
+    "--range_bin": "range bin size, metres (default: 20m)",
+    "--range_var": "range coordinate to bin (default: echo_range)",
+    "--range_var_max": "bin only up to this range (default: data maximum)",
+    "--reindex": "flox reindexing; performance only, not hashed; map-reduce only",
+    "--skipna": "ignore NaN samples in the means (default: skip)",
+    "-o": "Explicit output; '_mvbs' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_mvbs.nc). Local path or gs:// URI.",
+    "-reduce": "flox strategy; performance only, not hashed (default: map-reduce)"
+   },
+   "reads": "One flat Sv .nc/.netcdf4 path or gs:// URI, from aa-sv or aa-clean (not the EchoData file from aa-nc). --range_var depth needs a depth variable: run aa-depth first.",
+   "role": "transform",
+   "science": [
+    "closed",
+    "fill_value",
+    "flox_kwargs",
+    "ping_time_bin",
+    "range_bin",
+    "range_var",
+    "range_var_max",
+    "skipna"
+   ],
+   "scienceText": {
+    "closed": "Closed side of each bin interval.",
+    "fill_value": "Value of empty bins, in linear sv (converted to dB with the means); default NaN, recorded as \"NaN\".",
+    "flox_kwargs": "Extra flox options, except engine, method and reindex, which only change speed.",
+    "ping_time_bin": "Time bin size; '20s' and '20.0s' are the same value.",
+    "range_bin": "Range bin size; '20m' and '20.0 m' are the same value.",
+    "range_var": "Range coordinate binned: echo_range or depth.",
+    "range_var_max": "Upper end of the range bins.",
+    "skipna": "Skip NaN samples in the bin means (--skipna / --no_skipna)."
+   },
+   "summary": "Average Sv onto a regular range x time grid (MVBS)."
+  },
+  "aa-mvbs-index": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .netcdf4 file containing Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output (extension forced to .nc).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 100,
+     "dest": "range_sample_num",
+     "flags": [
+      "--range-sample-num"
+     ],
+     "help": "Number of samples per bin along range_sample (default: 100).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": 100,
+     "dest": "ping_num",
+     "flags": [
+      "--ping-num"
+     ],
+     "help": "Number of pings per bin (default: 100).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "aa-nc | aa-sv [| aa-clean] | aa-mvbs-index | aa-graph. Averages the variable named Sv: after aa-clean that is still the uncorrected Sv.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-mvbs-index",
+    "aa-mvbs-index sv.nc --range-sample-num 30 --ping-num 5"
+   ],
+   "kind": "mvbs",
+   "options": {
+    "--output_path": "Explicit output, used as given with the extension forced to .nc. Local path or gs:// URI.",
+    "--ping-num": "pings per bin (default: 100)",
+    "--range-sample-num": "range samples per bin (default: 100)",
+    "-o": "Explicit output, used as given with the extension forced to .nc. Local path or gs:// URI."
+   },
+   "reads": "One .nc/.netcdf4 path or gs:// URI: a flat Sv file from aa-sv or aa-clean, or an EchoData file from aa-nc (then Sv is first computed with echopype.calibrate.compute_Sv defaults, EK60/AZFP only; this is recorded in the provenance).",
+   "role": "transform",
+   "science": [
+    "ping_num",
+    "range_sample_num"
+   ],
+   "scienceText": {
+    "ping_num": "Pings per bin.",
+    "range_sample_num": "Range samples per bin."
+   },
+   "summary": "MVBS binned by ping and sample counts (not seconds, metres)."
+  },
+  "aa-nasc": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a Sv .nc / .netcdf4 file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. '_nasc' is appended to the stem.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "10m",
+     "dest": "range_bin",
+     "flags": [
+      "--range_bin",
+      "--range-bin"
+     ],
+     "help": "Depth bin size in meters (default: 10m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "0.5nmi",
+     "dest": "dist_bin",
+     "flags": [
+      "--dist_bin",
+      "--dist-bin"
+     ],
+     "help": "Horizontal distance bin size in nautical miles (default: 0.5nmi).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": "map-reduce",
+     "dest": "method",
+     "flags": [
+      "--method"
+     ],
+     "help": "Flox reduction strategy (default: map-reduce).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "skipna",
+     "flags": [
+      "--no_skipna",
+      "--no-skipna"
+     ],
+     "help": "Include NaN values in mean calculations.",
+     "kind": "_StoreFalseAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": true,
+     "dest": "skipna",
+     "flags": [
+      "--skipna"
+     ],
+     "help": "Skip NaN values when averaging (default).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "left",
+      "right"
+     ],
+     "default": "left",
+     "dest": "closed",
+     "flags": [
+      "--closed"
+     ],
+     "help": "Which side of the bin interval is closed (default: left).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": [],
+     "dest": "flox_kwargs",
+     "flags": [
+      "--flox_kwargs",
+      "--flox-kwargs"
+     ],
+     "help": "Extra flox kwargs as KEY=VALUE pairs. Example: --flox_kwargs min_count=5",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "aa-sv ED.nc | aa-depth | aa-location --echodata ED.nc | aa-nasc, where ED.nc is the EchoData file from aa-nc (aa-location reads the GPS from it). Integrates the variable named Sv: after aa-clean that is still the uncorrected Sv.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60     # writes D20160703-T060000.nc",
+    "aa-sv D20160703-T060000.nc | aa-depth \\",
+    "    | aa-location --echodata D20160703-T060000.nc | aa-nasc",
+    "aa-nasc sv_depth_loc.nc --range_bin 20m --dist_bin 1nmi"
+   ],
+   "kind": "nasc",
+   "options": {
+    "--closed": "closed side of each bin (default: left)",
+    "--dist_bin": "distance bin size, nautical miles (default: 0.5nmi)",
+    "--flox_kwargs": "extra flox options, e.g. min_count=5",
+    "--method": "flox strategy; performance only, not hashed (default: map-reduce)",
+    "--no_skipna": "ignore NaN samples in the means (default: skip)",
+    "--output_path": "Explicit output; '_nasc' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_nasc.nc). Local path or gs:// URI.",
+    "--range_bin": "depth bin size, metres (default: 10m)",
+    "--skipna": "ignore NaN samples in the means (default: skip)",
+    "-o": "Explicit output; '_nasc' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_nasc.nc). Local path or gs:// URI."
+   },
+   "reads": "One flat Sv .nc/.netcdf4 path or gs:// URI that has depth, latitude and longitude. aa-sv's output has none of these: run aa-depth and aa-location first (see IN A PIPELINE).",
+   "role": "transform",
+   "science": [
+    "closed",
+    "dist_bin",
+    "flox_kwargs",
+    "range_bin",
+    "skipna"
+   ],
+   "scienceText": {
+    "closed": "Closed side of each bin interval.",
+    "dist_bin": "Distance bin size; '0.5nmi' and '.5 nmi' are the same value.",
+    "flox_kwargs": "Extra flox options, except engine, method and reindex, which only change speed.",
+    "range_bin": "Depth bin size; '10m' and '10.0 m' are the same value.",
+    "skipna": "Skip NaN samples in the bin means (--skipna / --no_skipna)."
+   },
+   "summary": "Integrate Sv into NASC (m2 nmi-2) on depth x distance cells."
+  },
+  "aa-noise-est": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing Sv (preferred) or a converted file that can be calibrated to Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for the noise NetCDF, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 20,
+     "dest": "ping_num",
+     "flags": [
+      "--ping-num"
+     ],
+     "help": "Number of pings to obtain noise estimates (default: 20).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": 20,
+     "dest": "range_sample_num",
+     "flags": [
+      "--range-sample-num"
+     ],
+     "help": "Number of range samples per estimate window (default: 20).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "background_noise_max",
+     "flags": [
+      "--background-noise-max"
+     ],
+     "help": "Upper limit for background noise in dB, e.g. '-120.0dB' (default: None).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "A side branch for inspecting noise: aa-nc | aa-sv | aa-noise-est | aa-graph. Its output holds only Sv_noise, so it does not feed aa-clean or aa-mvbs (aa-clean estimates the same noise itself).",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-noise-est",
+    "aa-noise-est sv.nc --ping-num 50 --range-sample-num 200 \\",
+    "    --background-noise-max=-120.0dB"
+   ],
+   "kind": "noise",
+   "options": {
+    "--background-noise-max": "cap on the noise estimate, e.g. --background-noise-max=-125dB (write '=' before a negative value); default: no cap",
+    "--output_path": "Explicit output, used exactly as given (no suffix, no extension change). Local path or gs:// URI.",
+    "--ping-num": "pings per noise-estimation block (default: 20)",
+    "--range-sample-num": "range samples per block (default: 20)",
+    "-o": "Explicit output, used exactly as given (no suffix, no extension change). Local path or gs:// URI."
+   },
+   "reads": "One .nc path or gs:// URI: a flat Sv file from aa-sv (needs Sv, echo_range, sound_absorption), or an EchoData file from aa-nc (then Sv is first computed with echopype.calibrate.compute_Sv defaults, EK60/AZFP only; this is recorded in the provenance).",
+   "role": "transform",
+   "science": [
+    "background_noise_max",
+    "ping_num",
+    "range_sample_num"
+   ],
+   "scienceText": {
+    "background_noise_max": "Upper limit on the noise estimate; '-125dB' and '-125.0dB' are the same value.",
+    "ping_num": "Pings per noise-estimation block.",
+    "range_sample_num": "Range samples per noise-estimation block."
+   },
+   "summary": "Estimate background noise (Sv_noise) from Sv."
+  },
+  "aa-plot": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "all",
+     "flags": [
+      "--all"
+     ],
+     "help": "(Default behavior \u2014 kept for backwards compat.) Plot every channel in tabs.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "single",
+     "flags": [
+      "--single"
+     ],
+     "help": "Plot only one channel (default channel 0). Opt-out of the per-channel tab default. Use with --frequency or --channel to pick which one.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "frequency",
+     "flags": [
+      "--frequency"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "channel",
+     "flags": [
+      "--channel"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "auto",
+      "channel",
+      "freq"
+     ],
+     "default": "auto",
+     "dest": "group_by",
+     "flags": [
+      "--group-by"
+     ],
+     "help": "Accepted for backwards compatibility; has no effect.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "x_override",
+     "flags": [
+      "--x"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "y_override",
+     "flags": [
+      "--y"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_flip",
+     "flags": [
+      "--no-flip"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "vmin",
+     "flags": [
+      "--vmin"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "vmax",
+     "flags": [
+      "--vmax"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": "inferno",
+     "dest": "cmap",
+     "flags": [
+      "--cmap"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 250,
+     "dest": "width",
+     "flags": [
+      "--width"
+     ],
+     "help": "Minimum plot width in px; stretches responsively (default: 250).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": 450,
+     "dest": "height",
+     "flags": [
+      "--height"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [
+      "above",
+      "below",
+      "left",
+      "right",
+      "disable"
+     ],
+     "default": "above",
+     "dest": "toolbar",
+     "flags": [
+      "--toolbar"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_hover",
+     "flags": [
+      "--no-hover"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_crosshair",
+     "flags": [
+      "--no-crosshair"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_cmap_picker",
+     "flags": [
+      "--no-cmap-picker"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_log",
+     "flags": [
+      "--no-log"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_draw",
+     "flags": [
+      "--no-draw"
+     ],
+     "help": "Disable freehand/polyline/region drawing tools.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 1,
+     "dest": "decimate",
+     "flags": [
+      "--decimate"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "ymin",
+     "flags": [
+      "--ymin"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "ymax",
+     "flags": [
+      "--ymax"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Last stage: aa-nc x.raw --sonar_model EK60 | aa-sv | aa-plot",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-plot --vmin -80 --vmax -30",
+    "aa-plot gs://bucket/derived/x_35e8864f.nc --frequency 38000 --dest gs://bucket/pages/"
+   ],
+   "kind": "html",
+   "options": {
+    "--channel": "one channel instead of one tab per channel",
+    "--decimate": "plot every Nth ping (large files)",
+    "--frequency": "one channel instead of one tab per channel",
+    "--no-draw": "no drawing tools and no EVL/EVR export",
+    "--no-overwrite": "exit 1 if a different file is already at the output path (an identical rendering is reused)",
+    "--output_path": "explicit output, local or gs://; '.html' is added when the name doesn't end in it (as Panel always did)",
+    "--quiet": "warnings only on stderr",
+    "--single": "one channel instead of one tab per channel",
+    "--var": "variable to plot (default: Sv, Sv_clean, MVBS, TS, NASC, cluster_map, else the first data variable)",
+    "--vmax": "colour limits (default: the data range)",
+    "--vmin": "colour limits (default: the data range)",
+    "--y": "y axis (default: depth, echo_range, ... then range_sample)",
+    "--ymax": "depth window",
+    "--ymin": "depth window",
+    "-o": "explicit output, local or gs://; '.html' is added when the name doesn't end in it (as Panel always did)"
+   },
+   "reads": "One NetCDF path or gs:// URI (Sv, cleaned Sv, MVBS, a mask, a cluster map, ...).",
+   "role": "representation",
+   "science": [
+    "all",
+    "channel",
+    "cmap",
+    "decimate",
+    "frequency",
+    "height",
+    "no_cmap_picker",
+    "no_crosshair",
+    "no_draw",
+    "no_flip",
+    "no_hover",
+    "no_log",
+    "single",
+    "toolbar",
+    "var",
+    "vmax",
+    "vmin",
+    "width",
+    "x_override",
+    "y_override",
+    "ymax",
+    "ymin"
+   ],
+   "scienceText": {
+    "all": "one tab per channel (the default for multi-channel data)",
+    "channel": "the channel with this exact name",
+    "cmap": "initial colormap",
+    "decimate": "every Nth ping",
+    "frequency": "the channel nearest this nominal frequency (Hz)",
+    "height": "plot height in px",
+    "no_cmap_picker": "no colormap picker",
+    "no_crosshair": "no crosshair",
+    "no_draw": "no drawing tools",
+    "no_flip": "don't draw depth/range increasing downwards",
+    "no_hover": "no hover tooltip",
+    "no_log": "no data summary panel",
+    "single": "one channel only (channel 0 unless --channel/--frequency)",
+    "toolbar": "toolbar position",
+    "var": "variable to plot",
+    "vmax": "upper colour limit",
+    "vmin": "lower colour limit",
+    "width": "minimum plot width in px",
+    "x_override": "x axis name",
+    "y_override": "y axis name",
+    "ymax": "bottom of the depth window",
+    "ymin": "top of the depth window"
+   },
+   "summary": "Interactive echogram HTML page with drawing tools and EVL/EVR export."
+  },
+  "aa-splitbeam-angle": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of an Sv NetCDF (.nc).",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output NetCDF path, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "echodata",
+     "flags": [
+      "--echodata"
+     ],
+     "help": "Path to the converted EchoData (NetCDF/Zarr) containing Sonar/Beam_group*.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "CW",
+      "BB"
+     ],
+     "default": null,
+     "dest": "waveform_mode",
+     "flags": [
+      "--waveform-mode"
+     ],
+     "help": "Transmit waveform mode: CW (narrowband) or BB (broadband).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": true,
+     "type": null
+    },
+    {
+     "choices": [
+      "complex",
+      "power"
+     ],
+     "default": null,
+     "dest": "encode_mode",
+     "flags": [
+      "--encode-mode"
+     ],
+     "help": "Return echo encoding type: complex or power.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": true,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "pulse_compression",
+     "flags": [
+      "--pulse-compression"
+     ],
+     "help": "Use pulse compression (valid only for BB + complex).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv, e.g. before aa-detect-seafloor --method blackwell, which needs the angles: aa-sv $ED | aa-depth | aa-splitbeam-angle --echodata $ED ...",
+   "examples": [
+    "ED=$(aa-nc D20160703-T060000.raw --sonar_model EK60)",
+    "aa-sv \"$ED\" | aa-splitbeam-angle --echodata \"$ED\" --waveform-mode CW --encode-mode power",
+    "aa-splitbeam-angle Sv.nc --echodata ED.nc --waveform-mode BB --encode-mode complex --pulse-compression   # EK80"
+   ],
+   "kind": "sv",
+   "options": {
+    "--echodata": "the EchoData (aa-nc output) the Sv came from. Needed in practice: without it the input itself is opened as EchoData, which an Sv file is not. Its content enters the product hash.",
+    "--encode-mode": "REQUIRED. EK60: power. 'power' needs CW.",
+    "--no-overwrite": "exit 1 instead of replacing a different existing output",
+    "--output_path": "Explicit output, used exactly as given. Local path or gs:// URI.",
+    "--pulse-compression": "BB + complex only",
+    "--waveform-mode": "REQUIRED. CW narrowband (EK60 is always CW) or BB broadband",
+    "-o": "Explicit output, used exactly as given. Local path or gs:// URI."
+   },
+   "reads": "One Sv .nc path or gs:// URI (aa-sv output). Not a .raw: convert with aa-nc first.",
+   "role": "transform",
+   "science": [
+    "encode_mode",
+    "pulse_compression",
+    "waveform_mode"
+   ],
+   "scienceText": {
+    "echodata": "EchoData file: its content identity (not its path) enters the hash.",
+    "encode_mode": "Recorded echo encoding: power or complex.",
+    "pulse_compression": "Apply pulse compression (BB + complex only).",
+    "waveform_mode": "Transmit waveform: CW (narrowband) or BB (broadband)."
+   },
+   "summary": "Add split-beam angles to an Sv dataset (echopype.consolidate.add_splitbeam_angle)."
+  },
+  "aa-sv": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .zarr EchoData file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. '_Sv' is appended to the stem.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "CW",
+      "BB",
+      "FM"
+     ],
+     "default": null,
+     "dest": "waveform_mode",
+     "flags": [
+      "--waveform_mode"
+     ],
+     "help": "For EK80 Echosounders ONLY: waveform mode. Omit for EK60.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "complex",
+      "power"
+     ],
+     "default": null,
+     "dest": "encode_mode",
+     "flags": [
+      "--encode_mode"
+     ],
+     "help": "For EK80 Echosounders ONLY: encoding mode. Omit for EK60.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Second stage: aa-nc | aa-sv | aa-graph, or aa-nc | aa-sv | aa-depth | ... (see aa-guide). Note: aa-clean writes the cleaned values to Sv_corrected; aa-mvbs, aa-nasc and aa-graph read Sv.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv",
+    "aa-sv file.nc --waveform_mode BB --encode_mode complex   # EK80"
+   ],
+   "kind": "sv",
+   "options": {
+    "--encode_mode": "EK80 only. Omit for EK60.",
+    "--output_path": "Explicit output; '_Sv' is appended to its stem, as always. Local path or gs:// URI.",
+    "--waveform_mode": "EK80 only. Omit for EK60.",
+    "-o": "Explicit output; '_Sv' is appended to its stem, as always. Local path or gs:// URI."
+   },
+   "reads": "One EchoData .nc/.zarr path or gs:// URI, from aa-nc, aa-ed or aa-combine.",
+   "role": "transform",
+   "science": [
+    "encode_mode",
+    "waveform_mode"
+   ],
+   "scienceText": {
+    "encode_mode": "EK80 encoding.",
+    "waveform_mode": "EK80 waveform. FM and BB are the same computation."
+   },
+   "summary": "Calibrate EchoData to volume backscattering strength (Sv)."
+  },
+  "aa-swap-freq": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of a NetCDF file containing 'channel' and 'frequency_nominal'.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Output path for the swapped NetCDF, used as given.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "check_unique",
+     "flags": [
+      "--check-unique"
+     ],
+     "help": "Fail early if duplicate frequency_nominal values exist.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "no_overwrite",
+     "flags": [
+      "--no-overwrite"
+     ],
+     "help": "Do not overwrite an existing output file.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Usually last before analysis in Python: ... | aa-sv | aa-swap-freq. Tools that select by 'channel' will not work on its output.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv | aa-swap-freq --check-unique",
+    "aa-swap-freq MVBS.nc -o MVBS_by_freq.nc"
+   ],
+   "kind": "sv",
+   "options": {
+    "--check-unique": "fail early (exit 1) if frequency_nominal is missing or has duplicates",
+    "--no-overwrite": "exit 1 instead of replacing a different existing output",
+    "--output_path": "Explicit output, used exactly as given. Local path or gs:// URI.",
+    "-o": "Explicit output, used exactly as given. Local path or gs:// URI."
+   },
+   "reads": "One NetCDF path or gs:// URI with a 'channel' dimension and 'frequency_nominal' (Sv, MVBS, ...).",
+   "role": "transform",
+   "science": [],
+   "scienceText": {},
+   "summary": "Index a dataset by frequency_nominal instead of channel."
+  },
+  "aa-transient": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .netcdf4 file containing Sv.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save the mask (suffix forced to .nc). Default: <base>_<hash>.nc.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "apply",
+     "flags": [
+      "--apply"
+     ],
+     "help": "Also write Sv cleaned by the mask as a second product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "nanmean",
+     "dest": "func",
+     "flags": [
+      "--func"
+     ],
+     "help": "Pooling function: nanmean or nanmedian (default: nanmean).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "10m",
+     "dest": "depth_bin",
+     "flags": [
+      "--depth-bin"
+     ],
+     "help": "Depth bin size, e.g., '10m' (default: 10m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 25,
+     "dest": "num_side_pings",
+     "flags": [
+      "--num-side-pings"
+     ],
+     "help": "Number of side pings for pooling window (default: 25).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": "250.0m",
+     "dest": "exclude_above",
+     "flags": [
+      "--exclude-above"
+     ],
+     "help": "Exclude depths shallower than this (default: 250.0m).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "12.0dB",
+     "dest": "transient_noise_threshold",
+     "flags": [
+      "--transient-threshold"
+     ],
+     "help": "Threshold above local context, e.g. '12.0dB' (default: 12.0dB).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": "depth",
+     "dest": "range_var",
+     "flags": [
+      "--range-var"
+     ],
+     "help": "Range/depth variable name (default: depth).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "use_index_binning",
+     "flags": [
+      "--use-index-binning"
+     ],
+     "help": "Use index-based binning rather than physical bin sizes.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "chunk",
+     "flags": [
+      "--chunk"
+     ],
+     "help": "Optional dask chunk sizes as key=value pairs.",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv and aa-depth: ... | aa-sv | aa-depth | aa-transient | aa-graph (draws the mask). Only the mask travels down the pipe.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-depth | aa-transient --use-index-binning --exclude-above 20m",
+    "aa-transient sv_depth.nc --apply --exclude-above 20m --use-index-binning"
+   ],
+   "kind": "mask",
+   "options": {
+    "--apply": "Also write the input's Sv with transient samples set to NaN (all other variables copied).",
+    "--chunk": "Dask chunk sizes for the index-binning pooling, e.g. ping_time=256 range_sample=512 (dims of Sv). Only used with --use-index-binning; performance only, not hashed. Put INPUT_PATH before --chunk (or end the list with --).",
+    "--output_path": "The mask file, used as given with the extension forced to .nc. Local path or gs:// URI. Does not move the --apply file.",
+    "-o": "The mask file, used as given with the extension forced to .nc. Local path or gs:// URI. Does not move the --apply file."
+   },
+   "reads": "One Sv NetCDF (.nc/.netcdf4) path or gs:// URI that has the --range-var variable: depth (add it with aa-depth) or echo_range. An EchoData file without Sv is calibrated first with compute_Sv defaults (recorded in the provenance as an implicit step).",
+   "role": "transform",
+   "science": [
+    "depth_bin",
+    "exclude_above",
+    "func",
+    "num_side_pings",
+    "range_var",
+    "transient_noise_threshold",
+    "use_index_binning"
+   ],
+   "scienceText": {
+    "depth_bin": "Vertical half-height of the pooling window, e.g. 10m.",
+    "exclude_above": "Never flag samples shallower than this, e.g. 250m.",
+    "func": "Pooling function: nanmean or nanmedian (the only two echopype 0.11.1 accepts; nanmedian is much slower).",
+    "num_side_pings": "Pings on each side in the pooling window.",
+    "range_var": "Vertical variable: depth or echo_range.",
+    "transient_noise_threshold": "dB above the pooled Sv that counts as transient noise, e.g. 12dB.",
+    "use_index_binning": "Pool by range_sample index (assumes uniform sample spacing per channel). Much faster."
+   },
+   "summary": "Transient-noise mask for Sv; --apply also writes cleaned Sv."
+  },
+  "aa-ts": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "Path or gs:// URI of the .nc / .netcdf4 EchoData file.",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "Path to save processed output. '_ts' is appended to the stem.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "env_params",
+     "flags": [
+      "--env-param"
+     ],
+     "help": "Environmental parameter override (repeatable). Example: sound_speed=1500",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "cal_params",
+     "flags": [
+      "--cal-param"
+     ],
+     "help": "Calibration parameter override (repeatable). Example: gain_correction=1.0",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "CW",
+      "BB",
+      "FM"
+     ],
+     "default": "CW",
+     "dest": "waveform_mode",
+     "flags": [
+      "--waveform_mode"
+     ],
+     "help": "For EK80 Echosounders: waveform mode (default: CW).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "complex",
+      "power"
+     ],
+     "default": "complex",
+     "dest": "encode_mode",
+     "flags": [
+      "--encode_mode"
+     ],
+     "help": "For EK80 Echosounders: encoding mode (default: complex).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Parallel to aa-sv, on the same EchoData: aa-nc x.raw --sonar_model EK60 | aa-ts. Its output holds TS, not Sv, so it does not feed aa-clean, aa-mvbs or aa-nasc.",
+   "examples": [
+    "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-ts",
+    "aa-ts file.nc --env-param sound_speed=1500 --env-param temperature=10.5"
+   ],
+   "kind": "ts",
+   "options": {
+    "--cal-param": "override a calibration value; repeatable, e.g. --cal-param gain_correction=25.9",
+    "--encode_mode": "EK80 encoding (default: complex). EK60/AZFP: always power.",
+    "--env-param": "override an environmental value; repeatable, e.g. --env-param sound_speed=1500",
+    "--output_path": "Explicit output; '_ts' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_ts.nc). Local path or gs:// URI.",
+    "--waveform_mode": "EK80 waveform (default: CW). EK60/AZFP: always CW.",
+    "-o": "Explicit output; '_ts' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_ts.nc). Local path or gs:// URI."
+   },
+   "reads": "One EchoData .nc/.netcdf4 path or gs:// URI, from aa-nc, aa-ed or aa-combine.",
+   "role": "transform",
+   "science": [
+    "cal_params",
+    "encode_mode",
+    "env_params",
+    "waveform_mode"
+   ],
+   "scienceText": {
+    "cal_params": "Calibration overrides (--cal-param), as numbers.",
+    "encode_mode": "EK80 encoding.",
+    "env_params": "Environmental overrides (--env-param), as numbers; order and 1500 vs 1500.0 do not matter.",
+    "waveform_mode": "EK80 waveform. FM and BB are the same computation."
+   },
+   "summary": "Calibrate EchoData to target strength (TS)."
+  }
+ }
+}

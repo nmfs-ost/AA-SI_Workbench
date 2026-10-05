@@ -5,7 +5,8 @@ import { Alert, Box, Button, Chip, Divider, Typography, useTheme } from '@mui/ma
 import ScienceOutlined from '@mui/icons-material/ScienceOutlined';
 import RestartAltOutlined from '@mui/icons-material/RestartAltOutlined';
 
-import { ParamControl } from '../pipelines/ParamControl';
+import { ParamControl } from './ParamControl';
+import { PanelHeader } from '../PanelHeader';
 import { useActiveSubject } from '../../../state/activeSubject';
 import {
   initCalibration,
@@ -42,35 +43,25 @@ export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
         backgroundColor: theme.aa.color.bg.panel,
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.25,
-          minHeight: 30,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-          color: theme.aa.color.text.secondary,
-        }}
-      >
-        <ScienceOutlined sx={{ fontSize: 16 }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
-          Calibration
-        </Typography>
-        {subject && (
-          <Chip
-            label={subject.origin}
-            size="small"
-            sx={{
-              height: 17,
-              fontSize: 10,
-              backgroundColor: theme.aa.color.bg.elevated,
-              color: theme.aa.color.text.secondary,
-            }}
-          />
-        )}
-      </Box>
+      <PanelHeader
+        icon={<ScienceOutlined className="panel-header-icon" />}
+        title="Calibration"
+        subtitle={subject?.label}
+        actions={
+          subject ? (
+            <Chip
+              label={subject.origin}
+              size="small"
+              sx={{
+                height: 17,
+                fontSize: 10,
+                backgroundColor: theme.aa.color.bg.elevated,
+                color: theme.aa.color.text.secondary,
+              }}
+            />
+          ) : undefined
+        }
+      />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.25 }}>
         <Typography
@@ -78,7 +69,7 @@ export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
         >
           {subject
             ? `Applied to ${subject.label}.`
-            : 'Select an EchoData product (in Prepare EchoData or Derived) to calibrate against it.'}
+            : 'Select an EchoData product (in Prepare EchoData or Products) to calibrate against it.'}
         </Typography>
 
         <Alert severity="info" sx={{ fontSize: 11.5, mb: 1.75, py: 0.25 }}>

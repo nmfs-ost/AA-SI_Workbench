@@ -134,6 +134,12 @@ export const menus: MenuDefinition[] = [
         action: 'open-dialog',
         dialogId: 'environment',
       },
+      {
+        id: 'tools-gcp',
+        label: 'GCP Project and Bucket…',
+        action: 'open-dialog',
+        dialogId: 'gcp',
+      },
       { id: 'tools-div-1', divider: true },
       { id: 'tools-settings', label: 'Settings…', shortcut: 'Ctrl+,', action: 'noop' },
       { id: 'tools-extensions', label: 'Extensions', disabled: true },

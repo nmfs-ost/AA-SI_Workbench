@@ -10,5 +10,6 @@ export type DialogId =
   | 'about'
   | 'environment'
   | 'feedback'
+  | 'gcp'
   | 'new-file'
   | 'rename';

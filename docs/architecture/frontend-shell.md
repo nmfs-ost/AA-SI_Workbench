@@ -165,7 +165,7 @@ src/
 ├── services/               # typed API clients: environmentApi, filesApi, terminalApi,
 │                            # baselineApi; ncei/ (the NCEI catalogue Prepare uses)
 ├── state/                   # module stores (useSyncExternalStore), not context:
-│                            # activeSubject, prepare, pipelines, pipelineInput,
+│                            # activeSubject, prepare, pipelines, gcp,
 │                            # calibration, dialogs, environment
 └── components/
     ├── layout/              # AppShell, MenuBar, AppToolbar, DockLayout, StatusBar,

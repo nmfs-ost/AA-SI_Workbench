@@ -18,10 +18,9 @@
  * decides whether a handle can carry `dims`/`chunks` at all.
  *
  * ── Reading this, not just declaring it ─────────────────────────────────────
- * Three call sites, and adding a fourth should not need a change here:
- *   • NewPipelineDialog — flags a stage whose input nothing upstream produces.
- *   • PipelineRunControls / PipelineCard — states what a pipeline needs.
- *   • Metadata / Derived — badge and icon per kind.
+ * The selection (activeSubject) and the store inspector use it for a badge and
+ * an icon per kind. The pipelines no longer do: their chain of kinds comes from
+ * the server's tool catalogue (backend api/catalogue.py, chain.ts).
  * ────────────────────────────────────────────────────────────────────────────
  */
 

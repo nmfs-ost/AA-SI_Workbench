@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FunctionComponent, ReactNode } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
+import HubOutlined from '@mui/icons-material/HubOutlined';
 import {
   Box,
   Chip,
@@ -35,7 +36,10 @@ import {
   type GithubRepo,
 } from '../../../services/githubApi';
 import { loadIdentity, useIdentity } from '../../../state/identity';
+import { openDialog } from '../../../state/dialogs';
+import { useGcp } from '../../../state/gcp';
 import { panelDensity } from '../panelStyles';
+import { PanelHeader } from '../PanelHeader';
 import { formatRelativeTime } from '../rowFormat';
 
 /**
@@ -59,8 +63,8 @@ import { formatRelativeTime } from '../rowFormat';
  * workstation, or the unauthenticated hourly limit — the panel falls back to the
  * curated list in `config/resources.ts` **and says so**. Silently showing a
  * hand-maintained list as though it were live is the failure mode that makes a
- * stale link look authoritative, which is the thing `toolCatalog.ts` already
- * carries a warning about.
+ * stale link look authoritative — the way the old hand-written pipeline tool
+ * catalogue drifted from the real tools.
  *
  * ## Identity
  *
@@ -264,6 +268,7 @@ function RepoCard({ entry }: { entry: GithubRepo }) {
 export const ResourcesPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
   const { identity } = useIdentity();
+  const gcp = useGcp();
 
   const [repos, setRepos] = useState<GithubRepo[]>(cache ?? []);
   const [loading, setLoading] = useState(cache === null);
@@ -303,35 +308,21 @@ export const ResourcesPanel: FunctionComponent<IDockviewPanelProps> = () => {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-          px: 1.25,
-          py: 0.5,
-          flexShrink: 0,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-        }}
-      >
-        <Typography
-          sx={{
-            flex: 1,
-            fontSize: panelDensity.font.header,
-            fontWeight: 600,
-            color: theme.aa.color.text.secondary,
-          }}
-        >
-          Project
-        </Typography>
-        {loading && <CircularProgress size={11} />}
-        <Tooltip title="Re-read the repository list">
-          <IconButton size="small" onClick={() => void load(true)}>
-            <RefreshOutlined sx={{ fontSize: 15 }} />
-          </IconButton>
-        </Tooltip>
-      </Box>
+      <PanelHeader
+        icon={<HubOutlined className="panel-header-icon" />}
+        title="Project"
+        subtitle="Repositories, documentation, and where to ask"
+        actions={
+          <>
+            {loading && <CircularProgress size={11} />}
+            <Tooltip title="Re-read the repository list">
+              <IconButton size="small" onClick={() => void load(true)}>
+                <RefreshOutlined sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+          </>
+        }
+      />
 
       <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, py: 0.5 }}>
         <Section title={`Repositories · ${ORG}`}>
@@ -466,12 +457,24 @@ export const ResourcesPanel: FunctionComponent<IDockviewPanelProps> = () => {
             </Typography>
           )}
         </Box>
-        {identity.project && (
+        {/* The project the Workbench works in: the user's choice, as the
+            status bar shows it, not whatever gcloud or the server's
+            environment happens to name. */}
+        {gcp.context && (
           <Chip
-            label={identity.project}
+            label={gcp.context.project || 'Choose a project'}
+            title="The GCP project the Workbench works in. Click to change."
             size="small"
             variant="outlined"
-            sx={{ height: 17, fontSize: 9.5, flexShrink: 0 }}
+            clickable
+            onClick={() => openDialog('gcp')}
+            sx={{
+              height: 17,
+              fontSize: 9.5,
+              flexShrink: 0,
+              fontFamily: theme.aa.font.mono,
+              color: gcp.context.project ? undefined : theme.aa.color.status.warning,
+            }}
           />
         )}
       </Box>

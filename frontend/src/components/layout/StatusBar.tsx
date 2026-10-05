@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { Box, CircularProgress, Tooltip, Typography, useTheme } from '@mui/material';
-import { AccountCircleOutlined } from '@mui/icons-material';
+import { AccountCircleOutlined, CloudOutlined } from '@mui/icons-material';
 
 import { useLayout } from '../../context/LayoutContext';
 import { openDialog } from '../../state/dialogs';
 import { useUpdateJobState } from '../../state/environment';
 import { getEditorsState, isDirty, openFile, useUnsavedCount } from '../../state/editors';
+import { initGcp, useGcp } from '../../state/gcp';
 import { loadIdentity, useIdentity } from '../../state/identity';
 
 /**
@@ -40,12 +41,17 @@ export function StatusBar() {
   const unsavedCount = useUnsavedCount();
   const { identity, loaded } = useIdentity();
   const { openPanel } = useLayout();
+  const gcp = useGcp();
 
   /* Shared with every other consumer — the store fetches once per session, so
-     mounting here costs nothing beyond a subscription. */
+     mounting here costs nothing beyond a subscription. The GCP context too:
+     the status bar is always on screen, so it is where the Workbench first
+     finds out which project and bucket this user works in. */
   useEffect(() => {
     void loadIdentity();
+    initGcp();
   }, []);
+  const gcpContext = gcp.context;
 
   const labelSx = {
     fontSize: 11.5,
@@ -144,19 +150,62 @@ export function StatusBar() {
             >
               {identity.principal || 'No account'}
             </Typography>
-            {identity.project && (
-              <Typography
-                component="span"
-                sx={{
-                  ...labelSx,
-                  color: theme.aa.color.text.muted,
-                  flexShrink: 0,
-                  opacity: 0.75,
-                }}
-              >
-                {'\u00b7'} {identity.project}
-              </Typography>
-            )}
+          </Box>
+        </Tooltip>
+      )}
+
+      {/* Which project and bucket the Workbench works in; click to change. */}
+      {(gcpContext || gcp.error) && (
+        <Tooltip
+          title={
+            gcpContext?.bucket
+              ? `Working in gs://${gcpContext.bucket}. Click to choose another project or bucket.`
+              : gcpContext
+                ? 'No GCP project and bucket chosen yet. Click to choose.'
+                : `Could not ask the server which project is in use: ${gcp.error}. Click to try again.`
+          }
+          placement="top-end"
+        >
+          <Box
+            component="button"
+            onClick={() => openDialog('gcp')}
+            aria-label="Choose the GCP project and bucket"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              maxWidth: 300,
+              background: 'none',
+              border: 'none',
+              p: 0,
+              font: 'inherit',
+              cursor: 'pointer',
+              color: gcpContext?.bucket ? theme.aa.color.text.muted : theme.aa.color.status.warning,
+              '&:hover': { color: theme.aa.color.text.primary },
+              '&:focus-visible': {
+                outline: `1px solid ${theme.aa.color.accent.main}`,
+                outlineOffset: 2,
+              },
+            }}
+          >
+            <CloudOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
+            <Typography
+              component="span"
+              sx={{
+                ...labelSx,
+                color: 'inherit',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {gcpContext?.bucket
+                ? gcpContext.project || gcpContext.bucket
+                : gcpContext
+                  ? 'Choose a GCP project'
+                  : 'GCP project unknown'}
+            </Typography>
           </Box>
         </Tooltip>
       )}

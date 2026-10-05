@@ -32,8 +32,8 @@ interface Props {
  * The action strip for the focused recipe: pick a verb, see the exact command,
  * send it to the terminal.
  *
- * Differences from `PipelineRunControls`, each following from what `aa-recipe`
- * actually is rather than from taste:
+ * Differences from the Pipelines card's runs, each following from what
+ * `aa-recipe` actually is rather than from taste:
  *
  *  - **One recipe, not a selection.** The CLI takes one recipe per invocation.
  *  - **Three verbs, Validate first.** `dry-run` is his system's validator and

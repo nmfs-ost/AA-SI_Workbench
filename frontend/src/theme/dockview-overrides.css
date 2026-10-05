@@ -47,7 +47,9 @@
   --dv-paneview-active-outline-color: var(--aa-accent-main);
 
   /* Density */
-  --dv-tabs-and-actions-container-height: 34px;
+  /* The window's row height (tokens.size.row): tab strips, panel headers and
+     side-strip icons share it, so their edges line up across docks. */
+  --dv-tabs-and-actions-container-height: var(--aa-size-row, 36px);
   --dv-tabs-and-actions-container-font-size: 12.5px;
 }
 

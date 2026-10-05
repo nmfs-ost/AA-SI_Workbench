@@ -79,6 +79,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from . import jobs, workspace
+from .gcp import GcpContext, project_of_bucket, tool_env
+from .gcp import current as gcp_current
 
 router = APIRouter(prefix="/api/baseline", tags=["baseline"])
 
@@ -165,6 +167,10 @@ class ToolState(BaseModel):
 
 class BaselineConfig(BaseModel):
     bucket: str
+    #: The project the bucket and the tools work in (see gcp.py), '' if unknown.
+    project: str = ""
+    #: chosen | discovered | environment | unset
+    bucketSource: str = "unset"
     prefixTemplate: str
     user: str
     runRoot: str
@@ -319,12 +325,11 @@ def detect_user() -> str:
 
 
 def default_bucket() -> str:
+    """Where products go: AASI_BASELINE_BUCKET, or the chosen bucket (gcp.py)."""
     explicit = os.getenv("AASI_BASELINE_BUCKET", "").strip()
     if explicit:
         return explicit
-    from .derived import bucket_name
-
-    return bucket_name()
+    return gcp_current().bucket
 
 
 def run_root() -> Path:
@@ -357,7 +362,13 @@ def work_root(req: BaselineRequest) -> Path:
 def destination(req: BaselineRequest, base: str, user: str) -> str:
     bucket = (req.bucket or default_bucket()).strip().removeprefix("gs://").strip("/")
     if not bucket:
-        raise HTTPException(status_code=400, detail="No bucket to write to.")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No bucket to write to: choose a GCP project and bucket first (the "
+                "project in the status bar, or Tools ▸ GCP project and bucket)."
+            ),
+        )
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]", bucket):
         raise HTTPException(status_code=400, detail=f"Not a bucket name: {bucket!r}")
     template = req.prefix.strip() or PREFIX_TEMPLATE
@@ -457,6 +468,9 @@ class Context:
     outputs: dict[str, str] = field(default_factory=dict)
     #: Raw files the fetch delivered; before that, the card's count stands in.
     raw_count: int | None = None
+    #: The GCP project and bucket when the run was made: every stage runs in
+    #: it, even if the choice changes while the run goes.
+    gcp: GcpContext = field(default_factory=lambda: gcp_current())
 
     @property
     def single(self) -> bool:
@@ -875,7 +889,10 @@ def _execute_stages(run: _Run) -> None:
                     cwd=str(ctx.scratch),
                     env=env,
                     label=f"{ctx.base} · {stage.label}",
-                )
+                ),
+                # The fetch looks files up in the NCEI cache the card listed
+                # them from; the other stages work in the chosen project.
+                gcp_env=tool_env(ctx.gcp, ncei=stage.id == "fetch"),
             )
         except HTTPException as exc:
             with _lock:
@@ -1178,8 +1195,15 @@ def get_config() -> BaselineConfig:
     if others:
         problems.append(f"Not installed in this environment: {', '.join(others)}.")
     user = detect_user()
+    context = gcp_current()
+    pinned = os.getenv("AASI_BASELINE_BUCKET", "").strip()
     return BaselineConfig(
         bucket=default_bucket(),
+        # A deployment that pins the bucket names it; its project is the one
+        # the bucket's name says, not the chosen one.
+        project=project_of_bucket(pinned) if pinned else context.project,
+        # "pinned": the deployment decides; choosing a project changes nothing.
+        bucketSource="pinned" if pinned else context.source,
         prefixTemplate=PREFIX_TEMPLATE,
         user=user,
         runRoot=str(run_root()),
@@ -1387,6 +1411,7 @@ def get_provenance(uri: str = Query(..., min_length=1)) -> Provenance:
             text=True,
             timeout=float(os.getenv("AASI_PROVENANCE_TIMEOUT", "120")),
             stdin=subprocess.DEVNULL,
+            env={**os.environ, **tool_env()},
         )
     except subprocess.TimeoutExpired:
         return Provenance(uri=uri, found=False, message="aa-metadata took too long.")

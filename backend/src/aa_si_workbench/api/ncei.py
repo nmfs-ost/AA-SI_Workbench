@@ -6,10 +6,11 @@ are available, chosen by the ``AASI_NCEI_SOURCE`` environment variable:
 
   * ``s3``    (default) — lists the public ``noaa-wcsd-pds`` bucket anonymously
                via ``aalibrary.utils.ncei_utils``. Needs no credentials.
-  * ``cache`` — queries the BigQuery ``metadata.ncei_cache`` table via
-               ``aalibrary.utils.ncei_cache_utils``. Much faster and carries
-               ``file_datetime`` directly, but needs GCP application-default
-               credentials with BigQuery access.
+  * ``cache`` — queries the BigQuery ``<project>.metadata.ncei_cache`` table
+               of the project this user works in (gcp.py; the table aa-fetch
+               downloads by). Much faster and carries ``file_datetime``
+               directly, but needs GCP application-default credentials with
+               BigQuery access.
 
 Endpoints map one-to-one onto the frontend's ``NceiCatalogSource`` interface.
 Both providers reuse `aalibrary`, so the backend must run in an environment where
@@ -22,7 +23,6 @@ import os
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Protocol, TypeVar
 
 from fastapi import APIRouter, HTTPException, Query
@@ -30,7 +30,6 @@ from fastapi import APIRouter, HTTPException, Query
 from .schemas import RawFile, SonarModel, Survey, Vessel
 
 BUCKET = "noaa-wcsd-pds"
-NCEI_CACHE_TABLE = "ggn-nmfs-aa-dev-1.metadata.ncei_cache"
 
 _RAW_DT = re.compile(r"D(\d{8})-T(\d{6})")
 
@@ -176,26 +175,56 @@ class S3Provider:
 
 
 class CacheProvider:
-    """Fast path backed by the BigQuery metadata.ncei_cache table (needs GCP)."""
+    """Fast path backed by the BigQuery NCEI cache table (needs GCP).
 
-    def __init__(self) -> None:
-        from aalibrary.utils.cloud_utils import setup_gbq_client_objs
+    The table is ``<project>.metadata.ncei_cache`` in the project this user
+    works in (gcp.py), the same table aa-fetch downloads by, so the card can
+    never promise a file the fetch will not find. The queries are written
+    here, parameterised, rather than borrowed from aalibrary, whose helpers
+    name one project's table outright.
+    """
 
-        self._bq = setup_gbq_client_objs()[0]
+    def __init__(self, project: str) -> None:
+        from google.cloud import bigquery
+
+        self.project = project
+        self.table = f"{project}.metadata.ncei_cache"
+        # Jobs run (and are billed) in the same project the table is in.
+        self._bq = bigquery.Client(project=project, location="US")
+
+    def _rows(self, sql: str, params: dict[str, str]):  # noqa: ANN202 - a DataFrame
+        from google.cloud import bigquery
+
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter(name, "STRING", value)
+                for name, value in params.items()
+            ]
+        )
+        return (
+            self._bq.query(sql, job_config=job_config)
+            .result()
+            .to_dataframe(create_bqstorage_client=False)
+        )
+
+    def _distinct(self, column: str, where: str = "", **params: str) -> list:
+        """The distinct values of *column*, NULLs included (see _names)."""
+        sql = f"SELECT DISTINCT {column} AS value FROM `{self.table}`"
+        if where:
+            sql += f" WHERE {where}"
+        return list(self._rows(sql, params)["value"])
 
     def list_vessels(self) -> list[Vessel]:
-        from aalibrary.utils import ncei_cache_utils
-
-        names = ncei_cache_utils.get_all_ship_names_in_ncei_cache(
-            normalize=False, gcp_bq_client=self._bq
-        )
-        return [Vessel(id=n, name=_display_name(n)) for n in _names(names)]
+        return [
+            Vessel(id=n, name=_display_name(n))
+            for n in _names(self._distinct("ship_name"))
+        ]
 
     def list_surveys(self, vessel_id: str) -> list[Survey]:
-        from aalibrary.utils import ncei_cache_utils
-
-        names = ncei_cache_utils.get_all_survey_names_from_a_ship_in_ncei_cache(
-            ship_name=vessel_id, gcp_bq_client=self._bq
+        names = self._distinct(
+            "survey_name",
+            "ship_name_normalized = @ship",
+            ship=_normalized(vessel_id),
         )
         return [
             Survey(id=n, name=n, vesselId=vessel_id, year=_year_from_survey(n))
@@ -203,44 +232,31 @@ class CacheProvider:
         ]
 
     def list_sonars(self, vessel_id: str, survey_id: str) -> list[SonarModel]:
-        from aalibrary.utils import ncei_cache_utils
-
-        names = ncei_cache_utils.get_all_echosounders_in_a_survey_in_ncei_cache(
-            ship_name=vessel_id, survey_name=survey_id, gcp_bq_client=self._bq
+        names = self._distinct(
+            "echosounder_name",
+            "ship_name_normalized = @ship AND survey_name = @survey",
+            ship=_normalized(vessel_id),
+            survey=survey_id,
         )
         return [SonarModel(id=n, name=n) for n in _names(names)]
 
     def list_raw_files(
         self, vessel_id: str, survey_id: str, sonar_id: str
     ) -> list[RawFile]:
-        from aalibrary.utils.helpers import normalize_ship_name
-
-        ship_norm = normalize_ship_name(ship_name=vessel_id)
         # The cache's size column is `size_bytes` (what aalibrary's
         # get_folder_prefix_size_in_ncei_cache sums); there is no `file_size`.
-        query = f"""
+        sql = f"""
             SELECT file_name, file_datetime, size_bytes AS file_size
-            FROM `{NCEI_CACHE_TABLE}`
+            FROM `{self.table}`
             WHERE ship_name_normalized = @ship
               AND survey_name = @survey
               AND echosounder_name = @sonar
               AND file_type = 'raw'
             ORDER BY file_name ASC
         """
-        # Parameterized to avoid SQL injection from path segments.
-        from google.cloud import bigquery
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("ship", "STRING", ship_norm),
-                bigquery.ScalarQueryParameter("survey", "STRING", survey_id),
-                bigquery.ScalarQueryParameter("sonar", "STRING", sonar_id),
-            ]
-        )
-        df = (
-            self._bq.query(query, job_config=job_config)
-            .result()
-            .to_dataframe(create_bqstorage_client=False)
+        df = self._rows(
+            sql,
+            {"ship": _normalized(vessel_id), "survey": survey_id, "sonar": sonar_id},
         )
         files: list[RawFile] = []
         for _, row in df.iterrows():
@@ -260,13 +276,33 @@ class CacheProvider:
         return files
 
 
-@lru_cache(maxsize=1)
+def _normalized(vessel_id: str) -> str:
+    from aalibrary.utils.helpers import normalize_ship_name
+
+    return normalize_ship_name(ship_name=vessel_id)
+
+
+_providers: dict[tuple[str, str], NceiProvider] = {}
+
+
 def get_provider() -> NceiProvider:
-    """Construct (once) the provider selected by AASI_NCEI_SOURCE."""
+    """The provider AASI_NCEI_SOURCE selects, for the project in force."""
     source = os.getenv("AASI_NCEI_SOURCE", "s3").lower()
     if source == "cache":
-        return CacheProvider()
-    return S3Provider()
+        from .gcp import current
+
+        key = ("cache", current().nceiCacheProject)
+    else:
+        key = ("s3", "")
+    provider = _providers.get(key)
+    if provider is None:
+        provider = CacheProvider(key[1]) if key[0] == "cache" else S3Provider()
+        _providers[key] = provider
+    return provider
+
+
+def _reset_for_tests() -> None:
+    _providers.clear()
 
 
 def _run(thunk: Callable[[], T]) -> T:

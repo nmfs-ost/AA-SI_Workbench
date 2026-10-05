@@ -1,309 +1,406 @@
 import { useSyncExternalStore } from 'react';
 
-import {
-  cloneValues,
-  defaultValues,
-  valuesEqual,
-  type ParamValue,
-  type PipelineDefinition,
-  type PipelineValues,
-  type SavedConfiguration,
-  type StageDef,
-} from '../components/panels/pipelines/pipelineTypes';
-import { pipelineDefinitions } from '../components/panels/pipelines/pipelineDefinitions';
+import { ApiError, pipelinesApi, refFromInfo } from '../services/pipelinesApi';
+import type {
+  Catalogue,
+  ParamValue,
+  PipelineSpec,
+  Plan,
+  PlanRequest,
+  ProductInfo,
+  ProductRef,
+  RunStatus,
+  StageSpec,
+  ToolParam,
+} from '../services/pipelinesApi';
+import { stagesEqual, withParam } from '../components/panels/pipelines/chain';
+import { onGcpChange } from './gcp';
 
 /**
- * Pipeline state shared across docks.
+ * The Pipelines card: which products it runs on, which pipeline is open, the
+ * settings being edited, the server's plan for them, and the runs.
  *
- * The Pipelines panel (center) owns selection and editing; the Configuration
- * panel (right) edits the same draft values — so they stay in lockstep. Uses the
- * same module-store pattern as activeSubject, which works regardless of
- * how Dockview mounts panels.
- *
- * Terminology:
- *   - *selected*  — cards ticked for a run (many).
- *   - *active*    — the card whose configuration the right panel shows (one).
- *   - *draft*     — current, possibly-unsaved values for a pipeline.
- *   - *saved configuration* — a named set of values ("Default", "Deep water", …).
+ * The input is a selection of products in the bucket (the Products panel, a
+ * run's results, Prepare's results); the plan is asked of the server whenever
+ * the pipeline, its settings or the input change, so what the card shows is
+ * what would run. Edits are kept per pipeline until saved or discarded.
  */
 
-interface PipelinesState {
-  /** All pipelines: the seeded ones plus any the user creates. */
-  pipelines: PipelineDefinition[];
-  selected: ReadonlySet<string>;
+export interface PipelinesState {
+  catalogue: Catalogue | null;
+  catalogueError: string;
+  pipelines: PipelineSpec[];
+  listError: string;
   activePipelineId: string | null;
-  /** pipelineId -> current (possibly edited) values. */
-  drafts: Record<string, PipelineValues>;
-  /** pipelineId -> saved configurations. */
-  configs: Record<string, SavedConfiguration[]>;
-  /** pipelineId -> id of the configuration the draft was loaded from. */
-  activeConfigId: Record<string, string>;
+  /** Unsaved stage settings, per pipeline. */
+  edits: Record<string, StageSpec[]>;
+  inputs: ProductRef[];
+  plan: Plan | null;
+  planning: boolean;
+  planError: string;
+  /** Where products go for this run, gs://…/; '' for beside the input. */
+  dest: string;
+  /** Recompute stages whose product is already in the bucket. */
+  force: boolean;
+  runs: RunStatus[];
+  activeRunId: string | null;
+  starting: boolean;
+  runError: string;
 }
 
-function initialState(): PipelinesState {
-  const drafts: Record<string, PipelineValues> = {};
-  const configs: Record<string, SavedConfiguration[]> = {};
-  const activeConfigId: Record<string, string> = {};
+const ACTIVE_KEY = 'aa-si.pipelines.active';
 
-  for (const pipeline of pipelineDefinitions) {
-    const base = defaultValues(pipeline);
-    drafts[pipeline.id] = cloneValues(base);
-    const defaultConfigId = `${pipeline.id}:default`;
-    configs[pipeline.id] = [
-      {
-        id: defaultConfigId,
-        pipelineId: pipeline.id,
-        name: 'Default',
-        values: cloneValues(base),
-        builtin: true,
-        updatedAt: pipeline.updatedAt,
-      },
-    ];
-    activeConfigId[pipeline.id] = defaultConfigId;
+function remembered(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY);
+  } catch {
+    return null;
   }
-
-  return {
-    pipelines: [...pipelineDefinitions],
-    selected: new Set<string>(),
-    activePipelineId: null,
-    drafts,
-    configs,
-    activeConfigId,
-  };
 }
 
-let state: PipelinesState = initialState();
+let state: PipelinesState = {
+  catalogue: null,
+  catalogueError: '',
+  pipelines: [],
+  listError: '',
+  activePipelineId: remembered(),
+  edits: {},
+  inputs: [],
+  plan: null,
+  planning: false,
+  planError: '',
+  dest: '',
+  force: false,
+  runs: [],
+  activeRunId: null,
+  starting: false,
+  runError: '',
+};
+
 const listeners = new Set<() => void>();
 
-function emit(next: PipelinesState): void {
-  state = next;
+function set(patch: Partial<PipelinesState>): void {
+  state = { ...state, ...patch };
   listeners.forEach((listener) => listener());
 }
 
-function subscribe(listener: () => void): () => void {
+/* ------------------------------------------------------------------ */
+/* Reading                                                             */
+/* ------------------------------------------------------------------ */
+
+/** A pipeline as edited (its unsaved settings applied). */
+export function effective(s: PipelinesState, id: string | null): PipelineSpec | null {
+  const base = s.pipelines.find((p) => p.id === id);
+  if (!base) return null;
+  const edited = s.edits[base.id];
+  return edited ? { ...base, stages: edited } : base;
+}
+
+export function isEdited(s: PipelinesState, id: string): boolean {
+  const base = s.pipelines.find((p) => p.id === id);
+  const edited = s.edits[id];
+  return Boolean(base && edited && !stagesEqual(base.stages, edited));
+}
+
+/* ------------------------------------------------------------------ */
+/* Loading                                                             */
+/* ------------------------------------------------------------------ */
+
+let started = false;
+
+export function initPipelines(): void {
+  if (started) return;
+  started = true;
+  void loadCatalogue();
+  void loadPipelines();
+  void (async () => {
+    try {
+      const runs = await pipelinesApi.runs();
+      set({ runs, activeRunId: runs.find((r) => r.state === 'running')?.id ?? runs[0]?.id ?? null });
+      if (runs.some((r) => r.state === 'running')) poll();
+    } catch {
+      /* no server yet: nothing to re-attach to */
+    }
+  })();
+  // Products go to the chosen bucket: a new choice is a new plan.
+  onGcpChange(() => requestPlan());
+}
+
+export async function loadCatalogue(refresh = false): Promise<void> {
+  try {
+    const catalogue = await pipelinesApi.tools(refresh);
+    set({ catalogue, catalogueError: catalogue.problem });
+    requestPlan();
+  } catch (e) {
+    set({ catalogueError: (e as Error).message });
+  }
+}
+
+export async function loadPipelines(): Promise<void> {
+  try {
+    const pipelines = await pipelinesApi.list();
+    const active =
+      state.activePipelineId && pipelines.some((p) => p.id === state.activePipelineId)
+        ? state.activePipelineId
+        : null;
+    set({ pipelines, listError: '', activePipelineId: active });
+    requestPlan();
+  } catch (e) {
+    set({ listError: (e as Error).message });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Choosing                                                            */
+/* ------------------------------------------------------------------ */
+
+export function setActivePipeline(id: string | null): void {
+  if (id === state.activePipelineId) return;
+  try {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    /* a convenience only */
+  }
+  set({ activePipelineId: id, plan: null, planError: '' });
+  requestPlan();
+}
+
+export function setInputs(inputs: ProductRef[]): void {
+  set({ inputs, runError: '' });
+  requestPlan();
+}
+
+export function toggleInput(ref: ProductRef): void {
+  const has = state.inputs.some((i) => i.uri === ref.uri);
+  setInputs(has ? state.inputs.filter((i) => i.uri !== ref.uri) : [...state.inputs, ref]);
+}
+
+/** A product from a run's results (or Prepare's) becomes the input. */
+export function inputFromProduct(product: ProductInfo): void {
+  setInputs([refFromInfo(product)]);
+}
+
+let lookups = 0;
+
+/** A product known only by its URI: looked up, then made the input (the last
+ *  one asked for wins, however the lookups finish). */
+export async function inputFromUri(uri: string): Promise<void> {
+  const mine = ++lookups;
+  try {
+    const product = await pipelinesApi.product(uri);
+    if (mine === lookups) inputFromProduct(product);
+  } catch (e) {
+    if (mine === lookups) set({ runError: (e as Error).message });
+  }
+}
+
+export function setDest(dest: string): void {
+  set({ dest });
+  requestPlan();
+}
+
+export function setForce(force: boolean): void {
+  set({ force });
+  requestPlan();
+}
+
+/* ------------------------------------------------------------------ */
+/* Editing                                                             */
+/* ------------------------------------------------------------------ */
+
+export function setStageParam(
+  pipelineId: string,
+  index: number,
+  param: ToolParam,
+  value: ParamValue | undefined,
+): void {
+  const spec = effective(state, pipelineId);
+  if (!spec) return;
+  const stages = spec.stages.map((stage, i) => (i === index ? withParam(stage, param, value) : stage));
+  set({ edits: { ...state.edits, [pipelineId]: stages } });
+  requestPlan();
+}
+
+export function resetStage(pipelineId: string, index: number): void {
+  const spec = effective(state, pipelineId);
+  if (!spec) return;
+  const stages = spec.stages.map((stage, i) => (i === index ? { ...stage, params: {} } : stage));
+  set({ edits: { ...state.edits, [pipelineId]: stages } });
+  requestPlan();
+}
+
+export function discardEdits(pipelineId: string): void {
+  const { [pipelineId]: _, ...rest } = state.edits;
+  set({ edits: rest });
+  requestPlan();
+}
+
+/** Save a pipeline (new, or replacing a saved one); it becomes the open one. */
+export async function savePipeline(spec: PipelineSpec): Promise<PipelineSpec> {
+  const saved = await pipelinesApi.save(spec);
+  const { [spec.id]: _, [saved.id]: __, ...rest } = state.edits;
+  set({ edits: rest });
+  await loadPipelines();
+  setActivePipeline(saved.id);
+  return saved;
+}
+
+/** Save the open pipeline's edited settings; a built-in is saved as a copy. */
+export async function saveEdits(pipelineId: string, asName?: string): Promise<PipelineSpec> {
+  const spec = effective(state, pipelineId);
+  if (!spec) throw new Error('No such pipeline.');
+  if (spec.builtin || asName) {
+    const copy = await savePipeline({ ...spec, id: '', builtin: false, name: asName || `${spec.name} (mine)` });
+    discardEdits(pipelineId);
+    return copy;
+  }
+  return savePipeline(spec);
+}
+
+export async function deletePipeline(id: string): Promise<void> {
+  await pipelinesApi.remove(id);
+  const { [id]: _, ...rest } = state.edits;
+  set({ edits: rest, activePipelineId: state.activePipelineId === id ? null : state.activePipelineId });
+  await loadPipelines();
+}
+
+/* ------------------------------------------------------------------ */
+/* The plan                                                            */
+/* ------------------------------------------------------------------ */
+
+let planTimer: ReturnType<typeof setTimeout> | null = null;
+let planAsked = 0;
+
+function planRequest(input: string): PlanRequest | null {
+  const spec = effective(state, state.activePipelineId);
+  if (!spec) return null;
+  return { pipeline: spec, input, dest: state.dest, force: state.force };
+}
+
+/** Ask the server for the plan of the open pipeline on the first input. */
+export function requestPlan(): void {
+  if (planTimer) clearTimeout(planTimer);
+  // Counted now, not when the request goes: an answer to an earlier request
+  // that lands while this one waits is already out of date.
+  const mine = ++planAsked;
+  const first = state.inputs[0];
+  const req = first ? planRequest(first.uri) : null;
+  if (!req) {
+    if (state.plan || state.planning || state.planError) set({ plan: null, planning: false, planError: '' });
+    return;
+  }
+  set({ planning: true });
+  planTimer = setTimeout(() => {
+    pipelinesApi
+      .plan(req)
+      .then((plan) => {
+        if (mine === planAsked) set({ plan, planning: false, planError: '' });
+      })
+      .catch((e: Error) => {
+        if (mine === planAsked) set({ plan: null, planning: false, planError: e.message });
+      });
+  }, 250);
+}
+
+/* ------------------------------------------------------------------ */
+/* Runs                                                                */
+/* ------------------------------------------------------------------ */
+
+/** Run the open pipeline on every selected product (one run each). */
+export async function startRuns(): Promise<void> {
+  const spec = effective(state, state.activePipelineId);
+  if (!spec || state.inputs.length === 0 || state.starting) return;
+  set({ starting: true, runError: '' });
+  const made: RunStatus[] = [];
+  const errors: string[] = [];
+  for (const input of state.inputs) {
+    try {
+      made.push(await pipelinesApi.run({ pipeline: spec, input: input.uri, dest: state.dest, force: state.force }));
+    } catch (e) {
+      errors.push(state.inputs.length > 1 ? `${input.name}: ${(e as Error).message}` : (e as Error).message);
+    }
+  }
+  set({
+    starting: false,
+    runError: errors.join('\n'),
+    runs: [...made.reverse(), ...state.runs.filter((r) => !made.some((m) => m.id === r.id))],
+    activeRunId: made[made.length - 1]?.id ?? state.activeRunId,
+  });
+  if (made.length) poll();
+}
+
+export async function cancelRun(id: string): Promise<void> {
+  try {
+    const status = await pipelinesApi.cancel(id);
+    replaceRun(status);
+  } catch (e) {
+    set({ runError: (e as Error).message });
+  }
+}
+
+export function setActiveRun(id: string | null): void {
+  set({ activeRunId: id });
+}
+
+export function dismissRun(id: string): void {
+  set({
+    runs: state.runs.filter((r) => r.id !== id),
+    activeRunId: state.activeRunId === id ? null : state.activeRunId,
+  });
+}
+
+function replaceRun(status: RunStatus): void {
+  set({ runs: state.runs.map((r) => (r.id === status.id ? status : r)) });
+}
+
+let polling = false;
+
+function poll(): void {
+  if (polling) return;
+  polling = true;
+  const tick = async () => {
+    const live = state.runs.filter((r) => r.state === 'running');
+    if (live.length === 0) {
+      polling = false;
+      return;
+    }
+    for (const run of live) {
+      try {
+        replaceRun(await pipelinesApi.getRun(run.id));
+      } catch (e) {
+        // The server no longer knows it (it was restarted): it will not finish.
+        if (e instanceof ApiError && e.status === 404) {
+          replaceRun({
+            ...run,
+            state: 'failed',
+            error: 'The Workbench server was restarted while this ran, so how it ended is not known. Look in the bucket for its products, or run it again.',
+            stages: run.stages.map((s) => (s.state === 'running' || s.state === 'pending' ? { ...s, state: 'cancelled' } : s)),
+          });
+        }
+        /* otherwise the next tick asks again */
+      }
+    }
+    setTimeout(() => void tick(), 1000);
+  };
+  setTimeout(() => void tick(), 600);
+}
+
+/* ------------------------------------------------------------------ */
+/* React                                                               */
+/* ------------------------------------------------------------------ */
+
+export function subscribePipelines(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-function getSnapshot(): PipelinesState {
+export function getPipelinesState(): PipelinesState {
   return state;
 }
 
 export function usePipelines(): PipelinesState {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-}
-
-/* ------------------------------------------------------------------ */
-/* Actions                                                             */
-/* ------------------------------------------------------------------ */
-
-/** Tick/untick a card for the next run. Also makes it the active card. */
-export function toggleSelected(pipelineId: string): void {
-  const selected = new Set(state.selected);
-  if (selected.has(pipelineId)) selected.delete(pipelineId);
-  else selected.add(pipelineId);
-  emit({
-    ...state,
-    selected,
-    activePipelineId: selected.has(pipelineId) ? pipelineId : state.activePipelineId,
-  });
-}
-
-export function clearSelection(): void {
-  emit({ ...state, selected: new Set<string>() });
-}
-
-/** Focus a pipeline so the Configuration panel shows it. */
-export function setActivePipeline(pipelineId: string | null): void {
-  if (state.activePipelineId === pipelineId) return;
-  emit({ ...state, activePipelineId: pipelineId });
-}
-
-/** Edit one parameter of a pipeline's draft. */
-export function setParam(
-  pipelineId: string,
-  stageId: string,
-  paramId: string,
-  value: ParamValue,
-): void {
-  const draft = state.drafts[pipelineId];
-  if (!draft) return;
-  const next: PipelineValues = {
-    ...draft,
-    [stageId]: { ...(draft[stageId] ?? {}), [paramId]: value },
-  };
-  emit({ ...state, drafts: { ...state.drafts, [pipelineId]: next } });
-}
-
-/** True when the draft differs from the configuration it was loaded from. */
-export function isDirty(s: PipelinesState, pipelineId: string): boolean {
-  const draft = s.drafts[pipelineId];
-  const config = currentConfig(s, pipelineId);
-  if (!draft || !config) return false;
-  return !valuesEqual(draft, config.values);
-}
-
-export function currentConfig(
-  s: PipelinesState,
-  pipelineId: string,
-): SavedConfiguration | undefined {
-  const list = s.configs[pipelineId] ?? [];
-  const activeId = s.activeConfigId[pipelineId];
-  return list.find((c) => c.id === activeId) ?? list[0];
-}
-
-/** Load a saved configuration into the draft. */
-export function selectConfig(pipelineId: string, configId: string): void {
-  const config = (state.configs[pipelineId] ?? []).find((c) => c.id === configId);
-  if (!config) return;
-  emit({
-    ...state,
-    drafts: { ...state.drafts, [pipelineId]: cloneValues(config.values) },
-    activeConfigId: { ...state.activeConfigId, [pipelineId]: configId },
-  });
-}
-
-/** Overwrite the current configuration with the draft (built-ins are protected). */
-export function saveOverwrite(pipelineId: string): boolean {
-  const draft = state.drafts[pipelineId];
-  const config = currentConfig(state, pipelineId);
-  if (!draft || !config || config.builtin) return false;
-  const list = (state.configs[pipelineId] ?? []).map((c) =>
-    c.id === config.id
-      ? { ...c, values: cloneValues(draft), updatedAt: new Date().toISOString() }
-      : c,
-  );
-  emit({ ...state, configs: { ...state.configs, [pipelineId]: list } });
-  return true;
-}
-
-/** Save the draft as a new named configuration and make it current. */
-export function saveAsNew(pipelineId: string, name: string): void {
-  const draft = state.drafts[pipelineId];
-  if (!draft) return;
-  const trimmed = name.trim() || 'Untitled configuration';
-  const config: SavedConfiguration = {
-    id: `${pipelineId}:${Date.now().toString(36)}`,
-    pipelineId,
-    name: trimmed,
-    values: cloneValues(draft),
-    updatedAt: new Date().toISOString(),
-  };
-  emit({
-    ...state,
-    configs: {
-      ...state.configs,
-      [pipelineId]: [...(state.configs[pipelineId] ?? []), config],
-    },
-    activeConfigId: { ...state.activeConfigId, [pipelineId]: config.id },
-  });
-}
-
-/** Discard edits, restoring the current saved configuration. */
-export function revertDraft(pipelineId: string): void {
-  const config = currentConfig(state, pipelineId);
-  if (!config) return;
-  emit({
-    ...state,
-    drafts: { ...state.drafts, [pipelineId]: cloneValues(config.values) },
-  });
-}
-
-export function deleteConfig(pipelineId: string, configId: string): void {
-  const list = state.configs[pipelineId] ?? [];
-  const target = list.find((c) => c.id === configId);
-  if (!target || target.builtin) return;
-  const remaining = list.filter((c) => c.id !== configId);
-  const fallback = remaining[0];
-  emit({
-    ...state,
-    configs: { ...state.configs, [pipelineId]: remaining },
-    activeConfigId: { ...state.activeConfigId, [pipelineId]: fallback?.id ?? '' },
-    drafts: fallback
-      ? { ...state.drafts, [pipelineId]: cloneValues(fallback.values) }
-      : state.drafts,
-  });
-}
-
-/** Find a pipeline by id, including user-created ones. */
-export function getPipeline(
-  s: PipelinesState,
-  pipelineId: string,
-): PipelineDefinition | undefined {
-  return s.pipelines.find((p) => p.id === pipelineId);
-}
-
-/**
- * Create a new pipeline from composed stages, seed its Default configuration,
- * and focus it so the Configuration panel opens on it. Returns the new id.
- *
- * `values` seeds the Default configuration on top of each parameter's default.
- * The New Pipeline dialog's command parser needs it for two things a bare
- * stage list cannot express: the flags a user actually typed, and the verbatim
- * text of a freeform stage — which lives under `COMMAND_OVERRIDE` and has no
- * `ParamDef` to hold a default at all.
- *
- * Deliberately *not* done by rewriting the stages' defaults. `pipelineTypes`
- * records that an untouched field must send nothing, so the tool's own default
- * keeps applying and a later change to it still takes effect; pinning a typed
- * value in as a default would quietly end that.
- */
-export function createPipeline(input: {
-  name: string;
-  description: string;
-  stages: StageDef[];
-  values?: PipelineValues;
-}): string {
-  const id = `user-${Date.now().toString(36)}`;
-  const pipeline: PipelineDefinition = {
-    id,
-    name: input.name.trim() || 'Untitled pipeline',
-    description: input.description.trim() || 'User-created pipeline.',
-    tags: ['user'],
-    inputKind: 'raw',
-    stages: input.stages,
-    author: 'you',
-    updatedAt: new Date().toISOString(),
-  };
-
-  const seeded = defaultValues(pipeline);
-  for (const [stageId, params] of Object.entries(input.values ?? {})) {
-    seeded[stageId] = { ...(seeded[stageId] ?? {}), ...params };
-  }
-  const base = seeded;
-  const configId = `${id}:default`;
-
-  emit({
-    ...state,
-    pipelines: [...state.pipelines, pipeline],
-    drafts: { ...state.drafts, [id]: cloneValues(base) },
-    configs: {
-      ...state.configs,
-      [id]: [
-        {
-          id: configId,
-          pipelineId: id,
-          name: 'Default',
-          values: cloneValues(base),
-          builtin: true,
-          updatedAt: pipeline.updatedAt,
-        },
-      ],
-    },
-    activeConfigId: { ...state.activeConfigId, [id]: configId },
-    activePipelineId: id,
-  });
-
-  return id;
-}
-
-/** Subscribe outside React (used to front the Configuration tab on selection). */
-export function subscribePipelines(listener: () => void): () => void {
-  return subscribe(listener);
-}
-
-export function getPipelinesState(): PipelinesState {
-  return state;
+  return useSyncExternalStore(subscribePipelines, getPipelinesState, getPipelinesState);
 }

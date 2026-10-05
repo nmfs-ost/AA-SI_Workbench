@@ -29,6 +29,17 @@ export interface DerivedEntry {
   sizeBytes: number;
   updatedAt: string;
   contentType: string;
+  /** What the console tools recorded when they published it (see products.py). */
+  productHash: string;
+  recipe: string;
+  tool: string;
+  /** echodata, sv, mvbs, … ('' when not recorded) and its level (L1, L2A, …). */
+  productKind: string;
+  level: string;
+  /** Google's MD5 of the bytes, hex. */
+  md5: string;
+  /** The MD5 the tool published still matches; null when none was recorded. */
+  intact: boolean | null;
 }
 
 export interface DerivedListing {

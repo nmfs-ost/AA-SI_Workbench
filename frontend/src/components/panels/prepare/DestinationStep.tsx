@@ -27,6 +27,10 @@ interface Props {
   baseError: string;
   files: PlannedFile[];
   onBase: (base: string) => void;
+  /** Where the bucket comes from, in a few words ("In the GCP project …"). */
+  bucketNote?: string;
+  /** Open the project and bucket picker. */
+  onChangeBucket?: () => void;
 }
 
 export const KIND_ICON = {
@@ -50,7 +54,16 @@ export const KIND_ICON = {
  * the tools' own rule. `‹recipe›` is the eight characters that name the
  * processing; the same settings give the same name on any data.
  */
-export function DestinationStep({ folder, base, defaultBase, baseError, files, onBase }: Props) {
+export function DestinationStep({
+  folder,
+  base,
+  defaultBase,
+  baseError,
+  files,
+  onBase,
+  bucketNote = '',
+  onChangeBucket,
+}: Props) {
   const theme = useTheme();
   const c = theme.aa.color;
   const name = base.trim() || defaultBase;
@@ -139,6 +152,32 @@ export function DestinationStep({ folder, base, defaultBase, baseError, files, o
           );
         })}
       </Box>
+      {(bucketNote || onChangeBucket) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.6 }}>
+          <Typography sx={{ fontSize: 10.5, color: c.text.muted, flex: 1, minWidth: 0 }} noWrap>
+            {bucketNote}
+          </Typography>
+          {onChangeBucket && (
+            <Box
+              component="button"
+              type="button"
+              onClick={onChangeBucket}
+              sx={{
+                border: 'none',
+                background: 'none',
+                p: 0,
+                cursor: 'pointer',
+                fontSize: 10.5,
+                fontFamily: theme.aa.font.ui,
+                color: c.accent.main,
+                '&:hover': { textDecoration: 'underline' },
+              }}
+            >
+              Change project or bucket
+            </Box>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }

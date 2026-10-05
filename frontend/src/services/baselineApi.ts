@@ -12,6 +12,8 @@
  * labelled as such in the card, so nobody mistakes it for a product.
  */
 
+import { gcpApi, simulatedBucket } from './gcpApi';
+
 const API_BASE = (import.meta.env.VITE_AASI_API_BASE ?? '').replace(/\/$/, '');
 export const BASELINE_SIMULATED = import.meta.env.VITE_AASI_USE_API !== 'true';
 
@@ -94,6 +96,10 @@ export interface ToolState {
 
 export interface BaselineConfig {
   bucket: string;
+  /** The project the bucket and the tools work in (the GCP picker), '' if unknown. */
+  project?: string;
+  /** chosen | discovered | environment | unset */
+  bucketSource?: string;
   prefixTemplate: string;
   user: string;
   runRoot: string;
@@ -265,7 +271,7 @@ function simBase(r: BaselineRequest): string {
 }
 
 function simDest(r: BaselineRequest, base: string): string {
-  return `gs://${r.bucket || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/${base}/`;
+  return `gs://${r.bucket || simulatedBucket() || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/${base}/`;
 }
 
 function single(r: BaselineRequest): boolean {
@@ -482,8 +488,12 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const simulatedApi: BaselineApi = {
   async getConfig() {
     await delay(120);
+    // The stand-in GCP picker's choice, as the server's config follows its own.
+    const gcp = await gcpApi.get();
     return {
-      bucket: SIM_BUCKET,
+      bucket: gcp.bucket,
+      project: gcp.project,
+      bucketSource: gcp.source,
       prefixTemplate: 'derived_products/{user}/{vessel}/{survey}/{base}/',
       user: SIM_USER,
       runRoot: '~/aa-workbench-runs',

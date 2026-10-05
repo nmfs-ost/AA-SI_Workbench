@@ -363,7 +363,7 @@ def test_ek80_calibration_gets_its_modes_and_ek60_does_not(tools):
 
 
 def test_a_runner_failure_ends_the_run_instead_of_hanging_it(tools, monkeypatch):
-    def boom(_request):
+    def boom(_request, *_args, **_kwargs):
         raise RuntimeError("disk full")
 
     monkeypatch.setattr(jobs, "submit", boom)

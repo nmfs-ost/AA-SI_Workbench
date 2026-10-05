@@ -12,10 +12,12 @@ products is far too large to enumerate eagerly.
 
 Configuration
 -------------
-``AASI_DERIVED_BUCKET``   bucket name (default ``ggn-nmfs-aa-dev-1-data``)
+The bucket and project are the ones this user chose (gcp.py: the status bar's
+project button, or ``aa-workbench project``). Without a choice,
+``AASI_DERIVED_BUCKET`` / ``AASI_GCP_PROJECT`` decide; with neither, the panel
+says to choose instead of guessing.
+
 ``AASI_DERIVED_PREFIX``   optional prefix to treat as the root, e.g. ``derived/``
-``AALIBRARY_GCP_PROJECT_ID``  project used for billing/quota (default
-                          ``ggn-nmfs-aa-dev-1``); the same variable aalibrary uses
 
 Credentials are Application Default Credentials — the same ones `aa-fetch` uses.
 Nothing is stored by the Workbench.
@@ -27,7 +29,12 @@ one misclick away from a listing.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import APIRouter, HTTPException, Query
@@ -35,8 +42,6 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/derived", tags=["derived"])
 
-DEFAULT_BUCKET = "ggn-nmfs-aa-dev-1-data"
-DEFAULT_PROJECT = "ggn-nmfs-aa-dev-1"
 
 # Extensions worth badging in the UI; everything else lists as a plain object.
 ASSET_KINDS: dict[str, str] = {
@@ -54,11 +59,16 @@ ASSET_KINDS: dict[str, str] = {
 
 
 def bucket_name() -> str:
-    return os.getenv("AASI_DERIVED_BUCKET", DEFAULT_BUCKET)
+    """The bucket this user chose (see gcp.py), or the deployment's; '' if none."""
+    from .gcp import current
+
+    return current().bucket
 
 
 def project_id() -> str:
-    return os.getenv("AALIBRARY_GCP_PROJECT_ID", DEFAULT_PROJECT)
+    from .gcp import current
+
+    return current().project
 
 
 def root_prefix() -> str:
@@ -77,6 +87,51 @@ class DerivedEntry(BaseModel):
     sizeBytes: int = 0
     updatedAt: str = ""
     contentType: str = ""
+    # What the console tools recorded when they published it (no download:
+    # these are the object's metadata). See products.py for what each means.
+    #: The product hash: the science (aa-product-hash), hex.
+    productHash: str = ""
+    #: The recipe: the processing, without the data; the <hash8> in the name.
+    recipe: str = ""
+    #: The tool that wrote it.
+    tool: str = ""
+    #: What it is (echodata, sv, mvbs, ...) and its level (L1, L2A, ...).
+    productKind: str = ""
+    level: str = ""
+    #: Google's MD5 of the bytes, hex.
+    md5: str = ""
+    #: The MD5 the tool published still matches; None when none was recorded.
+    intact: bool | None = None
+
+
+def _hex(b64: str | None) -> str:
+    if not b64:
+        return ""
+    try:
+        return base64.b64decode(b64).hex()
+    except (ValueError, TypeError):
+        return ""
+
+
+def _product_fields(name: str, md5_b64: str | None, metadata: dict | None) -> dict:
+    """The entry fields the tools' metadata gives, for one object."""
+    from .catalogue import LEVELS
+    from .products import META_HASH, META_MD5, META_RECIPE, META_TOOL, kind_of
+
+    metadata = metadata or {}
+    tool = str(metadata.get(META_TOOL, "") or "")
+    known = tool or name.lower().endswith((".raw", ".png"))
+    kind = kind_of(tool, name) if known else ""
+    recorded = metadata.get(META_MD5, "")
+    return {
+        "productHash": str(metadata.get(META_HASH, "") or ""),
+        "recipe": str(metadata.get(META_RECIPE, "") or ""),
+        "tool": tool,
+        "productKind": kind,
+        "level": LEVELS.get(kind, ""),
+        "md5": _hex(md5_b64),
+        "intact": (recorded == md5_b64) if recorded and md5_b64 else None,
+    }
 
 
 class DerivedListing(BaseModel):
@@ -126,7 +181,9 @@ ZARR_ROOT_MARKERS = ("zarr.json", ".zgroup", ".zarray")
 # object that happened to ask, so the answer is cached here rather than on the
 # provider. It also cannot change while the panel is open — a store does not
 # stop being one — and the same folder is re-probed on every expand and refresh.
-_store_probe_cache: dict[str, bool] = {}
+# Keyed by bucket too: a probe still running on the previous bucket when the
+# project changes must not answer for the same prefix in the new one.
+_store_probe_cache: dict[tuple[str, str], bool] = {}
 
 
 class GcsProvider:
@@ -137,7 +194,7 @@ class GcsProvider:
         # every other part of the Workbench.
         from google.cloud import storage
 
-        self._client = storage.Client(project=project_id())
+        self._client = storage.Client(project=project_id() or None)
         self._bucket = self._client.bucket(bucket_name())
 
     def _is_store(self, prefix: str) -> bool:
@@ -151,7 +208,8 @@ class GcsProvider:
         if not prefix:
             return False
         key = prefix if prefix.endswith("/") else f"{prefix}/"
-        cached = _store_probe_cache.get(key)
+        slot = (str(getattr(self._bucket, "name", "")), key)
+        cached = _store_probe_cache.get(slot)
         if cached is not None:
             return cached
 
@@ -163,7 +221,7 @@ class GcsProvider:
                     break
             except Exception:  # noqa: BLE001 - an unreachable probe is not a store
                 break
-        _store_probe_cache[key] = found
+        _store_probe_cache[slot] = found
         return found
 
     def list(self, prefix: str, limit: int) -> DerivedListing:
@@ -244,6 +302,11 @@ class GcsProvider:
                     if blob.updated
                     else "",
                     contentType=blob.content_type or "",
+                    **_product_fields(
+                        blob.name.rsplit("/", 1)[-1],
+                        getattr(blob, "md5_hash", None),
+                        getattr(blob, "metadata", None),
+                    ),
                 )
             )
 
@@ -257,19 +320,118 @@ class GcsProvider:
 
 
 _provider: DerivedProvider | None = None
+#: The (project, bucket) the provider was built for; None for an injected one.
+_provider_for: tuple[str, str] | None = None
+
+
+class FakeGcsProvider:
+    """The stand-in bucket the console tools use in tests (AA_GCS_FAKE_ROOT):
+    ``<root>/<bucket>/<key>``, metadata in ``<root>/.meta/<bucket>/<key>.json``.
+
+    Listed with the same rules as the real one, so a rehearsal exercises the
+    panel's own code. Never used unless that variable is set.
+    """
+
+    def __init__(self, root: str) -> None:
+        self.root = Path(root)
+
+    def list(self, prefix: str, limit: int) -> DerivedListing:
+        bucket = bucket_name()
+        base = self.root / bucket
+        full = f"{root_prefix()}{prefix}"
+        here = base / full
+        entries: list[DerivedEntry] = []
+        if here.is_dir():
+            children = sorted(here.iterdir(), key=lambda p: (not p.is_dir(), p.name))
+            for path in children[:limit]:
+                key = path.relative_to(base).as_posix()
+                relative = key[len(root_prefix()) :] if root_prefix() else key
+                if path.name.startswith(".") or path.name.endswith(".aa.json"):
+                    continue
+                if path.is_dir() and not path.name.lower().endswith(".zarr"):
+                    entries.append(
+                        DerivedEntry(
+                            name=path.name,
+                            path=relative + "/",
+                            uri=f"gs://{bucket}/{key}/",
+                            isDir=True,
+                            kind="folder",
+                        )
+                    )
+                    continue
+                if path.is_dir():
+                    entries.append(
+                        DerivedEntry(
+                            name=path.name,
+                            path=relative,
+                            uri=f"gs://{bucket}/{key}",
+                            kind="zarr",
+                        )
+                    )
+                    continue
+                meta_file = self.root / ".meta" / bucket / (key + ".json")
+                try:
+                    metadata = json.loads(meta_file.read_text()).get("metadata", {})
+                except (OSError, ValueError):
+                    metadata = {}
+                digest = hashlib.md5(path.read_bytes()).digest()  # noqa: S324 - GCS's own
+                stat = path.stat()
+                entries.append(
+                    DerivedEntry(
+                        name=path.name,
+                        path=relative,
+                        uri=f"gs://{bucket}/{key}",
+                        kind=_kind_for(path.name),
+                        sizeBytes=stat.st_size,
+                        updatedAt=datetime.fromtimestamp(stat.st_mtime, UTC)
+                        .isoformat(timespec="seconds")
+                        .replace("+00:00", "Z"),
+                        **_product_fields(
+                            path.name, base64.b64encode(digest).decode(), metadata
+                        ),
+                    )
+                )
+        return DerivedListing(
+            bucket=bucket,
+            prefix=prefix,
+            parent=_parent_of(prefix),
+            entries=entries,
+            truncated=False,
+        )
 
 
 def get_provider() -> DerivedProvider:
-    """Construct the provider once. Raises if GCS isn't usable here."""
-    global _provider
-    if _provider is None:
-        _provider = GcsProvider()
+    """The provider for the bucket in force. Raises if GCS isn't usable here."""
+    global _provider, _provider_for
+    wanted = (project_id(), bucket_name())
+    if _provider is None or (_provider_for is not None and _provider_for != wanted):
+        fake = os.getenv("AA_GCS_FAKE_ROOT", "")
+        _provider = FakeGcsProvider(fake) if fake else GcsProvider()
+        _provider_for = wanted
+        _store_probe_cache.clear()
     return _provider
 
 
+def _forget_provider() -> None:
+    """A new project or bucket was chosen: build the next provider afresh."""
+    global _provider, _provider_for
+    if _provider_for is not None:
+        _provider, _provider_for = None, None
+    _store_probe_cache.clear()
+
+
+def _register() -> None:
+    from .gcp import on_change
+
+    on_change(_forget_provider)
+
+
+_register()
+
+
 def _reset_for_tests(provider: DerivedProvider | None = None) -> None:
-    global _provider
-    _provider = provider
+    global _provider, _provider_for
+    _provider, _provider_for = provider, None
     _store_probe_cache.clear()
 
 
@@ -298,14 +460,14 @@ def _explain(exc: Exception) -> str:
         )
     if "404" in text or "not found" in lowered:
         return (
-            f"Bucket gs://{bucket_name()} was not found. Check "
-            "AASI_DERIVED_BUCKET."
+            f"Bucket gs://{bucket_name()} was not found. Choose another project "
+            "and bucket (click the project in the status bar)."
         )
     if "quota" in lowered or "billing" in lowered or "serviceusage" in lowered:
         return (
             "The credentials have no quota project. Run "
             "`gcloud auth application-default set-quota-project "
-            f"{project_id()}` and reload."
+            f"{project_id() or '<project>'}` and reload."
         )
     return text
 
@@ -318,6 +480,19 @@ def status() -> DerivedStatus:
     502 would leave it with nothing useful to show.
     """
     bucket = bucket_name()
+    if not bucket:
+        return DerivedStatus(
+            bucket="",
+            project="",
+            prefix=root_prefix(),
+            configured=False,
+            available=False,
+            detail=(
+                "No GCP project and bucket chosen yet. Choose one (the project in "
+                "the status bar, or Tools ▸ GCP project and bucket) and this panel "
+                "lists it."
+            ),
+        )
     console = (
         f"https://console.cloud.google.com/storage/browser/{bucket}"
         f"?project={project_id()}"

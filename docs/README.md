@@ -6,6 +6,9 @@
   Workbench.
 - [`guides/prepare-echodata.md`](guides/prepare-echodata.md) — the baseline
   workflow: an NCEI time range made into one EchoData asset in the bucket.
+- [`guides/pipelines.md`](guides/pipelines.md) — console tools chained and run
+  on products in the bucket (Products panel → Pipelines), and the hashes each
+  product carries.
 - [`guides/connecting-ncei.md`](guides/connecting-ncei.md) — pointing the NCEI
   catalogue Prepare EchoData plans from at real data (S3 or the BigQuery
   cache).

@@ -72,7 +72,7 @@ export function buildHorizontalLayout(api: DockviewApi): void {
   api.addPanel({
     id: 'derived',
     component: 'derived',
-    title: 'Derived',
+    title: 'Products',
     position: { referencePanel: 'prepare', direction: 'within' },
   });
   api.addPanel({
@@ -237,7 +237,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
   });
   for (const [id, title] of [
     ['files', 'Files'],
-    ['derived', 'Derived'],
+    ['derived', 'Products'],
     ['omao', 'OMAO'],
     ['resources', 'Project'],
   ] as const) {

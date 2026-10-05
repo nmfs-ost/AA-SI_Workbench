@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview';
 import { Box, Typography, useTheme } from '@mui/material';
 import { DataObjectOutlined } from '@mui/icons-material';
 
+import { PanelHeader } from './PanelHeader';
 import { PanelPlaceholder } from './PanelPlaceholder';
 import { StoreView } from './metadata/StoreView';
 import { ProvenanceView } from './metadata/ProvenanceView';
@@ -27,20 +28,37 @@ import { useActiveSubject } from '../../state/activeSubject';
 export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
   const subject = useActiveSubject();
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, backgroundColor: theme.aa.color.bg.panel }}>
+      <PanelHeader
+        icon={<DataObjectOutlined className="panel-header-icon" />}
+        title="Metadata"
+        subtitle={subject?.label}
+      />
+      <Box sx={{ flex: 1, minHeight: 0 }}>
+        <MetadataBody />
+      </Box>
+    </Box>
+  );
+};
+
+function MetadataBody() {
+  const theme = useTheme();
+  const subject = useActiveSubject();
 
   if (!subject) {
     return (
       <PanelPlaceholder
         icon={DataObjectOutlined}
-        title="Metadata"
-        description="Select a product of Prepare EchoData, or a file or store in Derived or Files, to describe it."
+        title="Nothing selected"
+        description="Select a product in Products (or a result of Prepare EchoData or a pipeline run), or a file in Files, to see what it is and how it was made."
       />
     );
   }
 
   if (subject.inspectable) return <StoreView subject={subject} />;
   /* A product file — the Prepare card's EchoData and Sv, an echogram, a
-     NetCDF picked in Derived or Files: the console tools wrote how it was
+     NetCDF picked in Products or Files: the console tools wrote how it was
      made into it, and `aa-metadata` reads that back. */
   if (/^(gs|file):\/\//.test(subject.uri) && /\.(nc|netcdf4|png|html|json)$/i.test(subject.label)) {
     return <ProvenanceView subject={subject} />;
@@ -77,4 +95,4 @@ export const MetadataPanel: FunctionComponent<IDockviewPanelProps> = () => {
       </Typography>
     </Box>
   );
-};
+}

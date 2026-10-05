@@ -60,7 +60,9 @@ export const RecipesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           alignItems: 'center',
           gap: 0.75,
           px: 1.25,
-          minHeight: 30,
+          height: theme.aa.size.row,
+          boxSizing: 'border-box',
+          flexShrink: 0,
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
           color: theme.aa.color.text.secondary,
         }}

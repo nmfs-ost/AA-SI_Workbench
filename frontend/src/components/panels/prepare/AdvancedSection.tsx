@@ -155,7 +155,7 @@ export function AdvancedSection({ s, bucketDefault }: { s: PrepareState; bucketD
           inputProps={{ spellCheck: false }}
           sx={{ ...compactFieldSx, mt: 1, '& .MuiInputBase-input': { fontFamily: theme.aa.font.mono, fontSize: 11.5 } }}
         />
-        {hint('Leave empty for the bucket the Derived panel shows. Working files: see Working space.')}
+        {hint('Leave empty for the bucket the Products panel shows. Working files: see Working space.')}
       </Box>
 
       <Box>

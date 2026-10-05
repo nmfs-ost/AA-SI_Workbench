@@ -4,16 +4,19 @@ import type { IDockviewPanelProps } from 'dockview';
 import {
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   IconButton,
   InputBase,
   Tooltip,
   Typography,
+  alpha,
   useTheme,
 } from '@mui/material';
 import {
+  AccountTreeOutlined,
   ChevronRightOutlined,
-  CloudOutlined,
+  LayersOutlined,
   ContentCopyOutlined,
   DataObjectOutlined,
   DescriptionOutlined,
@@ -33,10 +36,17 @@ import { CopyPathButton } from './CopyPathButton';
 import { RowMenu, RowMenuButton, useRowMenu, type RowAction } from './RowMenu';
 import { derivedApi } from '../../services/derivedApi';
 import type { DerivedEntry, DerivedKind, DerivedStatus } from '../../services/derivedApi';
+import type { ProductRef } from '../../services/pipelinesApi';
 import { useLayout } from '../../context/LayoutContext';
 import { setActiveArtifact } from '../../state/activeSubject';
+import { openDialog } from '../../state/dialogs';
+import { onGcpChange } from '../../state/gcp';
 import { useRevealRequest } from '../../state/derivedReveal';
 import { sendToTerminal } from '../../state/terminal';
+import { setInputs, toggleInput, usePipelines } from '../../state/pipelines';
+import { PanelBar, PanelHeader } from './PanelHeader';
+import { HashTag, IntegrityMark } from './products/ProductBits';
+import { LevelChip } from './prepare/ui';
 import { panelColumns, panelDensity } from './panelStyles';
 import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
 import { quote } from './shellQuote';
@@ -54,6 +64,32 @@ const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
 };
 
 const ASSET_KINDS = new Set<DerivedKind>(['netcdf', 'zarr', 'raw']);
+
+/** The width of the hash column: "aa:" and eight characters. */
+const HASH_COLUMN = 72;
+
+/* The columns give way, narrowest panel first, so the name always has room:
+   Updated goes below 560px of panel, Size below 440px. The hash stays: it is
+   what this panel is for. (Container queries: the panel, not the window.) */
+const HIDE_UPDATED = { '@container products (max-width: 559px)': { display: 'none' } };
+const HIDE_SIZE = { '@container products (max-width: 439px)': { display: 'none' } };
+
+/** What the Pipelines card needs from a row. */
+export function refOf(entry: DerivedEntry): ProductRef {
+  return {
+    uri: entry.uri,
+    name: entry.name,
+    kind: entry.productKind,
+    level: entry.level,
+    productHash: entry.productHash,
+    recipe: entry.recipe,
+    md5: entry.md5,
+    intact: entry.intact,
+    tool: entry.tool,
+    sizeBytes: entry.sizeBytes,
+    updatedAt: entry.updatedAt,
+  };
+}
 
 interface Row {
   entry: DerivedEntry;
@@ -87,9 +123,13 @@ interface DerivedRowProps {
   expanded: boolean;
   busy: boolean;
   selected: boolean;
+  /** Ticked as an input of the Pipelines card. */
+  checked: boolean;
   bucket: string;
   project: string;
-  onActivate: () => void;
+  onActivate: (event: React.MouseEvent) => void;
+  onCheck: () => void;
+  onRunPipeline: () => void;
   onRefresh: () => void;
   onError: (message: string) => void;
 }
@@ -102,9 +142,12 @@ function DerivedRow({
   expanded,
   busy,
   selected,
+  checked,
   bucket,
   project,
   onActivate,
+  onCheck,
+  onRunPipeline,
   onRefresh,
   onError,
 }: DerivedRowProps) {
@@ -133,11 +176,17 @@ function DerivedRow({
         ]
       : [
           {
+            id: 'pipeline',
+            label: 'Run a pipeline on this',
+            icon: AccountTreeOutlined,
+            onSelect: onRunPipeline,
+          },
+          {
             id: 'inspect',
             label: 'Inspect metadata',
             icon: DataObjectOutlined,
             onSelect: () => {
-              onActivate();
+              setActiveArtifact({ uri: entry.uri, label: entry.name, origin: 'Derived', kind: entry.kind });
               openPanel('metadata');
             },
           },
@@ -199,6 +248,7 @@ function DerivedRow({
         onClick={onActivate}
         onContextMenu={menu.onContextMenu}
         sx={{
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
@@ -207,13 +257,39 @@ function DerivedRow({
           pl: `${depth * 12 + 4}px`,
           cursor: 'pointer',
           userSelect: 'none',
-          backgroundColor: selected ? theme.aa.color.bg.chrome : 'transparent',
-          '&:hover': { backgroundColor: theme.aa.color.bg.chrome },
+          backgroundColor: checked
+            ? theme.aa.color.bg.selected
+            : selected
+              ? theme.aa.color.bg.hover
+              : 'transparent',
+          boxShadow: checked ? `inset 2px 0 0 ${theme.aa.color.accent.main}` : 'none',
+          '&:hover': {
+            backgroundColor: checked ? theme.aa.color.bg.selected : theme.aa.color.bg.hover,
+          },
           '&:hover .aa-copy': { opacity: 1 },
           '&:hover .aa-rowmenu': { opacity: 1 },
+          '&:hover .aa-check': { opacity: 1 },
         }}
       >
         <Box sx={{ width: 16, flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          {!entry.isDir && isAsset && (
+            <Checkbox
+              className="aa-check"
+              size="small"
+              checked={checked}
+              onClick={(e) => e.stopPropagation()}
+              onChange={onCheck}
+              inputProps={{ 'aria-label': `Use ${entry.name} as a pipeline input` }}
+              sx={{
+                p: 0,
+                ml: '-1px',
+                opacity: checked ? 1 : 0,
+                transition: 'opacity .12s',
+                '&.Mui-focusVisible': { opacity: 1 },
+                '& .MuiSvgIcon-root': { fontSize: 15 },
+              }}
+            />
+          )}
           {entry.isDir &&
             (busy ? (
               <CircularProgress size={10} sx={{ ml: '2px' }} />
@@ -241,7 +317,6 @@ function DerivedRow({
             flex: 1,
             minWidth: 0,
             fontSize: panelDensity.font.row,
-            fontFamily: isAsset ? theme.aa.font.mono : undefined,
             color: theme.aa.color.text.primary,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -251,15 +326,30 @@ function DerivedRow({
           {entry.name}
         </Typography>
 
+        {entry.level && <LevelChip level={entry.level} />}
+        <IntegrityMark intact={entry.intact === false ? false : null} />
+
+        <Box
+          sx={{
+            width: HASH_COLUMN,
+            ml: `${panelColumns.lead}px`,
+            flexShrink: 0,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          {entry.productHash && <HashTag hash={entry.productHash} quiet />}
+        </Box>
+
         <Typography
           sx={{
             width: panelColumns.size,
-            ml: `${panelColumns.lead}px`,
             flexShrink: 0,
             textAlign: 'right',
             fontSize: panelDensity.font.meta,
             color: theme.aa.color.text.muted,
             fontVariantNumeric: 'tabular-nums',
+            ...HIDE_SIZE,
           }}
         >
           {entry.isDir ? '' : formatBytes(entry.sizeBytes)}
@@ -283,6 +373,7 @@ function DerivedRow({
               fontSize: panelDensity.font.meta,
               color: theme.aa.color.text.muted,
               fontVariantNumeric: 'tabular-nums',
+              ...HIDE_UPDATED,
             }}
           >
             {formatRelativeTime(entry.updatedAt)}
@@ -325,6 +416,9 @@ let revealedNonce = 0;
 
 export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
+  const { openPanel } = useLayout();
+  const { inputs } = usePipelines();
+  const chosen = useMemo(() => new Set(inputs.map((i) => i.uri)), [inputs]);
 
   const [status, setStatus] = useState<DerivedStatus | null>(null);
   const [children, setChildren] = useState<Record<string, DerivedEntry[]>>({});
@@ -333,14 +427,20 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const [selected, setSelected] = useState('');
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
+  /** Bumped when the bucket is listed afresh: answers for an older listing
+   *  (the previous bucket, after the project changed) are dropped. */
+  const generation = useRef(0);
 
   const fetchPrefix = useCallback(async (prefix: string) => {
+    const mine = generation.current;
     setLoading((s) => new Set(s).add(prefix));
     try {
       const listing = await derivedApi.list(prefix);
+      if (mine !== generation.current) return;
       setChildren((c) => ({ ...c, [prefix]: listing.entries }));
       setError('');
     } catch (e) {
+      if (mine !== generation.current) return;
       setError(e instanceof Error ? e.message : 'Could not list the bucket.');
     } finally {
       setLoading((s) => {
@@ -352,10 +452,12 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   }, []);
 
   const load = useCallback(async () => {
+    const mine = ++generation.current;
     setChildren({});
     setExpanded(new Set());
     try {
       const next = await derivedApi.getStatus();
+      if (mine !== generation.current) return;
       setStatus(next);
       if (next.available) {
         setError('');
@@ -364,6 +466,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
         setError(next.detail);
       }
     } catch (e) {
+      if (mine !== generation.current) return;
       setError(e instanceof Error ? e.message : 'Could not reach the API.');
     }
   }, [fetchPrefix]);
@@ -371,6 +474,8 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   useEffect(() => {
     void load();
   }, [load]);
+  // A new project or bucket was chosen: list that one.
+  useEffect(() => onGcpChange(() => void load()), [load]);
 
   /* "Show in bucket" from elsewhere (the Prepare card's results): list each
      folder down to the object afresh — it is new since this panel last looked
@@ -447,78 +552,84 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const busy = loading.has('');
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      {/* Bucket header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-          px: 1,
-          py: 0.5,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-        }}
-      >
-        <CloudOutlined sx={{ fontSize: 14, color: theme.aa.color.text.muted }} />
-        <Typography
-          title={status ? `gs://${status.bucket}/${status.prefix}` : ''}
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            fontSize: 11.5,
-            fontFamily: theme.aa.font.mono,
-            color: theme.aa.color.text.secondary,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {status ? status.bucket : 'connecting…'}
-        </Typography>
-        <Tooltip title="Collapse all">
-          <IconButton size="small" onClick={() => setExpanded(new Set())}>
-            <UnfoldLessOutlined sx={{ fontSize: 15 }} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Refresh">
-          <IconButton size="small" onClick={() => void load()}>
-            <RefreshOutlined sx={{ fontSize: 15 }} />
-          </IconButton>
-        </Tooltip>
-        {status?.consoleUrl && (
-          <Tooltip title="Open in Google Cloud console">
-            <IconButton
-              size="small"
-              onClick={() =>
-                window.open(status.consoleUrl, '_blank', 'noopener,noreferrer')
-              }
-            >
-              <LaunchOutlined sx={{ fontSize: 14 }} />
-            </IconButton>
-          </Tooltip>
-        )}
-      </Box>
+    <Box
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        containerType: 'inline-size',
+        containerName: 'products',
+      }}
+    >
+      <PanelHeader
+        icon={<LayersOutlined className="panel-header-icon" />}
+        title="Products"
+        subtitle={
+          <span title={status ? `gs://${status.bucket}/${status.prefix}` : ''}>
+            {status ? (status.bucket ? `gs://${status.bucket}/${status.prefix}` : 'no bucket chosen') : 'connecting…'}
+          </span>
+        }
+        actions={
+          <>
+            <Tooltip title="Collapse all">
+              <IconButton size="small" onClick={() => setExpanded(new Set())}>
+                <UnfoldLessOutlined sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Refresh">
+              <IconButton size="small" onClick={() => void load()}>
+                <RefreshOutlined sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+            {status?.consoleUrl && (
+              <Tooltip title="Open in Google Cloud console">
+                <IconButton
+                  size="small"
+                  onClick={() => window.open(status.consoleUrl, '_blank', 'noopener,noreferrer')}
+                >
+                  <LaunchOutlined sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </>
+        }
+      />
 
-      {/* Filter */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1,
-          py: 0.4,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-        }}
-      >
+      <PanelBar sx={{ px: 1 }}>
         <SearchOutlined sx={{ fontSize: 14, color: theme.aa.color.text.muted }} />
         <InputBase
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter"
+          inputProps={{ 'aria-label': 'Filter the products' }}
           sx={{ flex: 1, fontSize: 12, color: theme.aa.color.text.primary }}
         />
         {busy && <CircularProgress size={11} />}
-      </Box>
+        {inputs.length > 0 && (
+          <Tooltip title="The products the Pipelines card runs on. Click to clear.">
+            <Box
+              component="button"
+              type="button"
+              onClick={() => setInputs([])}
+              sx={{
+                border: 'none',
+                cursor: 'pointer',
+                font: 'inherit',
+                fontSize: 10.5,
+                fontWeight: 600,
+                px: 0.75,
+                height: 18,
+                borderRadius: 9,
+                color: theme.aa.color.accent.main,
+                backgroundColor: alpha(theme.aa.color.accent.main, 0.14),
+              }}
+            >
+              {inputs.length} selected
+            </Box>
+          </Tooltip>
+        )}
+      </PanelBar>
 
       {/* The bucket isn't reachable — say why, and what to do about it. */}
       {status && !status.available ? (
@@ -526,24 +637,37 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
           <Typography sx={{ fontSize: 12, color: theme.aa.color.status.warning, mb: 1 }}>
             {status.detail || 'The derived-assets bucket is not reachable.'}
           </Typography>
-          <Typography
-            sx={{
-              fontSize: 11,
-              fontFamily: theme.aa.font.mono,
-              color: theme.aa.color.text.muted,
-              mb: 1.5,
-            }}
-          >
+          <Typography sx={{ fontSize: 11, color: theme.aa.color.text.muted, mb: 1.5 }}>
             gs://{status.bucket}
           </Typography>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => void load()}
-            sx={{ fontSize: 11.5, textTransform: 'none', mr: 1 }}
-          >
-            Retry
-          </Button>
+          {!status.configured ? (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => openDialog('gcp')}
+              sx={{ fontSize: 11.5, textTransform: 'none', mr: 1 }}
+            >
+              Choose a project and bucket
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => void load()}
+                sx={{ fontSize: 11.5, textTransform: 'none', mr: 1 }}
+              >
+                Retry
+              </Button>
+              <Button
+                size="small"
+                onClick={() => openDialog('gcp')}
+                sx={{ fontSize: 11.5, textTransform: 'none', mr: 1 }}
+              >
+                Choose another
+              </Button>
+            </>
+          )}
           {status.consoleUrl && (
             <Button
               size="small"
@@ -587,17 +711,16 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
           >
             <Box sx={{ width: 16, flexShrink: 0 }} />
             <Box sx={{ flex: 1, minWidth: 0 }}>Name</Box>
-            <Box
-              sx={{
-                width: panelColumns.size,
-                ml: `${panelColumns.lead}px`,
-                flexShrink: 0,
-                textAlign: 'right',
-              }}
+            <Tooltip
+              disableInteractive
+              title="The product hash the console tools recorded: the same hash, the same science. Click one to copy it whole."
             >
-              Size
-            </Box>
-            <Box sx={{ width: panelColumns.modified, flexShrink: 0, textAlign: 'right' }}>
+              <Box sx={{ width: HASH_COLUMN, ml: `${panelColumns.lead}px`, flexShrink: 0, textAlign: 'right' }}>
+                Hash
+              </Box>
+            </Tooltip>
+            <Box sx={{ width: panelColumns.size, flexShrink: 0, textAlign: 'right', ...HIDE_SIZE }}>Size</Box>
+            <Box sx={{ width: panelColumns.modified, flexShrink: 0, textAlign: 'right', ...HIDE_UPDATED }}>
               Updated
             </Box>
             <Box sx={{ width: panelColumns.actions, flexShrink: 0 }} />
@@ -612,13 +735,27 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                 expanded={expanded.has(entry.path)}
                 busy={loading.has(entry.path)}
                 selected={selected === entry.path}
+                checked={chosen.has(entry.uri)}
                 bucket={status?.bucket ?? ''}
                 project={status?.project ?? ''}
-                onActivate={() => {
+                onCheck={() => toggleInput(refOf(entry))}
+                onRunPipeline={() => {
+                  setInputs([refOf(entry)]);
+                  openPanel('pipelines');
+                }}
+                onActivate={(event) => {
                   setSelected(entry.path);
                   if (entry.isDir) {
                     toggle(entry);
                     return;
+                  }
+                  /* A product is the Pipelines card's input: a click makes it
+                     the one, Ctrl/Cmd-click (or its tick box) adds it to the
+                     ones. */
+                  if (ASSET_KINDS.has(entry.kind)) {
+                    if (event.ctrlKey || event.metaKey) toggleInput(refOf(entry));
+                    // Several ticked: a plain click only inspects; the ticks stay.
+                    else if (inputs.length < 2) setInputs([refOf(entry)]);
                   }
                   /* Publish to the right dock. A store selected here is the
                      artifact of the entire acquire → convert → assemble
@@ -647,7 +784,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                   textAlign: 'center',
                 }}
               >
-                {query ? `Nothing matches “${query}”.` : 'No derived assets yet.'}
+                {query ? `Nothing matches “${query}”.` : 'No products here yet.'}
               </Typography>
             )}
           </Box>

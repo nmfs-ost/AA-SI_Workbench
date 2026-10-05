@@ -23,13 +23,15 @@ from .baseline import router as baseline_router
 from .derived import router as derived_router
 from .environment import router as environment_router
 from .files import router as files_router
+from .gcp import router as gcp_router
 from .identity import router as identity_router
 from .jobs import router as jobs_router
 from .ncei import router as ncei_router
+from .pipelines import router as pipelines_router
+from .products import router as products_router
 from .recipes import router as recipes_router
 from .store import router as store_router
 from .terminal import router as terminal_router
-from .tools import router as tools_router
 
 
 class _SPAStaticFiles(StaticFiles):
@@ -72,15 +74,19 @@ def create_app() -> FastAPI:
     app.include_router(identity_router)
     app.include_router(recipes_router)
     app.include_router(terminal_router)
-    # The tool surface: run them (jobs), read them (store), ask what they take
-    # (tools). Registered after the panels' own endpoints so a routing conflict
-    # would surface here rather than shadowing something older.
+    # The tool surface: run them (jobs), read them (store). Registered after
+    # the panels' own endpoints so a routing conflict would surface here
+    # rather than shadowing something older.
     app.include_router(jobs_router)
     app.include_router(store_router)
-    app.include_router(tools_router)
+    # Products in the bucket, and pipelines of console tools run on them.
+    app.include_router(products_router)
+    app.include_router(pipelines_router)
     # The baseline operation: survey + time range -> EchoData asset in the
     # bucket, run as a chain of ordinary jobs.
     app.include_router(baseline_router)
+    # Which GCP project and bucket this user works in, and which they could.
+    app.include_router(gcp_router)
 
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:

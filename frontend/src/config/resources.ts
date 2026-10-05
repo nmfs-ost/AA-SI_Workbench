@@ -9,9 +9,9 @@
  *
  * The repository list is fetched from the GitHub API at runtime, because a
  * hand-maintained list of an organisation's repositories is exactly the kind of
- * thing this codebase has already been bitten by — `toolCatalog.ts` carries an
- * ACCURACY WARNING about precisely this shape of duplication, and the
- * discovery endpoint was built to route around it.
+ * thing this codebase has already been bitten by — the old hand-written
+ * pipeline tool catalogue drifted from the real tools until it was replaced by
+ * reading the tools themselves.
  *
  * `FALLBACK_REPOS` is therefore **a floor, not a catalogue**. Every entry is one
  * this repository can point at evidence for, and the panel says plainly when it

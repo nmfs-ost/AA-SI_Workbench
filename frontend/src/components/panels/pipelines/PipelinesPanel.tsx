@@ -1,181 +1,273 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
-import { Box, Tooltip, Typography, useTheme } from '@mui/material';
-import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
-import AddOutlined from '@mui/icons-material/AddOutlined';
-
-import { useLayout } from '../../../context/LayoutContext';
-import { usePipelineInput } from '../../../state/pipelineInput';
 import {
-  clearSelection,
-  createPipeline,
-  currentConfig,
-  isDirty,
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+  useTheme,
+} from '@mui/material';
+import {
+  AccountTreeOutlined,
+  AddRounded,
+  ErrorOutlineRounded,
+  RefreshRounded,
+} from '@mui/icons-material';
+
+import type { PipelineSpec } from '../../../services/pipelinesApi';
+import {
+  deletePipeline,
+  effective,
+  initPipelines,
+  isEdited,
+  loadCatalogue,
+  loadPipelines,
   setActivePipeline,
-  toggleSelected,
   usePipelines,
 } from '../../../state/pipelines';
+import { PanelHeader } from '../PanelHeader';
+import { Caption, Note } from '../prepare/ui';
+import { InputCard } from './InputCard';
 import { PipelineCard } from './PipelineCard';
-import { PipelineRunControls } from './PipelineRunControls';
-import { NewPipelineDialog } from './NewPipelineDialog';
-import { defaultValues } from './pipelineTypes';
+import { PipelineEditorDialog } from './PipelineEditorDialog';
+import { PlanView } from './PlanView';
+import { RunCard } from './RunCard';
+import { fit, kindLabel } from './chain';
 
 /**
- * Pipelines panel — the saved console-tool workflows, as cards.
+ * Pipelines: console tools chained, run on products in the bucket.
  *
- * Tick one or more cards and the selected product (from Prepare EchoData or
- * Derived) is injected as their input automatically; the run controls directly beneath the header show
- * exactly what would run. Clicking a card focuses it, opening its settings in
- * the Configuration panel. A dashed card at the end (and the + in the header)
- * creates a new pipeline.
+ * Top to bottom, the order of the work: the input (products chosen in the
+ * Products panel, with their hashes), the pipelines that can take it (each
+ * drawn as the products it passes along; the open one shows the server's plan
+ * and runs it), and the runs, each stage's state and then the products made,
+ * which can be inspected, found in the bucket, or fed to the next pipeline.
+ * A pipeline's settings are edited in Configuration.
  */
 export const PipelinesPanel: FunctionComponent<IDockviewPanelProps> = () => {
-  const { openPanel } = useLayout();
   const theme = useTheme();
-  const state = usePipelines();
-  const input = usePipelineInput();
-  const [createOpen, setCreateOpen] = useState(false);
-  const injectedInput = input?.value ?? null;
-  const injectedSource = input?.source ?? null;
+  const c = theme.aa.color;
+  const s = usePipelines();
+  const [filter, setFilter] = useState<'fits' | 'all'>('fits');
+  const [editor, setEditor] = useState<{ open: boolean; initial: PipelineSpec | null }>({
+    open: false,
+    initial: null,
+  });
+  const [deleting, setDeleting] = useState<PipelineSpec | null>(null);
 
-  const selectedPipelines = state.pipelines.filter((p) => state.selected.has(p.id));
+  useEffect(() => initPipelines(), []);
+
+  // A run just started (or chosen): bring it into view, above the pipelines.
+  const runsRef = useRef<HTMLDivElement | null>(null);
+  const lastRun = useRef(s.activeRunId);
+  useEffect(() => {
+    if (s.activeRunId && s.activeRunId !== lastRun.current) {
+      runsRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    lastRun.current = s.activeRunId;
+  }, [s.activeRunId]);
+
+  const kinds = useMemo(() => s.inputs.map((i) => i.kind).filter(Boolean), [s.inputs]);
+  const rows = useMemo(
+    () =>
+      s.pipelines.map((p) => {
+        const spec = effective(s, p.id) ?? p;
+        return { spec, fit: s.catalogue ? fit(spec, kinds, s.catalogue) : null };
+      }),
+    [s, kinds],
+  );
+  const fitting = rows.filter((r) => r.fit?.ok !== false);
+  const shown = filter === 'fits' && kinds.length ? fitting : rows;
+  const mine = s.pipelines.filter((p) => !p.builtin).length;
 
   return (
-    <Box
-      sx={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: theme.aa.color.bg.editor,
-      }}
-    >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.25,
-          minHeight: 30,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-          color: theme.aa.color.text.secondary,
-        }}
-      >
-        <AccountTreeOutlined sx={{ fontSize: 16 }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>Pipelines</Typography>
-        <Typography sx={{ fontSize: 11, color: theme.aa.color.text.muted }}>
-          {state.pipelines.length} saved
-        </Typography>
-        <Tooltip title="New pipeline">
-          <Box
-            component="button"
-            onClick={() => setCreateOpen(true)}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.25,
-              background: 'none',
-              border: `1px solid ${theme.aa.color.border.subtle}`,
-              borderRadius: `${theme.aa.radius.sm}px`,
-              color: theme.aa.color.text.secondary,
-              cursor: 'pointer',
-              px: 0.6,
-              py: 0.15,
-              fontSize: 11,
-              '&:hover': {
-                borderColor: theme.aa.color.accent.main,
-                color: theme.aa.color.accent.main,
-              },
-            }}
-          >
-            <AddOutlined sx={{ fontSize: 13 }} />
-            New
-          </Box>
-        </Tooltip>
-      </Box>
-
-      <PipelineRunControls
-        selectedPipelines={selectedPipelines}
-        draftsFor={(id) => {
-          const pipeline = state.pipelines.find((p) => p.id === id);
-          return state.drafts[id] ?? (pipeline ? defaultValues(pipeline) : {});
-        }}
-        injectedInput={injectedInput}
-        injectedSource={injectedSource}
-        onClearSelection={clearSelection}
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: c.bg.editor, minHeight: 0 }}>
+      <PanelHeader
+        icon={<AccountTreeOutlined className="panel-header-icon" />}
+        title="Pipelines"
+        subtitle={
+          s.catalogue
+            ? `${s.pipelines.length - mine} built in · ${mine} yours · ${s.catalogue.tools.length} console tools${
+                s.catalogue.aalibraryVersion ? ` (aalibrary ${s.catalogue.aalibraryVersion})` : ''
+              }`
+            : ''
+        }
+        actions={
+          <>
+            <Tooltip title="Read the installed console tools again">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  void loadCatalogue(true);
+                  void loadPipelines();
+                }}
+              >
+                <RefreshRounded sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+            <Button
+              size="small"
+              startIcon={<AddRounded sx={{ fontSize: 16 }} />}
+              onClick={() => setEditor({ open: true, initial: null })}
+              disabled={!s.catalogue?.tools.length}
+              sx={{ textTransform: 'none', fontSize: 12 }}
+            >
+              New pipeline
+            </Button>
+          </>
+        }
       />
 
-      {/* Cards */}
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          p: 1.25,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 1.25,
-        }}
-      >
-        {state.pipelines.map((pipeline) => {
-          const config = currentConfig(state, pipeline.id);
-          return (
-            <PipelineCard
-              key={pipeline.id}
-              pipeline={pipeline}
-              selected={state.selected.has(pipeline.id)}
-              active={state.activePipelineId === pipeline.id}
-              dirty={isDirty(state, pipeline.id)}
-              configName={config?.name ?? 'Default'}
-              onToggleSelected={() => toggleSelected(pipeline.id)}
-              onActivate={() => setActivePipeline(pipeline.id)}
-              onEdit={() => {
-                // Focus it, then surface the panel that owns every setting.
-                setActivePipeline(pipeline.id);
-                openPanel('configuration');
-              }}
-            />
-          );
-        })}
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        <Box sx={{ maxWidth: 1040, mx: 'auto', px: 2, py: 1.75, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {(s.catalogueError || s.listError) && (
+            <Note tone="error" icon={<ErrorOutlineRounded className="note-icon" />}>
+              {s.catalogueError || s.listError}
+            </Note>
+          )}
+          {s.catalogue && s.catalogue.missing.length > 0 && !s.catalogue.problem && (
+            <Note tone="warning">
+              Not in the installed aalibrary, so not offered: {s.catalogue.missing.join(', ')}.
+            </Note>
+          )}
 
-        {/* Create-new affordance */}
-        <Box
-          onClick={() => setCreateOpen(true)}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 0.75,
-            py: 1.75,
-            borderRadius: `${theme.aa.radius.md}px`,
-            border: `1px dashed ${theme.aa.color.border.subtle}`,
-            color: theme.aa.color.text.muted,
-            cursor: 'pointer',
-            transition: 'border-color 120ms, color 120ms',
-            '&:hover': {
-              borderColor: theme.aa.color.accent.main,
-              color: theme.aa.color.accent.main,
-            },
-          }}
-        >
-          <AddOutlined sx={{ fontSize: 17 }} />
-          <Typography sx={{ fontSize: 12.5, fontWeight: 500 }}>
-            Create new pipeline
-          </Typography>
+          <InputCard inputs={s.inputs} />
+
+          {s.runs.length > 0 && (
+            <Box ref={runsRef}>
+              <Caption>Runs</Caption>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {s.runs.map((run) => (
+                  <RunCard key={run.id} run={run} open={run.id === s.activeRunId} />
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.75 }}>
+              <Caption>Pipelines</Caption>
+              <Box sx={{ flex: 1 }} />
+              {kinds.length > 0 && (
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  value={filter}
+                  onChange={(_, v) => v && setFilter(v)}
+                  sx={{ '& .MuiToggleButton-root': { py: 0.1, px: 1, fontSize: 11, textTransform: 'none' } }}
+                >
+                  <ToggleButton value="fits">Can take the input ({fitting.length})</ToggleButton>
+                  <ToggleButton value="all">All ({rows.length})</ToggleButton>
+                </ToggleButtonGroup>
+              )}
+            </Box>
+            {!s.catalogue && !s.catalogueError && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
+                <CircularProgress size={14} />
+                <Typography sx={{ fontSize: 12, color: c.text.muted }}>Reading the installed console tools…</Typography>
+              </Box>
+            )}
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {shown.map(({ spec, fit: f }) => {
+                const active = spec.id === s.activePipelineId;
+                return (
+                  <PipelineCard
+                    key={spec.id}
+                    pipeline={spec}
+                    catalogue={s.catalogue}
+                    inputKind={s.inputs[0]?.kind ?? ''}
+                    fit={f}
+                    active={active}
+                    edited={isEdited(s, spec.id)}
+                    onOpen={() => setActivePipeline(active ? null : spec.id)}
+                    onEdit={() => setEditor({ open: true, initial: spec })}
+                    onDuplicate={() =>
+                      setEditor({ open: true, initial: { ...spec, id: '', builtin: false, name: `${spec.name} (copy)` } })
+                    }
+                    onDelete={() => setDeleting(spec)}
+                  >
+                    {active && (
+                      <PlanView
+                        pipeline={spec}
+                        catalogue={s.catalogue}
+                        inputs={s.inputs}
+                        plan={s.plan}
+                        planning={s.planning}
+                        planError={s.planError}
+                        dest={s.dest}
+                        force={s.force}
+                        starting={s.starting}
+                        runError={s.runError}
+                      />
+                    )}
+                  </PipelineCard>
+                );
+              })}
+              {s.catalogue && shown.length === 0 && (
+                <Typography sx={{ fontSize: 12, color: c.text.muted, py: 1 }}>
+                  No pipeline here reads {kindLabel(s.inputs[0]?.kind ?? '', s.catalogue)} products. Show all, or make
+                  one with New pipeline.
+                </Typography>
+              )}
+            </Box>
+          </Box>
+
         </Box>
       </Box>
 
-      <NewPipelineDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreate={({ name, description, stages, values }) => {
-          // The dialog builds both, because a stage list alone cannot carry the
-          // flags the user typed or the verbatim text of a hand-written step.
-          createPipeline({ name, description, stages, values });
-          setCreateOpen(false);
-        }}
+      <PipelineEditorDialog
+        open={editor.open}
+        initial={editor.initial}
+        catalogue={s.catalogue}
+        onClose={() => setEditor({ open: false, initial: null })}
       />
+      <DeleteDialog pipeline={deleting} onClose={() => setDeleting(null)} />
     </Box>
   );
 };
+
+function DeleteDialog({ pipeline, onClose }: { pipeline: PipelineSpec | null; onClose: () => void }) {
+  const [error, setError] = useState('');
+  useEffect(() => setError(''), [pipeline]);
+  return (
+    <Dialog open={Boolean(pipeline)} onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontSize: 15 }}>Delete “{pipeline?.name}”?</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ fontSize: 12.5 }}>
+          The pipeline goes; the products it made stay in the bucket.
+        </Typography>
+        {error && (
+          <Typography sx={{ fontSize: 12, mt: 1 }} color="error">
+            {error}
+          </Typography>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} sx={{ textTransform: 'none' }}>
+          Cancel
+        </Button>
+        <Button
+          color="error"
+          variant="contained"
+          disableElevation
+          sx={{ textTransform: 'none' }}
+          onClick={() => {
+            if (!pipeline) return;
+            deletePipeline(pipeline.id).then(onClose, (e: Error) => setError(e.message));
+          }}
+        >
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

@@ -9,8 +9,8 @@
  * arrays below as the real requirements firm up — that is the only edit needed.
  */
 
-export type { ParamDef, ParamValue } from '../pipelines/pipelineTypes';
-import type { ParamDef } from '../pipelines/pipelineTypes';
+export type { ParamDef, ParamValue } from './paramTypes';
+import type { ParamDef } from './paramTypes';
 
 export interface CalibrationSection {
   id: string;

@@ -125,8 +125,12 @@ with the tools' cache inside it. It is removed after a successful run (unless
 
 | Variable | Default | |
 |---|---|---|
-| `AASI_DERIVED_BUCKET` | `ggn-nmfs-aa-dev-1-data` | The bucket the Derived panel shows, and where the card writes. |
-| `AASI_BASELINE_BUCKET` | (the Derived bucket) | Write somewhere else than the Derived panel shows. |
+| (your choice) | none | The bucket the Derived panel shows and the card writes to is the one chosen in the Workbench (status bar ▸ project, *Change project or bucket* in the Destination step, or `aa-workbench project`). Until one is chosen, the card says so instead of guessing. |
+| `AASI_GCP_PROJECT` / `AASI_DERIVED_BUCKET` | unset | A deployment's project and bucket, used when the user has not chosen. |
+| `AASI_GCP_PROJECTS` | `ggn-nmfs-aa-prod-1,ggn-nmfs-aa-dev-1` | Projects discovery checks by name even when Resource Manager does not list them. |
+| `AASI_BASELINE_BUCKET` | (the chosen bucket) | Write somewhere else than the Derived panel shows. |
+| `AASI_NCEI_CACHE_PROJECT` | (the chosen project) | Read the NCEI cache from this project instead. |
+| `AASI_CONFIG_DIR` | `~/.config/aa-si-workbench` | Where the user's choice is kept. |
 | `AASI_RUN_ROOT` | `~/aa-workbench-runs` | The default working folder (the card can name another). |
 | `AASI_PROVENANCE_TIMEOUT` | `120` | Seconds `aa-metadata` may take for the Metadata panel. |
 

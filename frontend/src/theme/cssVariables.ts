@@ -32,6 +32,7 @@ export function cssVariablesFor(tokens: AaTokens): Record<string, string> {
   }
   variables['--aa-font-ui'] = tokens.font.ui;
   variables['--aa-font-mono'] = tokens.font.mono;
+  variables['--aa-size-row'] = `${tokens.size.row}px`;
   return variables;
 }
 

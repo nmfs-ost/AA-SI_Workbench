@@ -255,11 +255,10 @@ _cached: tuple[str, str] | None = None
 #: sources and one can be known while the other is not.
 _cached_project: str | None = None
 
-#: Last resort for the project id. A real value rather than "" because the
-#: Workbench has always shown this one and a blank chip where a project used to
-#: be reads as breakage; it is the *last* thing tried, so any workstation that
-#: can answer for itself does.
-_DEFAULT_PROJECT = "ggn-nmfs-aa-dev-1"
+#: Last resort for the project id: none. The project the Workbench works in is
+#: the one this user chose (gcp.py), and the UI shows that choice, so naming a
+#: project here that nobody chose would only contradict it.
+_DEFAULT_PROJECT = ""
 
 #: Project id environment variables, most specific first. Ours leads so that a
 #: deployment which pins the project keeps pinning it.
@@ -329,6 +328,17 @@ def detect_project(*, source: str = "unknown", refresh: bool = False) -> str:
     is nearly always going to time out does not get to run.
     """
     global _cached_project
+    # The project this user chose in the Workbench (gcp.py) is the one every
+    # tool here is told to use, so it is the one to show. Not cached: it can
+    # change while the server runs, and reading it is one small file.
+    try:
+        from .gcp import current
+
+        chosen = current()
+        if chosen.source != "unset" and chosen.project:
+            return chosen.project
+    except Exception:  # noqa: BLE001, S110 - fall back to what gcloud says
+        pass
     if _cached_project is not None and not refresh:
         return _cached_project
 
@@ -437,4 +447,3 @@ def get_identity(refresh: bool = Query(default=False)) -> Identity:
         enforced=False,
         detail=_detail(principal, source, restricted, member),
     )
-

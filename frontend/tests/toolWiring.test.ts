@@ -1,94 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildArgv,
-  buildCommand,
-  COMMAND_OVERRIDE,
-  type PipelineDefinition,
-  type StageDef,
-} from '../src/components/panels/pipelines/pipelineTypes';
-import {
   compression,
   formatBytes,
   formatCount,
   sparsity,
   type StoreSummary,
 } from '../src/services/storeApi';
-
-const combine: StageDef = {
-  id: 'combine',
-  tool: 'aa-combine',
-  label: 'Combine',
-  description: '',
-  params: [
-    { id: 'input', label: 'Input', type: 'file', role: 'input', default: '' },
-    { id: 'output', label: 'Output', type: 'string', flag: '-o', default: 'combined.zarr' },
-    {
-      id: 'channels',
-      label: 'Channels',
-      type: 'multi',
-      flag: '--channels',
-      options: ['GPT 18 kHz', 'GPT 38 kHz'],
-      default: [],
-    },
-    { id: 'strict', label: 'Strict', type: 'boolean', flag: '--strict', default: false },
-    { id: 'sonar', label: 'Sonar', type: 'string', flag: '--sonar_model', default: '' },
-  ],
-};
-
-describe('buildArgv', () => {
-  it('separates arguments instead of quoting them', () => {
-    const argv = buildArgv(combine, { combine: {} }, "/data/Dyson's Bank/f.nc");
-    expect(argv).toEqual({
-      tool: 'aa-combine',
-      // The path stays ONE argument. This is the whole reason argv is generated
-      // from the schema rather than lexed back out of the display string.
-      args: ["/data/Dyson's Bank/f.nc", '-o', 'combined.zarr'],
-    });
-  });
-
-  it('quotes the same path in the display string', () => {
-    const command = buildCommand(
-      { stages: [combine] } as unknown as PipelineDefinition,
-      { combine: {} },
-      "/data/Dyson's Bank/f.nc",
-    );
-    expect(command[0]).toContain('"/data/Dyson\'s Bank/f.nc"');
-  });
-
-  it('omits a false boolean and emits a true one as a bare flag', () => {
-    expect(buildArgv(combine, { combine: { strict: false } }, 'a.nc')?.args).not.toContain(
-      '--strict',
-    );
-    expect(buildArgv(combine, { combine: { strict: true } }, 'a.nc')?.args).toContain('--strict');
-  });
-
-  it('joins a multi value into one comma-separated argument', () => {
-    const argv = buildArgv(
-      combine,
-      { combine: { channels: ['GPT 18 kHz', 'GPT 38 kHz'] } },
-      'a.nc',
-    );
-    expect(argv?.args).toContain('--channels');
-    expect(argv?.args).toContain('GPT 18 kHz,GPT 38 kHz');
-  });
-
-  it('drops an empty optional rather than passing a bare flag', () => {
-    const argv = buildArgv(combine, { combine: { sonar: '   ' } }, 'a.nc');
-    expect(argv?.args).not.toContain('--sonar_model');
-  });
-
-  it('refuses a hand-written command', () => {
-    // A shell string may contain a pipe. Running it as argv would execute a
-    // program with an argument called "|", so null is the honest answer.
-    const values = { combine: { [COMMAND_OVERRIDE]: 'aa-combine a.nc | grep -v WARN' } };
-    expect(buildArgv(combine, values, 'a.nc')).toBeNull();
-  });
-
-  it('refuses a freeform stage', () => {
-    expect(buildArgv({ ...combine, freeform: true }, { combine: {} }, 'a.nc')).toBeNull();
-  });
-});
 
 describe('store ratios', () => {
   const base: StoreSummary = {

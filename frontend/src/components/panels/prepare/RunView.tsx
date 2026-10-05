@@ -401,13 +401,13 @@ function Results({
     <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
       <CopyPathButton value={asset.uri} label="Copy gs:// URI" alwaysVisible={visible} />
       {(asset.kind === 'echodata' || asset.kind === 'sv') && (
-        <Tooltip title="Select it: Metadata shows its provenance, Pipelines take it as input">
+        <Tooltip title="Select it: Metadata shows its provenance, and it becomes the Pipelines input">
           <IconButton size="small" onClick={() => onInspect(asset)} sx={{ p: 0.4 }}>
             <FindInPageOutlined sx={{ fontSize: 14 }} />
           </IconButton>
         </Tooltip>
       )}
-      <Tooltip title="Show in the Derived bucket browser">
+      <Tooltip title="Show in the Products panel">
         <IconButton size="small" onClick={() => onReveal(asset)} sx={{ p: 0.4 }}>
           <FolderOpenOutlined sx={{ fontSize: 14 }} />
         </IconButton>

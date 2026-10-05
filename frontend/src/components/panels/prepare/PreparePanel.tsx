@@ -4,9 +4,12 @@ import type { IDockviewPanelProps } from 'dockview';
 import { Box, Button, CircularProgress, Tooltip, Typography, alpha, useTheme } from '@mui/material';
 import { CallMergeRounded, ErrorOutlineRounded, PlayArrowRounded } from '@mui/icons-material';
 
+import { PanelHeader } from '../PanelHeader';
 import { useLayout } from '../../../context/LayoutContext';
 import { setActiveArtifact } from '../../../state/activeSubject';
+import { openDialog } from '../../../state/dialogs';
 import { revealInDerived } from '../../../state/derivedReveal';
+import { getPipelinesState, inputFromUri } from '../../../state/pipelines';
 import {
   buildRequest,
   currentPlan,
@@ -119,6 +122,10 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
     const label = asset.uri.replace(/\/$/, '').split('/').pop() ?? asset.uri;
     setActiveArtifact({ uri: asset.uri, label, origin: 'Prepare' });
     openPanel('metadata');
+    // And the Pipelines card's input: the next step is usually a pipeline.
+    if ((asset.kind === 'echodata' || asset.kind === 'sv') && getPipelinesState().inputs.length < 2) {
+      void inputFromUri(asset.uri);
+    }
   };
   const reveal = (asset: Asset) => {
     revealInDerived(asset.uri);
@@ -149,44 +156,32 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
         backgroundColor: c.bg.panel,
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.25,
-          height: 32,
-          flexShrink: 0,
-          borderBottom: `1px solid ${c.border.subtle}`,
-        }}
-      >
-        <CallMergeRounded sx={{ fontSize: 15, color: c.accent.main }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 600, color: c.text.primary }}>
-          Prepare EchoData
-        </Typography>
-        {BASELINE_SIMULATED && (
-          <Tooltip title="The Workbench is running on sample data: runs are simulated and nothing is fetched or written. aa-workbench build turns on the real API.">
-            <Box
-              sx={{
-                ml: 'auto',
-                px: 0.75,
-                height: 17,
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: 9,
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                color: c.status.warning,
-                backgroundColor: alpha(c.status.warning, 0.12),
-              }}
-            >
-              SAMPLE DATA
-            </Box>
-          </Tooltip>
-        )}
-      </Box>
+      <PanelHeader
+        icon={<CallMergeRounded className="panel-header-icon" />}
+        title="Prepare EchoData"
+        actions={
+          BASELINE_SIMULATED ? (
+            <Tooltip title="The Workbench is running on sample data: runs are simulated and nothing is fetched or written. aa-workbench build turns on the real API.">
+              <Box
+                sx={{
+                  px: 0.75,
+                  height: 17,
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: 9,
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  color: c.status.warning,
+                  backgroundColor: alpha(c.status.warning, 0.12),
+                }}
+              >
+                SAMPLE DATA
+              </Box>
+            </Tooltip>
+          ) : undefined
+        }
+      />
 
       {/* Body */}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -292,11 +287,42 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                     baseError={baseError}
                     files={planned}
                     onBase={(b) => update({ base: b })}
+                    bucketNote={
+                      s.bucket.trim()
+                        ? 'In the bucket set under Advanced settings.'
+                        : s.config?.bucketSource === 'pinned'
+                          ? 'In the bucket this Workbench is set to write to.'
+                          : s.config?.project
+                            ? `In the GCP project ${s.config.project}.`
+                            : 'In the bucket the Workbench’s settings name.'
+                    }
+                    // Choosing a project moves nothing when the bucket is
+                    // set here or pinned by the deployment.
+                    onChangeBucket={
+                      s.bucket.trim() || s.config?.bucketSource === 'pinned'
+                        ? undefined
+                        : () => openDialog('gcp')
+                    }
                   />
-                ) : (
+                ) : bucket || !s.config ? (
                   <Typography sx={{ fontSize: 11, color: c.text.muted }}>
                     {bucket ? 'Named once a survey and range are chosen.' : 'Waiting for the Workbench bucket…'}
                   </Typography>
+                ) : (
+                  <Box>
+                    <Typography sx={{ fontSize: 11.5, color: c.text.secondary, mb: 1 }}>
+                      Choose the GCP project and bucket products go to. The list shows the ones
+                      you can write to.
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => openDialog('gcp')}
+                      sx={{ textTransform: 'none', fontSize: 12 }}
+                    >
+                      Choose a project and bucket
+                    </Button>
+                  </Box>
                 )}
               </Step>
               <Step
@@ -428,7 +454,9 @@ function whyNot(
   if (!x.rangeOk) return 'Choose a time range.';
   if (!x.plan) return 'No files cover this time range.';
   if (x.baseError) return x.baseError;
-  if (!x.bucket) return 'Waiting for the Workbench bucket…';
+  if (!x.bucket) {
+    return s.config ? 'Choose a GCP project and bucket (Destination).' : 'Waiting for the Workbench bucket…';
+  }
   if (s.strict && x.gaps > 0) return 'Strict QC is on and the range has a gap.';
   if (x.workspaceProblem) return `Working space: ${x.workspaceProblem.split('. ')[0].replace(/\.$/, '')}.`;
   return '';

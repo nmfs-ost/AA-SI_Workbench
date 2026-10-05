@@ -14,7 +14,7 @@ import AltRouteOutlined from '@mui/icons-material/AltRouteOutlined';
 import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined';
 import InputOutlined from '@mui/icons-material/InputOutlined';
 
-import type { ParamDef, ParamValue } from './pipelineTypes';
+import type { ParamDef, ParamValue } from './paramTypes';
 
 interface Props {
   param: ParamDef;
@@ -99,7 +99,7 @@ export function ParamControl({ param, value, onChange, injectedInput }: Props) {
         fullWidth
         label={param.label}
         value={shown}
-        placeholder="Select a product in Prepare EchoData or Derived, or type a path"
+        placeholder="Select a product in Prepare EchoData or Products, or type a path"
         onChange={(e) => onChange(e.target.value)}
         InputProps={{
           readOnly: injected,

@@ -7,6 +7,53 @@ handoff (the emblem, the terminal toolbar, the account) is kept as
 
 ---
 
+## Since then: pipelines rebuilt around products in the bucket
+
+The old pipeline cards could not run: a hand-written catalogue whose flags had
+drifted from the tools (and tools that do not exist), stages started in
+parallel with no chaining, `--progress` passed to every tool. Rebuilt
+(`docs/guides/pipelines.md`): the tools are introspected from the installed
+aalibrary (`api/catalogue.py`; `TRAITS` holds what reads/writes/needs what),
+the server plans and runs the chain (`api/pipelines.py`, the same pattern as
+Prepare: one job per stage, stdout → next input, `--dest` beside the input,
+pinned to the run's project), and the input is a product chosen in the
+**Products** panel (Derived, renamed), which now carries each object's product
+hash, recipe, MD5 and integrity (`api/products.py`, `ProductBits.tsx`). Six
+built-in pipelines; user pipelines in `~/.config/aa-si-workbench/pipelines.json`.
+Removed: `api/tools.py`, the frontend catalogue/definitions/command parser and
+their tests; `ParamControl` moved to the Calibration panel, its only user.
+Recipes are untouched. Rehearsed with the real tools on the stand-in bucket:
+MVBS and noise-removal pipelines ran, Sv reused, products published with
+hashes.
+
+UI: one row height (`tokens.size.row`, 36 px) for tab strips, panel headers
+(`PanelHeader`) and side-strip icons, so lines continue across docks and the
+active icon's highlight spans its header; the Products panel uses one font,
+and its columns give way (container queries) before the name does.
+`LAYOUT_VERSION` is 18.
+
+## Since then: the GCP project and bucket are a choice
+
+The project and bucket used to be baked in (prod, with dev defaults in places).
+Now each user chooses, and the Workbench discovers what they can use
+(`api/gcp.py`): Resource Manager `projects:search` plus the known projects
+(`AASI_GCP_PROJECTS`), each project's buckets (listed, else `<project>-data`),
+read/write by `testIamPermissions`, and whether `<project>.metadata.ncei_cache`
+exists. Every Google call has a 12 s timeout and no retries; the whole
+discovery gives up after 40 s and marks the rest "not checked". The choice is
+`~/.config/aa-si-workbench/gcp.json` (`AASI_CONFIG_DIR`); exactly one writable
+bucket is chosen automatically unless the user said *Forget my choice*.
+`gcp.tool_env()` gives every job, terminal, store and provenance call
+`AALIBRARY_GCP_PROJECT_ID`, `GOOGLE_CLOUD_PROJECT` and
+`AALIBRARY_GCP_BUCKET_NAME`, pinned per job at submit (a Prepare run keeps one
+snapshot for all stages; its fetch stage gets the NCEI cache project). The
+Derived panel, Prepare's destination, the NCEI cache provider and identity
+follow it. UI: the status bar's cloud button, Tools ▸ GCP Project and Bucket,
+the Prepare Destination step, the Derived panel, the Resources chip
+(`GcpDialog.tsx`, `state/gcp.ts`). CLI: `aa-workbench project`. aalibrary
+needs `use_gcp_default()` (it keeps a project the caller set), or the console
+tools fall back to prod whatever is chosen.
+
 ## Since then: the old NCEI panel and the Map panel are gone
 
 Prepare EchoData replaced the old NCEI panel (browse a survey, tick files,

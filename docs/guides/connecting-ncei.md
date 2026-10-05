@@ -22,7 +22,7 @@ Workbench sees identical vessels, surveys, echosounders, and raw files.
 | Source | Env | Needs credentials? | Notes |
 | --- | --- | --- | --- |
 | **S3** (default) | `AASI_NCEI_SOURCE=s3` | **No** — `create_s3_objs()` lists the public `noaa-wcsd-pds` bucket anonymously (`signature_version=UNSIGNED`) | Real file sizes; acquisition time parsed from the `D…-T…` name. Slower for very large surveys (walks S3). |
-| **Cache** | `AASI_NCEI_SOURCE=cache` | **Yes** — GCP application-default creds with BigQuery access | Queries `ggn-nmfs-aa-dev-1.metadata.ncei_cache`. Much faster and carries `file_datetime`. Ideal for the datetime-range combine. |
+| **Cache** | `AASI_NCEI_SOURCE=cache` | **Yes** — GCP application-default creds with BigQuery access | Queries `<project>.metadata.ncei_cache` in the GCP project you chose (see below). Much faster and carries `file_datetime`. Ideal for the datetime-range combine. |
 
 Start with **S3** (nothing to configure), then move to **cache** for speed.
 
@@ -99,7 +99,6 @@ Errors (e.g. backend down) surface in the card's error banner.
 cd backend
 pip install -e ".[ncei-cache]"    # google-cloud-bigquery, pandas, db-dtypes
 gcloud auth application-default login
-export AALIBRARY_GCP_PROJECT_ID=ggn-nmfs-aa-dev-1
 export AASI_NCEI_SOURCE=cache
 uvicorn aa_si_workbench.api.main:app --reload --port 8000
 ```
@@ -107,6 +106,15 @@ uvicorn aa_si_workbench.api.main:app --reload --port 8000
 No frontend change is required. `aa-workbench serve --source cache` does the
 same. The cache is also the list `aa-fetch` downloads by, so planning from it
 means the card can never promise a file the fetch cannot find.
+
+**Which project's cache.** The table is `<project>.metadata.ncei_cache` in the
+GCP project chosen in the Workbench (the status bar's project button, or
+`aa-workbench project`). Prepare's fetch stage is told the same project, so
+the card and `aa-fetch` read one table. A project without the table (discovery
+checks) reads the cache of one that has it, production's when you can read
+it. `AASI_NCEI_CACHE_PROJECT=<project>` pins the cache project for a whole
+deployment. With nothing chosen, `ggn-nmfs-aa-prod-1` is read, as aa-fetch
+always has.
 
 ## Deploying on the Cloud Workstation
 
@@ -123,6 +131,7 @@ backend's absolute URL and add that origin to `AASI_CORS_ORIGINS`.
 - **`API 502: NCEI backend error: No module named 'aalibrary'`** — the backend
   env doesn't have `aalibrary`; install it or use the aa-find venv.
 - **Cache mode 502 on BigQuery auth** — run `gcloud auth application-default
-  login` and confirm `AALIBRARY_GCP_PROJECT_ID`.
+  login`, and check the chosen project (`aa-workbench project`) is one whose
+  cache you can read.
 - **Cache mode lists nothing for a survey** — the cache does not have it
   (yet); serve without `--source cache` to browse the public S3 archive.

@@ -173,7 +173,11 @@ def discover_venvs() -> list[VenvInfo]:
 
 def _session_env(venv_path: str) -> dict[str, str]:
     """The child's environment, with a virtualenv activated if one was chosen."""
-    env = dict(os.environ)
+    from .gcp import tool_env
+
+    # The chosen project and bucket (gcp.py), so `aa-*` typed here works where
+    # the rest of the Workbench does.
+    env = {**os.environ, **tool_env()}
     env.setdefault("TERM", "xterm-256color")
     env["AA_WORKBENCH_TERMINAL"] = "1"
     # A pager that waits for input has nothing to talk to on first paint and
@@ -198,9 +202,7 @@ def _session_env(venv_path: str) -> dict[str, str]:
 
 def _set_winsize(fd: int, rows: int, cols: int) -> None:
     with contextlib.suppress(OSError):
-        fcntl.ioctl(
-            fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0)
-        )
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
 @router.get("", response_model=TerminalInfo)
@@ -326,9 +328,7 @@ async def terminal_ws(websocket: WebSocket) -> None:
     out_task = asyncio.create_task(pump_out())
     in_task = asyncio.create_task(pump_in())
     try:
-        await asyncio.wait(
-            {out_task, in_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+        await asyncio.wait({out_task, in_task}, return_when=asyncio.FIRST_COMPLETED)
     except WebSocketDisconnect:
         pass
     finally:

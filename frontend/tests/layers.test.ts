@@ -9,8 +9,6 @@ import {
   layerLabel,
 } from '../src/types/layers';
 import type { LayerKind } from '../src/types/layers';
-import { toolCatalog } from '../src/components/panels/pipelines/toolCatalog';
-import { pipelineDefinitions } from '../src/components/panels/pipelines/pipelineDefinitions';
 
 /**
  * The layer vocabulary, and the composition check it exists to drive.
@@ -136,77 +134,5 @@ describe('chainIssues', () => {
     // The New Pipeline dialog composes before any file is chosen. An unknown
     // head must not make every first step look broken.
     expect(chainIssues([stage('aa-mvbs', 'sv', 'mvbs')], 'any')).toHaveLength(0);
-  });
-});
-
-describe('the catalogue speaks the vocabulary', () => {
-  it('declares a known kind on both sides of every tool', () => {
-    for (const template of toolCatalog) {
-      expect(LAYERS[template.consumes], `${template.tool} consumes`).toBeDefined();
-      expect(LAYERS[template.produces], `${template.tool} produces`).toBeDefined();
-    }
-  });
-
-  it('gives every tool a unique name', () => {
-    // The `aa-graph` collision noted in toolCatalog.ts is between this
-    // catalogue and a *proposed* tool, so it cannot be caught here — but a
-    // second entry landing under an existing name can be.
-    const names = toolCatalog.map((t) => t.tool);
-    expect(new Set(names).size).toBe(names.length);
-  });
-
-  it('marks a tool unverified unless it was checked', () => {
-    // Not a correctness property — a reminder. If this list shrinks to nothing
-    // the honesty machinery has stopped meaning anything and should go.
-    const unverified = toolCatalog.filter((t) => t.verified !== true).map((t) => t.tool);
-    expect(unverified).toContain('aa-sv');
-    expect(unverified).toContain('aa-seabed');
-  });
-
-  it('keeps the sparse tools sparse and the gridded tools gridded', () => {
-    const byTool = Object.fromEntries(toolCatalog.map((t) => [t.tool, t]));
-    expect(byTool['aa-evr'].produces).toBe('regions');
-    expect(byTool['aa-evl'].produces).toBe('lines');
-    expect(isGridded(byTool['aa-mask'].produces)).toBe(true);
-    expect(isGridded(byTool['aa-nasc'].produces)).toBe(false);
-  });
-
-  it('has exactly one tool producing NetCDF, and nothing consuming it', () => {
-    // NetCDF is an export format, not a storage layer. If something starts
-    // consuming it, that decision has quietly been reversed.
-    const producers = toolCatalog.filter((t) => t.produces === 'netcdf');
-    expect(producers.map((t) => t.tool)).toEqual(['aa-export']);
-    expect(toolCatalog.filter((t) => t.consumes === 'netcdf')).toHaveLength(0);
-  });
-});
-
-describe('the built-in pipelines compose', () => {
-  it('has no unreachable step in any shipped pipeline', () => {
-    for (const pipeline of pipelineDefinitions) {
-      const stages = pipeline.stages.map((stage) => {
-        const template = toolCatalog.find((t) => t.tool === stage.tool);
-        return {
-          tool: stage.tool,
-          // A stage whose tool has left the catalogue is a separate problem;
-          // treat it as unconstrained so this test reports composition only.
-          consumes: template?.consumes ?? 'any',
-          produces: template?.produces ?? 'any',
-        };
-      });
-      const issues = chainIssues(stages, pipeline.inputKind);
-      expect(issues.map((i) => i.message), `${pipeline.name}`).toEqual([]);
-    }
-  });
-
-  it('declares an input kind the first stage can actually accept', () => {
-    for (const pipeline of pipelineDefinitions) {
-      const first = pipeline.stages[0];
-      const template = toolCatalog.find((t) => t.tool === first.tool);
-      if (!template) continue;
-      expect(
-        isCompatible(pipeline.inputKind, template.consumes),
-        `${pipeline.name}: declares ${pipeline.inputKind}, ${first.tool} consumes ${template.consumes}`,
-      ).toBe(true);
-    }
   });
 });

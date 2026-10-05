@@ -1,5 +1,9 @@
 # AA-SI Workbench — session handoff
 
+> **Superseded for pipelines.** The pipeline cards described below (toolCatalog.ts,
+> pipelineDefinitions.ts, NewPipelineDialog, PipelineRunControls, `/api/tools`) were
+> replaced; see [`../guides/pipelines.md`](../guides/pipelines.md). The rest still holds.
+
 Dense state summary for resuming work. **The source is ground truth** — re-read the
 actual files before acting; this repo has drifted from mid-session assumptions before
 (panels removed or moved between turns). Verify, don't assume.

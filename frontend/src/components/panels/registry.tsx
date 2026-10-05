@@ -50,7 +50,7 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     id: 'pipelines',
     title: 'Pipelines',
     icon: AccountTreeOutlined,
-    description: 'Saved console-tool pipelines, with run controls.',
+    description: 'Console tools chained, run on products in the bucket.',
     region: 'center',
     component: PipelinesPanel,
   },
@@ -95,9 +95,10 @@ export const panelDefinitions: readonly PanelDefinition[] = [
   },
   {
     id: 'derived',
-    title: 'Derived',
+    title: 'Products',
     icon: LayersOutlined,
-    description: 'Derived assets (combined NetCDF products).',
+    description:
+      'Products in the bucket, with their hashes. Select one (or tick several) to run a pipeline on it.',
     region: 'left',
     component: DerivedPanel,
   },

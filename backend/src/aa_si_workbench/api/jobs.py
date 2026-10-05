@@ -225,6 +225,10 @@ class _Job:
     process: subprocess.Popen | None = None
     cancelled: bool = False
     env: dict[str, str] = field(default_factory=dict)
+    #: The GCP project and bucket the job runs against (gcp.tool_env), fixed
+    #: when it is submitted: a choice changed while it waits in the queue, or
+    #: between the stages of one run, does not move it.
+    gcp_env: dict[str, str] = field(default_factory=dict)
 
 
 _jobs: OrderedDict[str, _Job] = OrderedDict()
@@ -424,6 +428,9 @@ def _spawn(job: _Job) -> None:
     """Start one queued job. Caller holds the lock."""
     env = {
         **os.environ,
+        # The project and bucket this user chose (gcp.py), so a tool run from
+        # here works where the Workbench does.
+        **job.gcp_env,
         **job.env,
         "PYTHONUNBUFFERED": "1",
         "NO_COLOR": "1",
@@ -509,7 +516,16 @@ def _checked_env(env: dict[str, str]) -> dict[str, str]:
     return {key: str(value) for key, value in env.items()}
 
 
-def submit(request: JobRequest, resumed_from: str = "") -> _Job:
+def submit(
+    request: JobRequest,
+    resumed_from: str = "",
+    *,
+    gcp_env: dict[str, str] | None = None,
+) -> _Job:
+    """Queue a job. *gcp_env* pins the project it runs in (a multi-stage run
+    passes one snapshot to every stage); by default, the choice in force now."""
+    from .gcp import tool_env
+
     program = resolve_tool(request.tool)
     cwd = _resolve_cwd(request.cwd)
     args = [str(item) for item in request.args]
@@ -526,6 +542,7 @@ def submit(request: JobRequest, resumed_from: str = "") -> _Job:
         cwd=cwd,
         resumed_from=resumed_from,
         env=env,
+        gcp_env=dict(gcp_env) if gcp_env is not None else tool_env(),
     )
     with _lock:
         _jobs[job.id] = job
@@ -594,7 +611,8 @@ def resume(job_id: str) -> _Job:
             cwd=job.cwd,
             env=dict(job.env),
         )
-    return submit(request, resumed_from=job_id)
+        gcp_env = dict(job.gcp_env)
+    return submit(request, resumed_from=job_id, gcp_env=gcp_env)
 
 
 def _status(job: _Job, since: int = 0) -> JobStatus:
@@ -657,6 +675,17 @@ def tail_of(job_id: str, count: int = 8) -> list[str]:
         job = _jobs.get(job_id)
         if job is None:
             return []
+        return tail_of_job(job, count)
+
+
+def status_of_job(job: _Job) -> JobStatus:
+    """A job's status from the job itself (submit's return), so a caller
+    holding it still reads it after the table has evicted it."""
+    return _status(job, since=10**9)
+
+
+def tail_of_job(job: _Job, count: int = 8) -> list[str]:
+    with _lock:
         lines = [line for line in job.lines if not line.startswith(("$ ", "--- "))]
         return lines[-count:]
 

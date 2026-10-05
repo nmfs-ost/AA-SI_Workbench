@@ -32,7 +32,7 @@ import type { LayerKind } from '../types/layers';
  * 'Prepare' is a product the Prepare EchoData card just made, selected from
  * its results.
  */
-export type SubjectOrigin = 'Derived' | 'Files' | 'Terminal' | 'Prepare';
+export type SubjectOrigin = 'Derived' | 'Files' | 'Terminal' | 'Prepare' | 'Pipelines';
 
 export interface ActiveSubject {
   /**

@@ -528,7 +528,9 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           alignItems: 'center',
           gap: 0.25,
           px: 0.75,
-          py: 0.5,
+          height: theme.aa.size.row,
+          boxSizing: 'border-box',
+          flexShrink: 0,
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         }}
       >
@@ -609,7 +611,9 @@ export const FilesPanel: FunctionComponent<IDockviewPanelProps> = () => {
           alignItems: 'center',
           gap: 0.75,
           px: 1,
-          py: 0.4,
+          height: theme.aa.size.row,
+          boxSizing: 'border-box',
+          flexShrink: 0,
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         }}
       >

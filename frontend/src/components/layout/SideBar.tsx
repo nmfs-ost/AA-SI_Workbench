@@ -68,13 +68,12 @@ const SHELL_ACTIONS: readonly ActionItem[] = [
 ];
 
 /**
- * Thickness of the horizontal one. It is the tab strip's own height, so the
- * bottom dock's chrome costs exactly what it did before the icons moved out of
- * it — the collapse this buys is free in vertical space.
+ * Thickness of the horizontal one, and the extent of each icon along a strip:
+ * both are the window's row height (tokens.size.row), the height of every tab
+ * strip and panel header. So the bottom strip is exactly a tab strip tall, and
+ * a vertical strip's icons sit on the same rows as the headers beside them:
+ * the active icon's highlight spans exactly its panel's header.
  */
-const STRIP_HEIGHT = 34;
-/** Extent of one icon along the strip, so they read as one list. */
-const ITEM_EXTENT = 42;
 
 const STRIP_LABEL: Record<DockSide, string> = {
   /* Was 'Data sources', which stopped being true when the Project panel joined
@@ -122,8 +121,8 @@ export function SideBar({ side }: { side: DockSide }) {
   const itemSx = (selected: boolean) => ({
     position: 'relative' as const,
     boxSizing: 'border-box' as const,
-    height: vertical ? ITEM_EXTENT : '100%',
-    width: vertical ? '100%' : ITEM_EXTENT,
+    height: vertical ? theme.aa.size.row : '100%',
+    width: vertical ? '100%' : theme.aa.size.row + 6,
     p: 0,
     display: 'flex',
     alignItems: 'center',
@@ -164,7 +163,7 @@ export function SideBar({ side }: { side: DockSide }) {
       sx={{
         ...(vertical
           ? { width: theme.aa.size.sideStrip, flexDirection: 'column' }
-          : { height: STRIP_HEIGHT, flexDirection: 'row' }),
+          : { height: theme.aa.size.row, flexDirection: 'row' }),
         flexShrink: 0,
         display: 'flex',
         alignItems: 'stretch',

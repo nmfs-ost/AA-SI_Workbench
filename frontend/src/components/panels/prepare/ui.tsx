@@ -14,7 +14,7 @@ import { CheckRounded, ExpandMoreRounded } from '@mui/icons-material';
  * themes need nothing of their own here.
  */
 
-export type Level = 'L0' | 'L1' | 'L2A' | 'GCS' | '';
+export type Level = 'L0' | 'L1' | 'L2A' | 'L2B' | 'L3' | 'L4' | 'GCS' | '';
 
 export function levelColor(theme: Theme, level: string): string {
   switch (level) {
@@ -24,6 +24,12 @@ export function levelColor(theme: Theme, level: string): string {
       return theme.aa.color.accent.main;
     case 'L2A':
       return theme.aa.color.syntax.string;
+    case 'L2B':
+      return theme.aa.color.syntax.keyword;
+    case 'L3':
+      return theme.aa.color.syntax.number;
+    case 'L4':
+      return theme.aa.color.status.warning;
     case 'GCS':
       return theme.aa.color.syntax.entity;
     default:
@@ -65,7 +71,10 @@ export function LevelChip({ level, title }: { level: string; title?: string }) {
 export const LEVEL_TITLES: Record<string, string> = {
   L0: 'Level 0 — retrieve raw data and its metadata',
   L1: 'Level 1 — converted to echopype EchoData',
-  L2A: 'Level 2A — calibrated (Sv)',
+  L2A: 'Level 2A — calibrated (Sv, TS)',
+  L2B: 'Level 2B — derived from calibrated data (masks, lines, noise)',
+  L3: 'Level 3 — gridded or integrated (MVBS, NASC)',
+  L4: 'Level 4 — metrics (echometrics)',
   GCS: 'Stored in the project bucket',
 };
 

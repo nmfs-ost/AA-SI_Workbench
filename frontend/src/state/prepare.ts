@@ -12,6 +12,7 @@ import {
 import type { RangePlan } from '../components/panels/prepare/plan';
 import { BASELINE_SIMULATED, baselineApi } from '../services/baselineApi';
 import { setActiveArtifact } from './activeSubject';
+import { onGcpChange } from './gcp';
 import type {
   BaselineConfig,
   BaselineRequest,
@@ -424,11 +425,17 @@ export function dismissRun(): void {
 let configRetry: ReturnType<typeof setTimeout> | null = null;
 
 /** Load the server's config; while it is unreachable, keep trying quietly. */
+let configAsked = 0;
+
 export async function loadConfig(): Promise<void> {
   if (configRetry) clearTimeout(configRetry);
+  const mine = ++configAsked;
   try {
-    set({ config: await baselineApi.getConfig(), configError: '' });
+    const config = await baselineApi.getConfig();
+    // A later load (the project changed meanwhile) answers instead.
+    if (mine === configAsked) set({ config, configError: '' });
   } catch (e) {
+    if (mine !== configAsked) return;
     set({ configError: (e as Error).message });
     configRetry = setTimeout(() => void loadConfig(), 5000);
   }
@@ -451,6 +458,16 @@ export function initPrepare(): void {
     state = { ...state, ...options };
   }
   void loadConfig();
+  // A new project or bucket: where products go changed. The NCEI listing
+  // changes only when the project whose cache is read does (each keeps its own
+  // table, with --source cache), and never mid-restore: the caches mirror the
+  // same NCEI index, so the restore's listing stays right, and replacing it
+  // would lose the saved survey, sonar and time range.
+  onGcpChange((context, previous) => {
+    void loadConfig();
+    if (previous && previous.nceiCacheProject === context.nceiCacheProject) return;
+    reloadWhenRestored(0);
+  });
   void (async () => {
     setLoading('vessels', true);
     try {
@@ -480,6 +497,37 @@ export function initPrepare(): void {
       /* no server yet: nothing to re-attach to */
     }
   })();
+}
+
+/** Reload the catalogue once any restore in progress is done (it is given
+ *  half a minute), so the restore keeps the saved survey and time range. */
+function reloadWhenRestored(tries: number): void {
+  if (!restoring) void reloadCatalogue();
+  else if (tries < 60) setTimeout(() => reloadWhenRestored(tries + 1), 500);
+}
+
+/** List the vessels again (a new project's NCEI cache), keeping the form. */
+async function reloadCatalogue(): Promise<void> {
+  restoring = {
+    vessel: state.vessel?.id,
+    survey: state.survey?.id,
+    sonar: state.sonar?.id,
+    start: state.start,
+    end: state.end,
+  };
+  setLoading('vessels', true);
+  try {
+    const vessels = await nceiSource.listVessels();
+    set({ vessels });
+    const wanted = restoring?.vessel && vessels.find((v) => v.id === restoring?.vessel);
+    if (wanted) await selectVessel(wanted);
+    else restoring = null;
+  } catch (e) {
+    restoring = null;
+    set({ catalogError: `Could not load vessels: ${(e as Error).message}` });
+  } finally {
+    setLoading('vessels', false);
+  }
 }
 
 /* ------------------------------------------------------------------ */

@@ -135,6 +135,11 @@ const dark = {
        it: two files each holding their own 44 is exactly how the two drift a
        pixel apart and nobody can see why the logo looks off-centre. */
     sideStrip: 44,
+    /* The height of every header row: the docks' tab strips, each panel's own
+       header and first toolbar, and each icon in the side strips. One number,
+       so the lines between panels continue across the whole window and the
+       active icon's highlight is exactly as tall as the header beside it. */
+    row: 36,
   },
 } as const;
 

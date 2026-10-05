@@ -2,472 +2,272 @@ import { useState } from 'react';
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
 import {
-  Alert,
   Box,
   Button,
-  Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  IconButton,
-  MenuItem,
-  Snackbar,
   TextField,
-  Tooltip,
   Typography,
+  alpha,
   useTheme,
 } from '@mui/material';
-import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
-import SaveOutlined from '@mui/icons-material/SaveOutlined';
-import SaveAsOutlined from '@mui/icons-material/SaveAsOutlined';
-import RestartAltOutlined from '@mui/icons-material/RestartAltOutlined';
-import DeleteOutlineOutlined from '@mui/icons-material/DeleteOutlineOutlined';
-import EditOutlined from '@mui/icons-material/EditOutlined';
+import { ExpandMoreRounded, TuneOutlined } from '@mui/icons-material';
 
-import { PanelPlaceholder } from '../PanelPlaceholder';
-import { RecipeConfiguration } from '../recipes/RecipeConfiguration';
-import { useConfigurationFocus } from '../../../state/configurationFocus';
-import { usePipelineInput } from '../../../state/pipelineInput';
+import type { Catalogue, PipelineSpec, Plan } from '../../../services/pipelinesApi';
 import {
-  currentConfig,
-  deleteConfig,
-  getPipeline,
-  isDirty,
-  revertDraft,
-  saveAsNew,
-  saveOverwrite,
-  selectConfig,
-  setParam,
+  discardEdits,
+  effective,
+  isEdited,
+  resetStage,
+  saveEdits,
+  setStageParam,
   usePipelines,
 } from '../../../state/pipelines';
-import { ParamControl } from './ParamControl';
-import { PlanControls } from './PlanControls';
-import type { PipelineValues, StageDef } from './pipelineTypes';
-import {
-  COMMAND_OVERRIDE,
-  INPUT_TOKEN,
-  buildCommand,
-  defaultValues,
-  templateFrom,
-} from './pipelineTypes';
+import { useConfigurationFocus } from '../../../state/configurationFocus';
+import { PanelHeader } from '../PanelHeader';
+import { PanelPlaceholder } from '../PanelPlaceholder';
+import { RecipeConfiguration } from '../recipes/RecipeConfiguration';
+import { LevelChip, Note } from '../prepare/ui';
+import { ParamField } from './ParamField';
+import { kindLabel, toolOf } from './chain';
 
 /**
- * Configuration panel — appears (and fronts itself) whenever a pipeline card is
- * focused in the Pipelines panel.
- *
- * The form is generated from the pipeline definition: every stage, every
- * parameter, each rendered as the control its type calls for. Edits update the
- * shared draft, so the card's compact widget and this panel always agree. A
- * modified configuration can be saved over the current one or saved as a new
- * named configuration; built-in defaults are protected from overwriting.
+ * The Configuration panel: the settings of the open pipeline's stages, or of
+ * the open recipe. One tab, two independent systems; `configurationFocus` says
+ * whose item it shows.
  */
-/**
- * Lets the user take over a stage's command line.
- *
- * The two requirements pull against each other: hand-written commands need
- * total freedom (any tool, any pipe, any flag the catalogue never heard of),
- * but the workspace must still be able to swap the input file underneath them.
- *
- * A template reconciles them. The command is stored with `{input}` standing in
- * for the selected file, and the token is substituted every time the command is
- * built — so clicking a different file in the workspace re-targets a
- * hand-written command exactly as it re-targets a generated one. The editor
- * seeds itself with the real generated command so the token is discovered by
- * example rather than by reading help text.
- */
-function StageCommandEditor({
-  stage,
-  values,
-  injectedInput,
-  onChange,
-}: {
-  stage: StageDef;
-  values: PipelineValues;
-  injectedInput: string | null;
-  onChange: (next: string) => void;
-}) {
-  const theme = useTheme();
-  const stored = values[stage.id]?.[COMMAND_OVERRIDE];
-  const override = typeof stored === 'string' ? stored : '';
-  const editing = stage.freeform || override.length > 0;
-
-  const start = () => onChange(templateFrom(stage, values, injectedInput));
-
-  if (!editing) {
-    return (
-      <Button
-        size="small"
-        startIcon={<EditOutlined sx={{ fontSize: 14 }} />}
-        onClick={start}
-        sx={{ mt: 1, alignSelf: 'flex-start', fontSize: 11, textTransform: 'none' }}
-      >
-        Edit command
-      </Button>
-    );
-  }
-
-  const missingToken = Boolean(injectedInput) && !override.includes(INPUT_TOKEN);
-
-  return (
-    <Box sx={{ mt: 1.25 }}>
-      <TextField
-        fullWidth
-        multiline
-        minRows={2}
-        size="small"
-        value={override}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={`aa-sv ${INPUT_TOKEN} | grep -v WARNING`}
-        InputProps={{
-          sx: { fontFamily: theme.aa.font.mono, fontSize: 11.5 },
-        }}
-      />
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-        <Typography sx={{ fontSize: 10.5, color: theme.aa.color.text.muted }}>
-          {INPUT_TOKEN} is replaced by the selected file, so swapping files still
-          works. Pipes and any other tool are fine here.
-        </Typography>
-        <Box sx={{ flex: 1 }} />
-        {!stage.freeform && (
-          <Button
-            size="small"
-            onClick={() => onChange('')}
-            sx={{ fontSize: 10.5, textTransform: 'none', flexShrink: 0 }}
-          >
-            Use form
-          </Button>
-        )}
-      </Box>
-      {missingToken && (
-        <Typography sx={{ fontSize: 10.5, color: theme.aa.color.status.warning }}>
-          No {INPUT_TOKEN} in this command — it will ignore the selected file and
-          read from the previous stage instead.
-        </Typography>
-      )}
-    </Box>
-  );
-}
-
 export const ConfigurationPanel: FunctionComponent<IDockviewPanelProps> = () => {
-  /* One Configuration tab, two independent systems behind it. The focus store
-     (written only by DockLayout, from whichever card was activated last) picks
-     which branch renders. The recipe branch is a separate component with its
-     own store and schema — the two systems share this window, not a model. */
   const focus = useConfigurationFocus();
   if (focus === 'recipes') return <RecipeConfiguration />;
   return <PipelineConfiguration />;
 };
 
-const PipelineConfiguration: FunctionComponent = () => {
+/**
+ * Every setting of every stage, from the installed tools: their flags, their
+ * defaults, their own help. Changes apply to the card at once (the plan and the
+ * next run use them) and are kept until saved or discarded; a built-in
+ * pipeline is saved as the user's own copy.
+ */
+function PipelineConfiguration() {
   const theme = useTheme();
-  const state = usePipelines();
-  const input = usePipelineInput();
+  const c = theme.aa.color;
+  const s = usePipelines();
+  const spec = effective(s, s.activePipelineId);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
 
-  const [saveAsOpen, setSaveAsOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
-
-  const pipelineId = state.activePipelineId;
-  const pipeline = pipelineId ? getPipeline(state, pipelineId) : undefined;
-
-  if (!pipeline || !pipelineId) {
+  if (!spec) {
     return (
       <PanelPlaceholder
-        icon={SettingsOutlined}
-        title="Configuration"
-        description="Select a pipeline in the Pipelines panel to configure it."
+        icon={TuneOutlined}
+        title="Pipeline settings"
+        description="Open a pipeline in Pipelines and its stages' settings appear here, read from the installed console tools."
       />
     );
   }
-
-  const values = state.drafts[pipelineId] ?? defaultValues(pipeline);
-  const config = currentConfig(state, pipelineId);
-  const dirty = isDirty(state, pipelineId);
-  const injectedInput = input?.value ?? null;
-  const configs = state.configs[pipelineId] ?? [];
-  const isBuiltin = config?.builtin === true;
-
-  const handleSave = () => {
-    if (saveOverwrite(pipelineId)) {
-      setToast(`Saved “${config?.name}”.`);
-    } else {
-      // Built-in configurations can't be overwritten — steer to Save as new.
-      setNewName(`${config?.name ?? 'Configuration'} (copy)`);
-      setSaveAsOpen(true);
+  const edited = isEdited(s, spec.id);
+  const save = async (asName?: string) => {
+    setError('');
+    try {
+      await saveEdits(spec.id, asName);
+      setNaming(false);
+    } catch (e) {
+      setError((e as Error).message);
     }
   };
 
-  const handleSaveAs = () => {
-    saveAsNew(pipelineId, newName);
-    setSaveAsOpen(false);
-    setToast(`Saved new configuration “${newName.trim() || 'Untitled configuration'}”.`);
-  };
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', backgroundColor: c.bg.panel, minHeight: 0 }}>
+      <PanelHeader
+        icon={<TuneOutlined className="panel-header-icon" />}
+        title="Configuration"
+        subtitle={spec.name}
+        actions={
+          edited ? (
+            <>
+              <Button size="small" onClick={() => discardEdits(spec.id)} sx={{ textTransform: 'none', fontSize: 11.5 }}>
+                Discard
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                disableElevation
+                onClick={() => {
+                  if (spec.builtin) {
+                    setName(`${spec.name} (mine)`);
+                    setNaming(true);
+                  } else void save();
+                }}
+                sx={{ textTransform: 'none', fontSize: 11.5, py: 0.2 }}
+              >
+                {spec.builtin ? 'Save as mine…' : 'Save'}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
+      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', px: 1.5, py: 1.25 }}>
+        {edited && (
+          <Box sx={{ mb: 1.25 }}>
+            <Note tone="info">
+              Changed settings apply to this card’s plan and runs now.{' '}
+              {spec.builtin ? 'Save as your own pipeline to keep them.' : 'Save to keep them.'}
+            </Note>
+          </Box>
+        )}
+        {error && (
+          <Box sx={{ mb: 1.25 }}>
+            <Note tone="error">{error}</Note>
+          </Box>
+        )}
+        {spec.stages.map((stage, i) => (
+          <StageSettings key={`${stage.tool}-${i}`} spec={spec} index={i} catalogue={s.catalogue} plan={s.plan} />
+        ))}
+      </Box>
+
+      <Dialog open={naming} onClose={() => setNaming(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontSize: 15 }}>Save as your own pipeline</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNaming(false)} sx={{ textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            disabled={!name.trim()}
+            onClick={() => void save(name.trim())}
+            sx={{ textTransform: 'none' }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+function StageSettings({
+  spec,
+  index,
+  catalogue,
+  plan,
+}: {
+  spec: PipelineSpec;
+  index: number;
+  catalogue: Catalogue | null;
+  plan: Plan | null;
+}) {
+  const theme = useTheme();
+  const c = theme.aa.color;
+  const stage = spec.stages[index];
+  const tool = toolOf(catalogue, stage.tool);
+  const [more, setMore] = useState(false);
+  const planned = plan && plan.pipelineId === spec.id ? plan.stages[index] : undefined;
+  const changed = Object.keys(stage.params).length;
+
+  if (!tool) {
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 600 }}>
+          {index + 1}. {stage.tool}
+        </Typography>
+        <Typography sx={{ fontSize: 11.5, color: c.status.error }}>Not installed: its settings cannot be read.</Typography>
+      </Box>
+    );
+  }
+  const primary = tool.params.filter((p) => p.primary || p.required || p.id in stage.params);
+  const rest = tool.params.filter((p) => !primary.includes(p));
 
   return (
     <Box
       sx={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: theme.aa.color.bg.panel,
+        mb: 1.25,
+        borderRadius: `${theme.aa.radius.md}px`,
+        border: `1px solid ${c.border.subtle}`,
+        backgroundColor: c.bg.editor,
+        opacity: planned?.action === 'skip' ? 0.7 : 1,
       }}
     >
-      {/* Header */}
       <Box
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 0.75,
           px: 1.25,
-          minHeight: 30,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-          color: theme.aa.color.text.secondary,
+          height: 34,
+          borderBottom: `1px solid ${c.border.subtle}`,
+          backgroundColor: alpha(c.accent.main, 0.04),
         }}
       >
-        <SettingsOutlined sx={{ fontSize: 16 }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1, minWidth: 0 }} noWrap>
-          {pipeline.name}
-        </Typography>
-        {dirty && (
-          <Chip
-            label="modified"
-            size="small"
-            sx={{
-              height: 17,
-              fontSize: 10,
-              backgroundColor: theme.aa.color.accent.soft,
-              color: theme.aa.color.accent.main,
-            }}
-          />
+        <Typography sx={{ fontSize: 11, fontWeight: 700, color: c.accent.main, width: 14 }}>{index + 1}</Typography>
+        <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: c.text.primary }}>{tool.label}</Typography>
+        <Typography sx={{ fontSize: 11, color: c.text.muted }}>{tool.name}</Typography>
+        <Box sx={{ flex: 1 }} />
+        <LevelChip level={tool.level} />
+        <Typography sx={{ fontSize: 10.5, color: c.text.muted }}>{kindLabel(tool.produces, catalogue)}</Typography>
+        {changed > 0 && (
+          <Button size="small" onClick={() => resetStage(spec.id, index)} sx={{ fontSize: 10.5, textTransform: 'none', minWidth: 0, py: 0 }}>
+            Defaults
+          </Button>
         )}
       </Box>
-
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.25 }}>
-        <Typography
-          sx={{ fontSize: 11.5, color: theme.aa.color.text.secondary, mb: 1.25 }}
-        >
-          {pipeline.description}
-        </Typography>
-
-        {/* Plan / Check / Run. Above the form rather than pinned below it:
-            the two read-only modes exist to be used *before* the settings are
-            committed, and a control that has to be scrolled past a dozen
-            parameters to reach is a control nobody reaches for. */}
-        <PlanControls
-          pipeline={pipeline}
-          values={values}
-          injectedInput={injectedInput}
-        />
-
-        {/* Configuration selector */}
-        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'flex-start', mb: 1.5 }}>
-          <TextField
-            select
-            size="small"
-            fullWidth
-            label="Configuration"
-            value={config?.id ?? ''}
-            onChange={(e) => selectConfig(pipelineId, e.target.value)}
-            sx={{ '& .MuiInputBase-root': { fontSize: 12.5 } }}
-          >
-            {configs.map((c) => (
-              <MenuItem key={c.id} value={c.id} sx={{ fontSize: 12.5 }}>
-                {c.name}
-                {c.builtin ? ' (built-in)' : ''}
-              </MenuItem>
-            ))}
-          </TextField>
-          {config && !config.builtin && (
-            <Tooltip title="Delete this configuration">
-              <IconButton
-                size="small"
-                onClick={() => {
-                  deleteConfig(pipelineId, config.id);
-                  setToast(`Deleted “${config.name}”.`);
-                }}
-                sx={{ mt: 0.5 }}
-              >
-                <DeleteOutlineOutlined sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-
-        {/* Stages — every parameter, generated from the definition */}
-        {pipeline.stages.map((stage) => (
-          <Box key={stage.id} sx={{ mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, mb: 0.25 }}>
-              <Typography
-                sx={{
-                  fontFamily: theme.aa.font.mono,
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: theme.aa.color.accent.main,
-                }}
-              >
-                {stage.tool}
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: theme.aa.color.text.muted }}>
-                {stage.label}
-              </Typography>
-            </Box>
-            <Typography
-              sx={{ fontSize: 11, color: theme.aa.color.text.muted, mb: 1 }}
-            >
-              {stage.description}
-            </Typography>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {stage.params.map((param) => (
-                <ParamControl
-                  key={param.id}
-                  param={param}
-                  value={values[stage.id]?.[param.id] ?? param.default}
-                  onChange={(next) => setParam(pipelineId, stage.id, param.id, next)}
-                  injectedInput={param.role === 'input' ? injectedInput : null}
-                />
-              ))}
-            </Box>
-
-            <StageCommandEditor
-              stage={stage}
-              values={values}
-              injectedInput={injectedInput}
-              onChange={(next) =>
-                setParam(pipelineId, stage.id, COMMAND_OVERRIDE, next)
-              }
-            />
-
-            <Divider sx={{ mt: 1.75 }} />
-          </Box>
-        ))}
-
-        {/* Command preview */}
-        <Typography sx={{ fontSize: 11.5, fontWeight: 600, mb: 0.5 }}>
-          Equivalent command
-        </Typography>
-        <Box
-          sx={{
-            p: 1,
-            borderRadius: `${theme.aa.radius.sm}px`,
-            backgroundColor: theme.aa.color.bg.base,
-            border: `1px solid ${theme.aa.color.border.subtle}`,
-            fontFamily: theme.aa.font.mono,
-            fontSize: 11,
-            color: theme.aa.color.text.secondary,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}
-        >
-          {buildCommand(pipeline, values, injectedInput).join(' \\\n  | ')}
-        </Box>
-      </Box>
-
-      {/* Save actions */}
-      <Box
-        sx={{
-          borderTop: `1px solid ${theme.aa.color.border.subtle}`,
-          backgroundColor: theme.aa.color.bg.chrome,
-          p: 1,
-          display: 'flex',
-          gap: 0.75,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Tooltip title={dirty ? '' : 'No changes to revert'}>
-          <span style={{ display: 'flex' }}>
-            <Button
-              size="small"
-              startIcon={<RestartAltOutlined />}
-              disabled={!dirty}
-              onClick={() => revertDraft(pipelineId)}
-              sx={{ fontSize: 11.5 }}
-            >
-              Revert
-            </Button>
-          </span>
-        </Tooltip>
-        <Box sx={{ flex: 1 }} />
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<SaveAsOutlined />}
-          onClick={() => {
-            setNewName(`${config?.name ?? 'Configuration'} (copy)`);
-            setSaveAsOpen(true);
-          }}
-          sx={{ fontSize: 11.5 }}
-        >
-          Save as new
-        </Button>
-        <Tooltip
-          title={
-            isBuiltin
-              ? 'Built-in configurations can’t be overwritten — save as new instead'
-              : ''
-          }
-        >
-          <span style={{ display: 'flex' }}>
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<SaveOutlined />}
-              disabled={!dirty}
-              onClick={handleSave}
-              sx={{ fontSize: 11.5 }}
-            >
-              Save
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
-
-      {/* Save-as dialog */}
-      <Dialog open={saveAsOpen} onClose={() => setSaveAsOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontSize: 15, fontWeight: 600 }}>
-          Save as new configuration
-        </DialogTitle>
-        <DialogContent dividers>
-          <Typography sx={{ fontSize: 12.5, mb: 1.5 }}>
-            Saves the current settings for <b>{pipeline.name}</b> under a new name,
-            leaving “{config?.name}” unchanged.
-          </Typography>
-          <TextField
-            autoFocus
-            fullWidth
-            size="small"
-            label="Configuration name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
+      <Box sx={{ px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1.1 }}>
+        {tool.summary && <Typography sx={{ fontSize: 11.5, color: c.text.secondary, lineHeight: 1.5 }}>{tool.summary}</Typography>}
+        {planned?.action === 'skip' && (
+          <Typography sx={{ fontSize: 11, color: c.text.muted }}>{planned.reason}</Typography>
+        )}
+        {tool.params.length === 0 && (
+          <Typography sx={{ fontSize: 11, color: c.text.muted }}>No settings: it does one thing.</Typography>
+        )}
+        {primary.map((p) => (
+          <ParamField
+            key={p.id}
+            param={p}
+            value={stage.params[p.id]}
+            onChange={(v) => setStageParam(spec.id, index, p, v)}
           />
-        </DialogContent>
-        <DialogActions>
-          <Button size="small" onClick={() => setSaveAsOpen(false)}>
-            Cancel
-          </Button>
-          <Button size="small" variant="contained" onClick={handleSaveAs}>
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={toast !== null}
-        autoHideDuration={3500}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          severity="success"
-          variant="filled"
-          onClose={() => setToast(null)}
-          sx={{ fontSize: 12.5 }}
-        >
-          {toast}
-        </Alert>
-      </Snackbar>
+        ))}
+        {rest.length > 0 && (
+          <Box>
+            <Button
+              size="small"
+              onClick={() => setMore((v) => !v)}
+              endIcon={<ExpandMoreRounded sx={{ transform: more ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+              sx={{ fontSize: 11, textTransform: 'none', px: 0.5, ml: -0.5, color: c.text.secondary }}
+            >
+              {more ? 'Fewer settings' : `${rest.length} more settings`}
+            </Button>
+            <Collapse in={more} unmountOnExit>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.1, pt: 0.5 }}>
+                {rest.map((p) => (
+                  <ParamField
+                    key={p.id}
+                    param={p}
+                    value={stage.params[p.id]}
+                    onChange={(v) => setStageParam(spec.id, index, p, v)}
+                  />
+                ))}
+              </Box>
+            </Collapse>
+          </Box>
+        )}
+      </Box>
     </Box>
   );
-};
+}

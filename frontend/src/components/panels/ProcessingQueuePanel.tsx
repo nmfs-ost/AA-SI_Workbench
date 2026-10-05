@@ -26,6 +26,7 @@ import BlockOutlined from '@mui/icons-material/BlockOutlined';
 import { PanelPlaceholder } from './PanelPlaceholder';
 import { CopyPathButton } from './CopyPathButton';
 import { panelDensity } from './panelStyles';
+import { PanelHeader } from './PanelHeader';
 import {
   cancelJob,
   refreshJobs,
@@ -356,31 +357,23 @@ export const ProcessingQueuePanel: FunctionComponent<IDockviewPanelProps> = () =
         backgroundColor: theme.aa.color.bg.panel,
       }}
     >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.25,
-          minHeight: 30,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-          color: theme.aa.color.text.secondary,
-        }}
-      >
-        <PlaylistPlayOutlined sx={{ fontSize: panelDensity.icon.header }} />
-        <Typography sx={{ fontSize: panelDensity.font.header, fontWeight: 600, flex: 1 }}>
-          {state.running} running
-          {state.queued > 0 ? ` · ${state.queued} queued` : ''}
-        </Typography>
-        {state.polling && <CircularProgress size={10} />}
-        <Tooltip title="Refresh now">
-          <span style={{ display: 'flex' }}>
-            <Button size="small" onClick={() => void refreshJobs()} sx={{ minWidth: 0, px: 0.5 }}>
-              <RefreshOutlined sx={{ fontSize: panelDensity.icon.header }} />
-            </Button>
-          </span>
-        </Tooltip>
-      </Box>
+      <PanelHeader
+        icon={<PlaylistPlayOutlined className="panel-header-icon" />}
+        title="Processing queue"
+        subtitle={`${state.running} running${state.queued > 0 ? ` · ${state.queued} queued` : ''}`}
+        actions={
+          <>
+            {state.polling && <CircularProgress size={10} />}
+            <Tooltip title="Refresh now">
+              <span style={{ display: 'flex' }}>
+                <Button size="small" onClick={() => void refreshJobs()} sx={{ minWidth: 0, px: 0.5 }}>
+                  <RefreshOutlined sx={{ fontSize: panelDensity.icon.header }} />
+                </Button>
+              </span>
+            </Tooltip>
+          </>
+        }
+      />
 
       {state.error && (
         <Alert severity="error" sx={{ fontSize: 11.5, borderRadius: 0, py: 0.25 }}>
