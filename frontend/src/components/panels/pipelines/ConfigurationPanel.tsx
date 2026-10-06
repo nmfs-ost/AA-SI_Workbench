@@ -125,7 +125,7 @@ function PipelineConfiguration() {
           </Box>
         )}
         {spec.stages.map((stage, i) => (
-          <StageSettings key={`${stage.tool}-${i}`} spec={spec} index={i} catalogue={s.catalogue} plan={s.plan} />
+          <StageSettings key={`${stage.tool}-${i}`} spec={spec} index={i} catalogue={s.catalogue} plan={s.plan} near={s.inputs[0]?.uri ?? ''} />
         ))}
       </Box>
 
@@ -167,11 +167,14 @@ function StageSettings({
   index,
   catalogue,
   plan,
+  near,
 }: {
   spec: PipelineSpec;
   index: number;
   catalogue: Catalogue | null;
   plan: Plan | null;
+  /** The pipeline's input: where product options look for their choices. */
+  near: string;
 }) {
   const theme = useTheme();
   const c = theme.aa.color;
@@ -240,6 +243,7 @@ function StageSettings({
             key={p.id}
             param={p}
             value={stage.params[p.id]}
+            near={near}
             onChange={(v) => setStageParam(spec.id, index, p, v)}
           />
         ))}
@@ -260,6 +264,7 @@ function StageSettings({
                     key={p.id}
                     param={p}
                     value={stage.params[p.id]}
+                    near={near}
                     onChange={(v) => setStageParam(spec.id, index, p, v)}
                   />
                 ))}

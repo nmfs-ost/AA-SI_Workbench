@@ -9,6 +9,11 @@
 - [`guides/pipelines.md`](guides/pipelines.md) — console tools chained and run
   on products in the bucket (Products panel → Pipelines), and the hashes each
   product carries.
+- [`guides/echograms-and-analysis.md`](guides/echograms-and-analysis.md) —
+  echograms, lines and regions (Echoview files), calibration (ECS),
+  integration and its results, and the dataflow of a product.
+- [`guides/storage-costs.md`](guides/storage-costs.md) — what the bucket's
+  storage costs, per file, folder, month and year, and the price used.
 - [`guides/connecting-ncei.md`](guides/connecting-ncei.md) — pointing the NCEI
   catalogue Prepare EchoData plans from at real data (S3 or the BigQuery
   cache).

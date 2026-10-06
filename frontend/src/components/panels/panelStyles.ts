@@ -73,6 +73,8 @@ export const panelColumns = {
    * a year overflowed its column or was clipped by the next one.
    */
   modified: 78,
+  /** Storage cost a month. Sized for "$1,234" and "<$0.01". */
+  cost: 48,
   /**
    * Space to the left of the first metadata column, on top of the row's own
    * gap. A long filename ellipsises to the full width of its box, so without

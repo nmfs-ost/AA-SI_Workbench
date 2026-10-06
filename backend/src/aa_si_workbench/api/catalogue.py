@@ -49,9 +49,14 @@ KINDS = (
     "noise",
     "mvbs",
     "nasc",
+    "integration",
     "echometric",
+    "lines",
+    "regions",
+    "calibration",
     "echogram",
     "html",
+    "tiles",
 )
 
 #: The data level each kind is at (L0 raw, L1 EchoData, L2A calibrated, L2B
@@ -66,9 +71,14 @@ LEVELS: dict[str, str] = {
     "noise": "L2B",
     "mvbs": "L3",
     "nasc": "L3",
+    "integration": "L3",
     "echometric": "L4",
+    "lines": "",
+    "regions": "",
+    "calibration": "",
     "echogram": "",
     "html": "",
+    "tiles": "",
 }
 
 KIND_LABELS: dict[str, str] = {
@@ -81,9 +91,14 @@ KIND_LABELS: dict[str, str] = {
     "noise": "Noise",
     "mvbs": "MVBS",
     "nasc": "NASC",
+    "integration": "Integration",
     "echometric": "Echometric",
+    "lines": "Lines",
+    "regions": "Regions",
+    "calibration": "Calibration",
     "echogram": "Echogram",
     "html": "Interactive plot",
+    "tiles": "Echogram tiles",
 }
 
 #: Variables a product can carry that some tools need.
@@ -125,14 +140,49 @@ class Traits:
     primary: tuple[str, ...] = ()
     #: Writes the same kind of product it reads (a correction, not a new kind).
     passthrough: bool = False
+    #: Passes the EchoData when it is known, and does without (a track).
+    echodata_optional: bool = False
+    #: Options that take another product, and the kinds they take.
+    inputs: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    #: Of those, the ones the tool cannot run without.
+    required_inputs: tuple[str, ...] = ()
+
+    @classmethod
+    def from_table(cls, item: dict) -> Traits:
+        """From aalibrary's chaining table (console/_core/chaining.py)."""
+
+        def tup(key: str) -> tuple:
+            return tuple(item.get(key) or ())
+
+        return cls(
+            group=str(item.get("group") or ""),
+            label=str(item.get("label") or ""),
+            consumes=tup("consumes"),
+            produces=str(item.get("produces") or ""),
+            needs=tup("needs"),
+            depth_param=str(item.get("depth_param") or ""),
+            adds=tup("adds"),
+            echodata_flag=str(item.get("echodata_flag") or ""),
+            echodata_required=bool(item.get("echodata_required")),
+            echodata_when=tup("echodata_when"),
+            primary=tup("primary"),
+            passthrough=bool(item.get("passthrough")),
+            echodata_optional=bool(item.get("echodata_optional")),
+            inputs=tuple(
+                (str(k), tuple(v or ())) for k, v in (item.get("inputs") or {}).items()
+            ),
+            required_inputs=tup("required_inputs"),
+        )
 
 
 GROUPS = (
     "Calibrate",
     "Clean and correct",
+    "Select and mask",
     "Add variables",
     "Grid and integrate",
     "Masks and detection",
+    "Lines and regions",
     "Echometrics",
     "Render",
 )
@@ -141,10 +191,20 @@ SV_LIKE = ("sv",)
 TRAITS: dict[str, Traits] = {
     # Calibrate
     "aa-sv": Traits(
-        "Calibrate", "Sv", ("echodata",), "sv", primary=("waveform_mode", "encode_mode")
+        "Calibrate",
+        "Sv",
+        ("echodata",),
+        "sv",
+        primary=("waveform_mode", "encode_mode", "ecs"),
+        inputs=(("ecs", ("calibration",)),),
     ),
     "aa-ts": Traits(
-        "Calibrate", "TS", ("echodata",), "ts", primary=("waveform_mode", "encode_mode")
+        "Calibrate",
+        "TS",
+        ("echodata",),
+        "ts",
+        primary=("waveform_mode", "encode_mode", "ecs"),
+        inputs=(("ecs", ("calibration",)),),
     ),
     # Clean and correct
     "aa-clean": Traits(
@@ -163,6 +223,52 @@ TRAITS: dict[str, Traits] = {
         ("sv", "mvbs"),
         "sv",
         passthrough=True,
+    ),
+    # Select and mask
+    "aa-crop": Traits(
+        "Select and mask",
+        "Crop",
+        ("sv", "mvbs", "ts", "mask"),
+        "sv",
+        passthrough=True,
+        primary=("start", "end", "min_range", "max_range", "frequency"),
+    ),
+    "aa-threshold": Traits(
+        "Select and mask",
+        "Threshold",
+        ("sv", "mvbs", "ts"),
+        "sv",
+        passthrough=True,
+        primary=("min", "max", "below", "above"),
+    ),
+    "aa-mask": Traits(
+        "Select and mask",
+        "Apply masks",
+        ("sv", "mvbs", "ts"),
+        "sv",
+        passthrough=True,
+        primary=("remove", "keep", "mask"),
+        inputs=(("remove", ("mask",)), ("keep", ("mask",)), ("mask", ("mask",))),
+    ),
+    "aa-evl": Traits(
+        "Select and mask",
+        "Exclude by lines",
+        ("sv", "mvbs"),
+        "sv",
+        passthrough=True,
+        primary=("evl", "keep", "depth_offset"),
+        inputs=(("evl", ("lines",)),),
+        required_inputs=("evl",),
+    ),
+    "aa-evr": Traits(
+        "Select and mask",
+        "Keep regions",
+        ("sv", "mvbs"),
+        "sv",
+        passthrough=True,
+        primary=("evr",),
+        inputs=(("evr", ("regions",)),),
+        required_inputs=("evr",),
     ),
     # Add variables
     "aa-depth": Traits(
@@ -221,6 +327,31 @@ TRAITS: dict[str, Traits] = {
         "nasc",
         needs=("depth", "location"),
         primary=("range_bin", "dist_bin"),
+    ),
+    "aa-integrate": Traits(
+        "Grid and integrate",
+        "Integrate (Echoview)",
+        SV_LIKE,
+        "integration",
+        echodata_flag="--echodata",
+        echodata_optional=True,
+        primary=(
+            "by",
+            "interval",
+            "layer",
+            "min_sv",
+            "bottom",
+            "bottom_offset",
+            "surface_depth",
+            "regions",
+            "bad",
+        ),
+        inputs=(
+            ("surface", ("lines",)),
+            ("bottom", ("lines", "seafloor")),
+            ("bad", ("regions",)),
+            ("regions", ("regions",)),
+        ),
     ),
     # Masks and detection
     "aa-impulse": Traits(
@@ -281,6 +412,14 @@ TRAITS: dict[str, Traits] = {
         depth_param="range_var",
         primary=("method", "param"),
     ),
+    # Lines and regions
+    "aa-annotate": Traits(
+        "Lines and regions",
+        "Bottom as a line",
+        ("seafloor",),
+        "lines",
+        primary=("name", "tolerance"),
+    ),
     # Echometrics
     "aa-abundance": Traits("Echometrics", "Abundance (Sa)", SV_LIKE, "echometric"),
     "aa-aggregation": Traits("Echometrics", "Aggregation", SV_LIKE, "echometric"),
@@ -302,6 +441,15 @@ TRAITS: dict[str, Traits] = {
         "html",
         primary=("var", "vmin", "vmax", "cmap"),
     ),
+    "aa-tiles": Traits(
+        "Render",
+        "Echogram tiles",
+        ("sv", "mvbs", "mask", "noise", "ts"),
+        "tiles",
+        echodata_flag="--echodata",
+        echodata_optional=True,
+        primary=("var", "y", "reduce"),
+    ),
 }
 
 #: The kind each product-writing tool records (aa-tool metadata), including
@@ -310,6 +458,7 @@ TOOL_KIND: dict[str, str] = {
     "aa-nc": "echodata",
     "aa-ed": "echodata",
     "aa-combine": "echodata",
+    "aa-ecs": "calibration",
     **{name: traits.produces for name, traits in TRAITS.items()},
 }
 
@@ -359,6 +508,9 @@ class ToolParam(BaseModel):
     #: A list given by repeating the flag (argparse "append"); otherwise a
     #: list is one flag followed by its values (nargs="*").
     repeat: bool = False
+    #: Takes products in the bucket (gs:// URIs) of these kinds: a line file,
+    #: an ECS, a mask. Empty for an ordinary option.
+    productKinds: list[str] = Field(default_factory=list)
 
 
 class ToolDef(BaseModel):
@@ -375,6 +527,7 @@ class ToolDef(BaseModel):
     echodataFlag: str = ""
     echodataRequired: bool = False
     echodataWhen: list[str] = Field(default_factory=list)
+    echodataOptional: bool = False
     passthrough: bool = False
     params: list[ToolParam] = Field(default_factory=list)
     #: The tool's own words on what it reads and how it chains.
@@ -391,6 +544,9 @@ class Catalogue(BaseModel):
     aalibraryVersion: str = ""
     #: Tools this Workbench knows how to chain that the installed aalibrary lacks.
     missing: list[str] = Field(default_factory=list)
+    #: Where how the tools chain came from: "aalibrary" (its chaining table)
+    #: or "workbench" (this module's own copy, for an older aalibrary).
+    traitsSource: str = "workbench"
     problem: str = ""
     checkedAt: str = ""
 
@@ -407,7 +563,13 @@ try:
 except Exception:
     aal = ""
 wanted = set(json.loads(sys.argv[1]))
-out = {"aalibrary": aal, "tools": {}}
+try:
+    from aalibrary.console._core import chaining
+    table = chaining.table()
+    wanted |= set(table.get("tools") or {})
+except Exception:
+    table = None
+out = {"aalibrary": aal, "tools": {}, "chaining": table}
 for info in pkgutil.iter_modules(console.__path__):
     if not info.name.startswith("aa_"):
         continue
@@ -562,14 +724,17 @@ def _params(name: str, info: dict, traits: Traits) -> list[ToolParam]:
         )
         text = help_text or flag_help or science_text.get(dest, "")
         first = group[0]
+        product_kinds = dict(traits.inputs).get(dest, ())
         param = ToolParam(
             id=dest,
             label=_label(dest),
             type="text",
             help=text,
-            science=dest in science,
-            required=any(a["required"] for a in group),
+            science=dest in science or bool(product_kinds),
+            required=any(a["required"] for a in group)
+            or dest in traits.required_inputs,
             primary=dest in traits.primary,
+            productKinds=list(product_kinds),
         )
         if kinds & {"_StoreTrueAction", "_StoreFalseAction", "BooleanOptionalAction"}:
             param.type = "bool"
@@ -619,11 +784,42 @@ def _params(name: str, info: dict, traits: Traits) -> list[ToolParam]:
     return params
 
 
+def traits_from(raw: dict) -> tuple[dict[str, Traits], str]:
+    """How the tools chain: aalibrary's own table when the installed aalibrary
+    has one (it knows its tools; a new tool needs no Workbench change), else
+    this module's copy. Also brings the kinds and levels it names here."""
+    table = raw.get("chaining") or {}
+    items = table.get("tools") if isinstance(table, dict) else None
+    if not items:
+        return dict(TRAITS), "workbench"
+    traits: dict[str, Traits] = {}
+    for name, item in items.items():
+        if isinstance(item, dict) and TOOL_RE_NAME.fullmatch(str(name)):
+            try:
+                traits[name] = Traits.from_table(item)
+            except (TypeError, ValueError):
+                continue
+    for name, local in TRAITS.items():
+        traits.setdefault(name, local)
+    for kind, about in (table.get("kinds") or {}).items():
+        if isinstance(about, dict) and isinstance(kind, str):
+            LEVELS.setdefault(kind, str(about.get("level") or ""))
+            KIND_LABELS.setdefault(kind, str(about.get("label") or kind))
+    for tool_name, kind in (table.get("toolKind") or {}).items():
+        if isinstance(kind, str):
+            TOOL_KIND.setdefault(str(tool_name), kind)
+    return traits, "aalibrary"
+
+
+TOOL_RE_NAME = __import__("re").compile(r"aa-[a-z][a-z0-9-]{1,40}")
+
+
 def build(raw: dict) -> Catalogue:
     """The catalogue from an introspection answer (separate, for the tests)."""
     tools: list[ToolDef] = []
     missing: list[str] = []
-    for name, traits in TRAITS.items():
+    traits_map, source = traits_from(raw)
+    for name, traits in traits_map.items():
         info = (raw.get("tools") or {}).get(name)
         if not info or info.get("error"):
             missing.append(name)
@@ -643,6 +839,7 @@ def build(raw: dict) -> Catalogue:
                 echodataFlag=traits.echodata_flag,
                 echodataRequired=traits.echodata_required,
                 echodataWhen=list(traits.echodata_when),
+                echodataOptional=traits.echodata_optional,
                 passthrough=traits.passthrough,
                 params=_params(name, info, traits),
                 reads=info.get("reads", ""),
@@ -654,6 +851,10 @@ def build(raw: dict) -> Catalogue:
         tools=tools,
         aalibraryVersion=str(raw.get("aalibrary", "")),
         missing=missing,
+        traitsSource=source,
+        groups=[g for g in GROUPS],
+        kinds=dict(KIND_LABELS),
+        levels=dict(LEVELS),
         checkedAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     )
 
@@ -719,6 +920,9 @@ def coerce(param: ToolParam, value: Any) -> Any:
             raise ValueError(
                 f"{param.label}: one value per line, no control characters"
             )
+        if param.productKinds:
+            for item in items:
+                _product_uri(param, item)
         return items
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
@@ -745,11 +949,31 @@ def coerce(param: ToolParam, value: Any) -> Any:
     text = str(value).strip()
     if "\x00" in text or "\n" in text:
         raise ValueError(f"{param.label}: one line, no control characters")
+    if param.productKinds:
+        _product_uri(param, text)
     if param.type == "choice" and text not in param.choices:
         raise ValueError(
             f"{param.label}: one of {', '.join(param.choices)}, not {text!r}"
         )
     return text
+
+
+def _product_uri(param: ToolParam, text: str) -> None:
+    """A product option takes a product in a bucket: one gs:// URI."""
+    from .gcp import BUCKET_RE
+
+    if not text.startswith("gs://"):
+        raise ValueError(
+            f"{param.label}: a product in the bucket (gs://...), not {text!r}"
+        )
+    bucket, _, key = text[len("gs://") :].partition("/")
+    if (
+        not BUCKET_RE.fullmatch(bucket)
+        or not key.strip("/")
+        or ".." in key.split("/")
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in text)
+    ):
+        raise ValueError(f"{param.label}: not a product URI: {text!r}")
 
 
 def effective(tool_def: ToolDef, values: dict[str, Any]) -> dict[str, Any]:

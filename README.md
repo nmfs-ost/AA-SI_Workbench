@@ -68,6 +68,11 @@ for anything you would rather type.
 | **Prepare EchoData** | An NCEI survey and time range → EchoData, Sv and an echogram in the bucket. |
 | **Products** | Your project's bucket: every product with its level (L1 EchoData, L2A Sv, L3 MVBS/NASC, …) and its product hash. Select one to run a pipeline on it. |
 | **Pipelines** | The AA-SI console tools chained and run on the selected product. |
+| **Echogram** | An Sv, MVBS or mask product as an echogram: thresholds, colour schemes, readout, track map; lines and regions drawn and saved as Echoview files. |
+| **Results** | Integration results (NASC by interval and layer, or by region), as a chart and a table. |
+| **Storage costs** | What the bucket costs to keep, per month and year, by folder, storage class and product. Products also shows each file's cost a month. |
+| **Calibration** | The calibration echopype will use for an EchoData, changed and saved as an ECS file, and Sv computed with it. |
+| **Dataflow** | What a product was made from and what was made from it; what is out of date. |
 | **Configuration** | The settings of the open pipeline's tools, with each tool's own defaults and help. |
 | **Metadata** | How the selected product was made: its tools, settings, inputs and hashes. |
 | **Processing Queue** | Every tool the Workbench is running or has run, with its log. |

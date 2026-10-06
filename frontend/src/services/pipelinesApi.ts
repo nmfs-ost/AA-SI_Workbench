@@ -33,6 +33,9 @@ export interface ToolParam {
   required: boolean;
   primary: boolean;
   repeat: boolean;
+  /** The option takes a product in the bucket of one of these kinds (an ECS,
+   *  a line file, a mask): its content is in the product's hash. */
+  productKinds?: string[];
 }
 
 export interface ToolDef {
@@ -49,11 +52,22 @@ export interface ToolDef {
   echodataFlag: string;
   echodataRequired: boolean;
   echodataWhen: string[];
+  /** --echodata adds something (position, say) but the tool runs without it. */
+  echodataOptional?: boolean;
   passthrough: boolean;
   params: ToolParam[];
   reads: string;
   chaining: string;
   examples: string[];
+}
+
+export interface NearbyProduct {
+  uri: string;
+  name: string;
+  kind: string;
+  productHash: string;
+  tool: string;
+  updatedAt: string;
 }
 
 export interface Catalogue {
@@ -65,6 +79,9 @@ export interface Catalogue {
   missing: string[];
   problem: string;
   checkedAt: string;
+  /** Where the chaining traits came from: the installed aalibrary, or the
+   *  Workbench's own table for an older aalibrary. */
+  traitsSource?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -287,4 +304,7 @@ export const pipelinesApi = {
   getRun: (id: string) => call<RunStatus>(`/api/pipelines/runs/${encodeURIComponent(id)}`),
   cancel: (id: string) => post<RunStatus>(`/api/pipelines/runs/${encodeURIComponent(id)}/cancel`, {}),
   product: (uri: string) => call<ProductInfo>(`/api/products/info?uri=${encodeURIComponent(uri)}`),
+  /** Products of these kinds beside a product: choices for a product option. */
+  nearby: (uri: string, kinds: string[]) =>
+    call<NearbyProduct[]>(`/api/products/nearby?uri=${encodeURIComponent(uri)}&kinds=${encodeURIComponent(kinds.join(','))}`),
 };

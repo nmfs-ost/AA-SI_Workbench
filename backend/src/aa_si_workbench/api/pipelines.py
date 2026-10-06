@@ -132,6 +132,29 @@ BUILTINS: tuple[PipelineSpec, ...] = (
         _s("aa-graph"),
     ),
     _builtin(
+        "bottom-line",
+        "Bottom line to edit",
+        "The seafloor found in Sv (echopype's basic detector on the channel nearest "
+        "38 kHz) and saved as an Echoview line file (.evl): open it on its "
+        "echogram to correct it, then use it as the bottom when integrating.",
+        _s("aa-sv"),
+        _s("aa-depth"),
+        _s("aa-detect-seafloor", method="basic"),
+        _s("aa-annotate"),
+    ),
+    _builtin(
+        "integrate-echoview",
+        "Integrate (Echoview)",
+        "Sv integrated as Echoview's Integrate by cells does it: 0.5 nmi intervals "
+        "(time intervals when there is no position) by 10 m layers, a -70 dB "
+        "threshold, and Echoview's export columns (NASC, Sv_mean, ABC...). Choose a "
+        "bottom line, bad-data and analysis regions in Configuration; open the "
+        "result in Results.",
+        _s("aa-sv"),
+        _s("aa-depth"),
+        _s("aa-integrate", min_sv=-70),
+    ),
+    _builtin(
         "center-of-mass",
         "Center of mass",
         "The mean range of backscatter, weighted by linear sv, per channel and ping.",
@@ -374,6 +397,25 @@ def _check_dest(dest: str) -> str:
     return dest if dest.endswith("/") else dest + "/"
 
 
+def check_own_dest(dest: str) -> str:
+    """A destination in the bucket chosen in the Workbench, and only there: for
+    files the Workbench itself writes (line, region and calibration files)."""
+    dest = _check_dest(dest)
+    if not dest:
+        return ""
+    from .gcp import current
+
+    chosen = current().bucket
+    bucket = dest[len("gs://") :].split("/", 1)[0]
+    if not chosen or bucket != chosen:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Files are saved in the bucket chosen ({chosen or 'none yet'}), "
+            f"not {bucket}.",
+        )
+    return dest
+
+
 def _user() -> str:
     from .baseline import detect_user
 
@@ -400,6 +442,19 @@ def _wants_echodata(tool_def: ToolDef, values: dict[str, Any]) -> bool:
         return True
     current = catalogue.effective(tool_def, values)
     return any(bool(current.get(name)) for name in tool_def.echodataWhen)
+
+
+def _product_values(tool_def: ToolDef, values: dict[str, Any]) -> list[tuple[str, str]]:
+    """(label, gs:// URI) of every product an option of this stage names."""
+    out = []
+    for param in tool_def.params:
+        if not param.productKinds or param.id not in values:
+            continue
+        value = values[param.id]
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item:
+                out.append((param.label, item))
+    return out
 
 
 def _chain_holds(tools: list[ToolDef | None], kind: str) -> bool:
@@ -500,6 +555,24 @@ def plan(req: PlanRequest, *, input_info: products.ProductInfo | None = None) ->
             planned.action = "skip"
             planned.reason = f"Not needed: the input is already {_label_of(kind)}."
             continue
+        # A stage that only adds what the product already carries (aa-depth on
+        # an Sv that has depth), with its default settings, would remake the
+        # same values under a new name: skipped.
+        if (
+            tool_def.adds
+            and not stage.params
+            and not unknown
+            and set(tool_def.adds) <= known
+            and kind in tool_def.consumes
+            and (tool_def.passthrough or tool_def.produces == kind)
+        ):
+            planned.action = "skip"
+            planned.reason = (
+                "Not needed: the input already has "
+                + ", ".join(FEATURE_LABELS.get(a, a) for a in tool_def.adds)
+                + "."
+            )
+            continue
         planned.problems.extend(problems)
         if kind and kind not in tool_def.consumes:
             planned.problems.append(
@@ -521,7 +594,18 @@ def plan(req: PlanRequest, *, input_info: products.ProductInfo | None = None) ->
                     f"{stage.tool} needs {FEATURE_LABELS.get(need, need)}"
                     + (f": add {adder} before it." if adder else ".")
                 )
-        if _wants_echodata(tool_def, values):
+        for label, uri in _product_values(tool_def, values):
+            try:
+                found = products.info(uri, history=False).found
+            except HTTPException:
+                found = False
+            if not found:
+                planned.problems.append(
+                    f"{stage.tool}: {label}: {uri} is not in the bucket."
+                )
+        if tool_def.echodataOptional and tool_def.echodataFlag and info.echodata:
+            planned.echodata = info.echodata
+        elif _wants_echodata(tool_def, values):
             if info.echodata:
                 planned.echodata = info.echodata
             else:
@@ -709,6 +793,11 @@ def snapshot(run: _Run) -> RunStatus:
 
 
 def _finish(run: _Run, state: str, error: str = "") -> None:
+    # The scratch folder only holds the tools' cache (inputs downloaded, outputs
+    # staged before upload): nothing to keep, after any ending, and an EchoData
+    # can be gigabytes. Removed before the run reads as ended, so an ended run
+    # has nothing left behind. The logs stay with the run.
+    shutil.rmtree(run.scratch, ignore_errors=True)
     with _lock:
         run.status.state = state  # type: ignore[assignment]
         run.status.error = error
@@ -718,10 +807,50 @@ def _finish(run: _Run, state: str, error: str = "") -> None:
                 stage.state = "cancelled" if state == "cancelled" else "skipped"
                 if state == "failed" and not stage.detail:
                     stage.detail = "Not run: an earlier stage failed."
-    # The scratch folder only holds the tools' cache (inputs downloaded, outputs
-    # staged before upload): nothing to keep, after any ending, and an EchoData
-    # can be gigabytes. The logs stay with the run.
-    shutil.rmtree(run.scratch, ignore_errors=True)
+    _persist(run)
+
+
+# --------------------------------------------------------------------------- #
+# Finished runs, kept across restarts
+# --------------------------------------------------------------------------- #
+_KEPT_RUNS = 40
+
+
+def _runs_file() -> Path:
+    return config_dir() / "pipeline-runs.json"
+
+
+def _persisted() -> list[RunStatus]:
+    try:
+        data = json.loads(_runs_file().read_text())
+    except (OSError, ValueError):
+        return []
+    out = []
+    for item in data.get("runs", []) if isinstance(data, dict) else []:
+        try:
+            out.append(RunStatus.model_validate(item))
+        except ValueError:
+            continue
+    return out
+
+
+def _persist(run: _Run) -> None:
+    """Keep a finished run (its stages, logs and products) for after a restart."""
+    try:
+        with _lock:
+            status = run.status.model_copy(deep=True)
+        with _store_lock:
+            kept = [r for r in _persisted() if r.id != status.id]
+            kept.insert(0, status)
+            path = _runs_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps({"runs": [r.model_dump() for r in kept[:_KEPT_RUNS]]})
+            )
+            os.replace(tmp, path)
+    except OSError:
+        pass  # a run that is not remembered is still a run that happened
 
 
 def _execute(run: _Run) -> None:
@@ -868,7 +997,23 @@ def get_run(run_id: str) -> _Run:
     return run
 
 
+def run_status(run_id: str) -> RunStatus:
+    """A run's status: running here, or finished (perhaps before a restart)."""
+    with _lock:
+        run = _runs.get(run_id)
+    if run is not None:
+        return snapshot(run)
+    held = next((r for r in _persisted() if r.id == run_id), None)
+    if held is None:
+        raise HTTPException(status_code=404, detail="No such run.")
+    return held
+
+
 def cancel(run_id: str) -> RunStatus:
+    with _lock:
+        known = run_id in _runs
+    if not known and any(r.id == run_id for r in _persisted()):
+        raise HTTPException(status_code=409, detail="That run has finished.")
     run = get_run(run_id)
     with _lock:
         run.cancel = True
@@ -928,12 +1073,15 @@ def post_run(req: PlanRequest) -> RunStatus:
 def list_runs() -> list[RunStatus]:
     with _lock:
         runs = list(_runs.values())
-    return [snapshot(run) for run in reversed(runs)]
+    live = [snapshot(run) for run in reversed(runs)]
+    ids = {r.id for r in live}
+    earlier = [r for r in _persisted() if r.id not in ids]
+    return live + earlier
 
 
 @router.get("/runs/{run_id}", response_model=RunStatus)
 def get_run_status(run_id: str) -> RunStatus:
-    return snapshot(get_run(run_id))
+    return run_status(run_id)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunStatus)

@@ -1,5 +1,982 @@
 {
  "aalibrary": "1.2.0",
+ "chaining": {
+  "features": {
+   "angles": "aa-splitbeam-angle",
+   "depth": "aa-depth",
+   "location": "aa-location"
+  },
+  "groups": [
+   "Calibrate",
+   "Clean and correct",
+   "Select and mask",
+   "Add variables",
+   "Grid and integrate",
+   "Masks and detection",
+   "Lines and regions",
+   "Echometrics",
+   "Render"
+  ],
+  "kinds": {
+   "calibration": {
+    "label": "Calibration",
+    "level": ""
+   },
+   "echodata": {
+    "label": "EchoData",
+    "level": "L1"
+   },
+   "echogram": {
+    "label": "Echogram",
+    "level": ""
+   },
+   "echometric": {
+    "label": "Echometric",
+    "level": "L4"
+   },
+   "html": {
+    "label": "Interactive plot",
+    "level": ""
+   },
+   "integration": {
+    "label": "Integration",
+    "level": "L3"
+   },
+   "lines": {
+    "label": "Lines",
+    "level": ""
+   },
+   "mask": {
+    "label": "Mask",
+    "level": "L2B"
+   },
+   "mvbs": {
+    "label": "MVBS",
+    "level": "L3"
+   },
+   "nasc": {
+    "label": "NASC",
+    "level": "L3"
+   },
+   "noise": {
+    "label": "Noise",
+    "level": "L2B"
+   },
+   "raw": {
+    "label": "Raw",
+    "level": "L0"
+   },
+   "regions": {
+    "label": "Regions",
+    "level": ""
+   },
+   "seafloor": {
+    "label": "Seafloor line",
+    "level": "L2B"
+   },
+   "sv": {
+    "label": "Sv",
+    "level": "L2A"
+   },
+   "tiles": {
+    "label": "Echogram tiles",
+    "level": ""
+   },
+   "ts": {
+    "label": "TS",
+    "level": "L2A"
+   }
+  },
+  "schema": "aa-chaining/1",
+  "toolKind": {
+   "aa-abundance": "echometric",
+   "aa-aggregation": "echometric",
+   "aa-annotate": "lines",
+   "aa-attenuated": "mask",
+   "aa-center-of-mass": "echometric",
+   "aa-clean": "sv",
+   "aa-coerce-time": "sv",
+   "aa-combine": "echodata",
+   "aa-crop": "sv",
+   "aa-depth": "sv",
+   "aa-detect-seafloor": "seafloor",
+   "aa-detect-shoal": "mask",
+   "aa-detect-transient": "mask",
+   "aa-dispersion": "echometric",
+   "aa-ecs": "calibration",
+   "aa-ed": "echodata",
+   "aa-evenness": "echometric",
+   "aa-evl": "sv",
+   "aa-evr": "sv",
+   "aa-freqdiff": "mask",
+   "aa-graph": "echogram",
+   "aa-impulse": "mask",
+   "aa-integrate": "integration",
+   "aa-location": "sv",
+   "aa-mask": "sv",
+   "aa-min": "mask",
+   "aa-mvbs": "mvbs",
+   "aa-mvbs-index": "mvbs",
+   "aa-nasc": "nasc",
+   "aa-nc": "echodata",
+   "aa-noise-est": "noise",
+   "aa-plot": "html",
+   "aa-splitbeam-angle": "sv",
+   "aa-sv": "sv",
+   "aa-swap-freq": "sv",
+   "aa-threshold": "sv",
+   "aa-tiles": "tiles",
+   "aa-transient": "mask",
+   "aa-ts": "ts"
+  },
+  "tools": {
+   "aa-abundance": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Echometrics",
+    "inputs": {},
+    "label": "Abundance (Sa)",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "echometric",
+    "required_inputs": []
+   },
+   "aa-aggregation": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Echometrics",
+    "inputs": {},
+    "label": "Aggregation",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "echometric",
+    "required_inputs": []
+   },
+   "aa-annotate": {
+    "adds": [],
+    "consumes": [
+     "seafloor"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Lines and regions",
+    "inputs": {},
+    "label": "Bottom as a line",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "name",
+     "tolerance"
+    ],
+    "produces": "lines",
+    "required_inputs": []
+   },
+   "aa-attenuated": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Attenuated signal",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-center-of-mass": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Echometrics",
+    "inputs": {},
+    "label": "Center of mass",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "echometric",
+    "required_inputs": []
+   },
+   "aa-clean": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Clean and correct",
+    "inputs": {},
+    "label": "Remove noise",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "snr_threshold",
+     "ping_num",
+     "range_sample_num"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-coerce-time": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Clean and correct",
+    "inputs": {},
+    "label": "Fix time order",
+    "needs": [],
+    "passthrough": true,
+    "primary": [],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-crop": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "ts",
+     "mask"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Select and mask",
+    "inputs": {},
+    "label": "Crop",
+    "needs": [],
+    "passthrough": true,
+    "primary": [
+     "start",
+     "end",
+     "min_range",
+     "max_range",
+     "frequency"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-depth": {
+    "adds": [
+     "depth"
+    ],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "--echodata",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [
+     "use_platform_vertical_offsets",
+     "use_platform_angles",
+     "use_beam_angles"
+    ],
+    "group": "Add variables",
+    "inputs": {},
+    "label": "Depth",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "depth_offset",
+     "tilt",
+     "downward"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-detect-seafloor": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Seafloor",
+    "needs": [
+     "depth"
+    ],
+    "passthrough": false,
+    "primary": [
+     "method",
+     "param"
+    ],
+    "produces": "seafloor",
+    "required_inputs": []
+   },
+   "aa-detect-shoal": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Shoals",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "method",
+     "param"
+    ],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-detect-transient": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Transient (detector)",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "method",
+     "param"
+    ],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-dispersion": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Echometrics",
+    "inputs": {},
+    "label": "Dispersion",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "echometric",
+    "required_inputs": []
+   },
+   "aa-evenness": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Echometrics",
+    "inputs": {},
+    "label": "Evenness",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "echometric",
+    "required_inputs": []
+   },
+   "aa-evl": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Select and mask",
+    "inputs": {
+     "evl": [
+      "lines"
+     ]
+    },
+    "label": "Exclude by lines",
+    "needs": [],
+    "passthrough": true,
+    "primary": [
+     "evl",
+     "keep",
+     "depth_offset"
+    ],
+    "produces": "sv",
+    "required_inputs": [
+     "evl"
+    ]
+   },
+   "aa-evr": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Select and mask",
+    "inputs": {
+     "evr": [
+      "regions"
+     ]
+    },
+    "label": "Keep regions",
+    "needs": [],
+    "passthrough": true,
+    "primary": [
+     "evr"
+    ],
+    "produces": "sv",
+    "required_inputs": [
+     "evr"
+    ]
+   },
+   "aa-freqdiff": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Frequency difference",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "freqABEq",
+     "chanABEq"
+    ],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-graph": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "nasc",
+     "mask",
+     "noise",
+     "ts"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Render",
+    "inputs": {},
+    "label": "Echogram",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "var",
+     "vmin",
+     "vmax",
+     "cmap",
+     "decimate"
+    ],
+    "produces": "echogram",
+    "required_inputs": []
+   },
+   "aa-impulse": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Impulse noise",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "impulse_noise_threshold",
+     "depth_bin",
+     "range_var"
+    ],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-integrate": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "--echodata",
+    "echodata_optional": true,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Grid and integrate",
+    "inputs": {
+     "bad": [
+      "regions"
+     ],
+     "bottom": [
+      "lines",
+      "seafloor"
+     ],
+     "regions": [
+      "regions"
+     ],
+     "surface": [
+      "lines"
+     ]
+    },
+    "label": "Integrate (Echoview)",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "by",
+     "interval",
+     "layer",
+     "min_sv",
+     "bottom",
+     "bottom_offset",
+     "surface_depth",
+     "regions",
+     "bad"
+    ],
+    "produces": "integration",
+    "required_inputs": []
+   },
+   "aa-location": {
+    "adds": [
+     "location"
+    ],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "--echodata",
+    "echodata_optional": false,
+    "echodata_required": true,
+    "echodata_when": [],
+    "group": "Add variables",
+    "inputs": {},
+    "label": "Position",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-mask": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "ts"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Select and mask",
+    "inputs": {
+     "keep": [
+      "mask"
+     ],
+     "mask": [
+      "mask"
+     ],
+     "remove": [
+      "mask"
+     ]
+    },
+    "label": "Apply masks",
+    "needs": [],
+    "passthrough": true,
+    "primary": [
+     "remove",
+     "keep",
+     "mask"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-min": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Impulse noise (min)",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-mvbs": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Grid and integrate",
+    "inputs": {},
+    "label": "MVBS",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "range_bin",
+     "ping_time_bin",
+     "range_var",
+     "method"
+    ],
+    "produces": "mvbs",
+    "required_inputs": []
+   },
+   "aa-mvbs-index": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "echodata"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Grid and integrate",
+    "inputs": {},
+    "label": "MVBS by index",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "range_sample_num",
+     "ping_num"
+    ],
+    "produces": "mvbs",
+    "required_inputs": []
+   },
+   "aa-nasc": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Grid and integrate",
+    "inputs": {},
+    "label": "NASC",
+    "needs": [
+     "depth",
+     "location"
+    ],
+    "passthrough": false,
+    "primary": [
+     "range_bin",
+     "dist_bin"
+    ],
+    "produces": "nasc",
+    "required_inputs": []
+   },
+   "aa-noise-est": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "echodata"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Noise estimate",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "noise",
+    "required_inputs": []
+   },
+   "aa-plot": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "mask",
+     "noise"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Render",
+    "inputs": {},
+    "label": "Interactive plot",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "var",
+     "vmin",
+     "vmax",
+     "cmap"
+    ],
+    "produces": "html",
+    "required_inputs": []
+   },
+   "aa-splitbeam-angle": {
+    "adds": [
+     "angles"
+    ],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "",
+    "echodata_flag": "--echodata",
+    "echodata_optional": false,
+    "echodata_required": true,
+    "echodata_when": [],
+    "group": "Add variables",
+    "inputs": {},
+    "label": "Split-beam angles",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "waveform_mode",
+     "encode_mode"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-sv": {
+    "adds": [],
+    "consumes": [
+     "echodata"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Calibrate",
+    "inputs": {
+     "ecs": [
+      "calibration"
+     ]
+    },
+    "label": "Sv",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "waveform_mode",
+     "encode_mode",
+     "ecs"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-swap-freq": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Clean and correct",
+    "inputs": {},
+    "label": "Index by frequency",
+    "needs": [],
+    "passthrough": true,
+    "primary": [],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-threshold": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "ts"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Select and mask",
+    "inputs": {},
+    "label": "Threshold",
+    "needs": [],
+    "passthrough": true,
+    "primary": [
+     "min",
+     "max",
+     "below",
+     "above"
+    ],
+    "produces": "sv",
+    "required_inputs": []
+   },
+   "aa-tiles": {
+    "adds": [],
+    "consumes": [
+     "sv",
+     "mvbs",
+     "mask",
+     "noise",
+     "ts"
+    ],
+    "depth_param": "",
+    "echodata_flag": "--echodata",
+    "echodata_optional": true,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Render",
+    "inputs": {},
+    "label": "Echogram tiles",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "var",
+     "y",
+     "reduce"
+    ],
+    "produces": "tiles",
+    "required_inputs": []
+   },
+   "aa-transient": {
+    "adds": [],
+    "consumes": [
+     "sv"
+    ],
+    "depth_param": "range_var",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Masks and detection",
+    "inputs": {},
+    "label": "Transient noise",
+    "needs": [],
+    "passthrough": false,
+    "primary": [],
+    "produces": "mask",
+    "required_inputs": []
+   },
+   "aa-ts": {
+    "adds": [],
+    "consumes": [
+     "echodata"
+    ],
+    "depth_param": "",
+    "echodata_flag": "",
+    "echodata_optional": false,
+    "echodata_required": false,
+    "echodata_when": [],
+    "group": "Calibrate",
+    "inputs": {
+     "ecs": [
+      "calibration"
+     ]
+    },
+    "label": "TS",
+    "needs": [],
+    "passthrough": false,
+    "primary": [
+     "waveform_mode",
+     "encode_mode",
+     "ecs"
+    ],
+    "produces": "ts",
+    "required_inputs": []
+   }
+  }
+ },
  "tools": {
   "aa-abundance": {
    "actions": [
@@ -274,6 +1251,181 @@
     "range_label": "Variable used as range (m) for dz and the integral."
    },
    "summary": "Index of aggregation (IA, m^-1) of backscatter along range, per ping."
+  },
+  "aa-annotate": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "json",
+     "flags": [
+      "--json"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "name",
+     "flags": [
+      "--name"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "reference",
+     "flags": [
+      "--reference"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 0.0,
+     "dest": "tolerance",
+     "flags": [
+      "--tolerance"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": 4000,
+     "dest": "max_points",
+     "flags": [
+      "--max-points"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "aa-detect-seafloor ... | aa-annotate --name bottom  ->  a bottom.evl for aa-evl --evl / aa-integrate --bottom.",
+   "examples": [
+    "aa-annotate shapes.json --reference sv.nc --dest gs://bucket/prefix/",
+    "aa-annotate seafloor.nc --name bottom",
+    "aa-annotate regions.evr --json"
+   ],
+   "kind": "lines",
+   "options": {
+    "--json": "print the input as JSON shapes instead of writing",
+    "--max-points": "most points in --json output (default 4000)",
+    "--name": "name part of the file (default: the JSON's name, else bottom/regions)",
+    "--output_path": "exact output; local or gs://",
+    "--reference": "the product the shapes were drawn on (recorded; gives the base name)",
+    "--tolerance": "thin a detected bottom: keep the line within M metres (default 0: every ping)",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One .json, .evl, .evr or seafloor .nc path or gs:// URI.",
+   "role": "transform",
+   "science": [
+    "max_points",
+    "name",
+    "tolerance"
+   ],
+   "scienceText": {
+    "max_points": "Most points kept for a detected bottom.",
+    "name": "Part of the name.",
+    "tolerance": "Thinning tolerance for a detected bottom, metres."
+   },
+   "summary": "Write lines and regions as Echoview .evl/.evr products; read them back as JSON."
   },
   "aa-attenuated": {
    "actions": [
@@ -888,6 +2040,217 @@
     "win_len": "Window (pings) for the median ping interval."
    },
    "summary": "Make a time coordinate strictly increasing (echopype.qc.coerce_increasing_time)."
+  },
+  "aa-crop": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "start",
+     "flags": [
+      "--start"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "end",
+     "flags": [
+      "--end"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "pings",
+     "flags": [
+      "--pings"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "min_range",
+     "flags": [
+      "--min-range"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "max_range",
+     "flags": [
+      "--max-range"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "samples",
+     "flags": [
+      "--samples"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "frequency",
+     "flags": [
+      "--frequency"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "Anywhere after aa-sv: ... | aa-sv | aa-crop --start 2016-07-03T06:10 --end 2016-07-03T06:20 --max-range 200 | aa-graph",
+   "examples": [
+    "aa-crop sv.nc --start 2016-07-03T06:10 --end 2016-07-03T06:20",
+    "aa-crop sv.nc --frequency 38kHz --max-range 250",
+    "aa-crop mvbs.nc --pings 0:500"
+   ],
+   "kind": "sv",
+   "options": {
+    "--end": "time span, ISO (UTC)",
+    "--frequency": "keep only these channels (38kHz, 120000, ...)",
+    "--max-range": "range (or depth) span in metres",
+    "--min-range": "range (or depth) span in metres",
+    "--output_path": "exact output; local or gs://",
+    "--pings": "ping indices",
+    "--samples": "sample indices",
+    "--start": "time span, ISO (UTC)",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One flat product (.nc or .zarr) path or gs:// URI: Sv, TS, MVBS, a mask.",
+   "role": "transform",
+   "science": [
+    "end",
+    "frequency",
+    "max_range",
+    "min_range",
+    "pings",
+    "samples",
+    "start"
+   ],
+   "scienceText": {
+    "end": "End of the time span.",
+    "frequency": "Channels kept, by nominal frequency in Hz (order-free).",
+    "max_range": "Deepest range kept, metres.",
+    "min_range": "Shallowest range kept, metres.",
+    "pings": "Ping index span.",
+    "samples": "Sample index span.",
+    "start": "Start of the time span (canonical ISO)."
+   },
+   "summary": "Cut a time / range / channel window out of an Sv, TS, MVBS or mask product."
   },
   "aa-depth": {
    "actions": [
@@ -1848,6 +3211,573 @@
    },
    "summary": "Equivalent area (EA, m) of backscatter along range, per channel and ping."
   },
+  "aa-evl": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_paths",
+     "flags": [],
+     "help": "Input .nc/.netcdf4 paths or gs:// URIs (or read from stdin).",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "evl",
+     "flags": [
+      "--evl"
+     ],
+     "help": "One or more .evl paths or gs:// URIs.",
+     "kind": "_StoreAction",
+     "nargs": "+",
+     "required": true,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output-path"
+     ],
+     "help": "Output path or gs:// URI (only valid for a single input file).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "out_dir",
+     "flags": [
+      "--out-dir"
+     ],
+     "help": "Output directory (for pipelines / multiple inputs).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "suffix",
+     "flags": [
+      "--suffix"
+     ],
+     "help": "Name outputs <input stem><SUFFIX>.nc. Default: <base>_<hash8>.nc; AA_NAMING=legacy: suffix _evl.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "overwrite",
+     "flags": [
+      "--overwrite"
+     ],
+     "help": "Replace an existing output that is a different product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "above",
+      "below",
+      "between"
+     ],
+     "default": "above",
+     "dest": "keep",
+     "flags": [
+      "--keep"
+     ],
+     "help": "Which side of the line to KEEP (default: above).  'above' keeps shallower data (masks seafloor/bottom).  'below' keeps deeper data (masks surface).  'between' requires exactly 2 EVL files.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 0.0,
+     "dest": "depth_offset",
+     "flags": [
+      "--depth-offset"
+     ],
+     "help": "Shift the composite line by this many metres before masking.  Negative = shift line up (shallower boundary).  Default: 0.0.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": "Sv",
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "Variable to mask (default: Sv).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "time_dim",
+     "flags": [
+      "--time-dim"
+     ],
+     "help": "Time dimension name (default: auto-detect).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "depth_dim",
+     "flags": [
+      "--depth-dim"
+     ],
+     "help": "Depth dimension name (default: auto-detect).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 0,
+     "dest": "channel_index",
+     "flags": [
+      "--channel-index"
+     ],
+     "help": "Channel index for metre-depth resolution (default: 0).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "write_line",
+     "flags": [
+      "--write-line"
+     ],
+     "help": "Write interpolated composite line as 'evl_line_depth' in output.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "fail_empty",
+     "flags": [
+      "--fail-empty"
+     ],
+     "help": "Exit non-zero if the line mask keeps zero cells.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "debug",
+     "flags": [
+      "--debug"
+     ],
+     "help": "Verbose diagnostics to stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv / aa-clean / aa-depth, before aa-evr, aa-graph, aa-mvbs, ... Every stdin line is one input and gives one output line.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-evl --evl seafloor.evl --depth-offset -5 | aa-graph",
+    "aa-evl a.nc b.nc --evl surface.evl --keep below --out-dir masked/",
+    "aa-evl x_Sv.nc --evl upper.evl lower.evl --keep between --write-line"
+   ],
+   "kind": "sv",
+   "options": {
+    "--channel-index": "channel whose echo_range/depth gives the depth axis (default 0)",
+    "--debug": "verbose diagnostics on stderr",
+    "--depth-dim": "dimension names (default: ping_time|time; depth|range_sample|range_bin|echo_range)",
+    "--depth-offset": "shift the line(s) before masking; negative = up (shallower), positive = down (default 0)",
+    "--evl": "REQUIRED. Line files, local or gs://.",
+    "--fail-empty": "fail an input whose mask keeps nothing instead of writing all-NaN",
+    "--keep": "which side of the line(s) to keep (default above)",
+    "--out-dir": "write the outputs here instead of beside each input",
+    "--output-path": "exact output path (one input only); local or gs://",
+    "--overwrite": "replace an existing output that is a different product",
+    "--suffix": "use the old naming <input stem><TEXT>.nc instead of <base>_<hash8>.nc",
+    "--time-dim": "dimension names (default: ping_time|time; depth|range_sample|range_bin|echo_range)",
+    "--var": "variable whose dimensions define the mask (default Sv)",
+    "--write-line": "also write the line used as evl_line_depth (per ping; for between: the upper line)",
+    "-o": "exact output path (one input only); local or gs://"
+   },
+   "reads": "Flat NetCDF paths (.nc/.netcdf4) or gs:// URIs, one per line or as arguments: Sv, cleaned Sv, MVBS, ... with a (ping_time|time) x (depth|range_sample|range_bin|echo_range) variable (--var, default Sv).",
+   "role": "transform",
+   "science": [
+    "channel_index",
+    "depth_dim",
+    "depth_offset",
+    "keep",
+    "time_dim",
+    "var",
+    "write_line"
+   ],
+   "scienceText": {
+    "channel_index": "Channel whose echo_range/depth gives the depth axis. Recorded only when --var or that axis has a channel dimension.",
+    "depth_dim": "Depth dimension used, as resolved.",
+    "depth_offset": "Metres added to the line depth (negative = shallower; default 0).",
+    "evl": "The line files' CONTENT (not their paths or names). For above/below their order and duplicates don't matter; for between the order is kept (it decides upper/lower when the medians are equal).",
+    "keep": "Which side of the line is kept.",
+    "time_dim": "Time dimension used, as resolved.",
+    "var": "Variable whose dimensions define the mask.",
+    "write_line": "Adds the evl_line_depth variable to the file."
+   },
+   "summary": "Mask an echogram above, below or between Echoview lines (.evl)."
+  },
+  "aa-evr": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_paths",
+     "flags": [],
+     "help": "Input .nc/.netcdf4 paths or gs:// URIs (or read from stdin).",
+     "kind": "_StoreAction",
+     "nargs": "*",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "evr",
+     "flags": [
+      "--evr"
+     ],
+     "help": "One or more .evr sources: local paths and/or remote URIs such as gs://bucket/regions.evr (omit to enter interactive drawing mode).",
+     "kind": "_StoreAction",
+     "nargs": "+",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "name",
+     "flags": [
+      "--name"
+     ],
+     "help": "Drawing mode: EVR output filename (default: <input_stem>_regions.evr).  May include or omit the .evr extension.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 5006,
+     "dest": "port",
+     "flags": [
+      "--port"
+     ],
+     "help": "Drawing mode: Bokeh server port (default: 5006; auto-increments if busy).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output-path"
+     ],
+     "help": "Output path or gs:// URI (only valid for a single input file, EVR mode only).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "out_dir",
+     "flags": [
+      "--out-dir"
+     ],
+     "help": "Output directory (for pipelines / multiple inputs).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "suffix",
+     "flags": [
+      "--suffix"
+     ],
+     "help": "Name outputs <input stem><SUFFIX>.nc (EVR mode only). Default: <base>_<hash8>.nc; AA_NAMING=legacy: suffix _evr.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "overwrite",
+     "flags": [
+      "--overwrite"
+     ],
+     "help": "Replace an existing output that is a different product.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "Variable to mask (default: auto-detect \u2014 first of Sv, Sv_clean, MVBS, TS, NASC found in the file). Pass explicitly to override.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "time_dim",
+     "flags": [
+      "--time-dim"
+     ],
+     "help": "Time dimension name (default: auto-detect).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "depth_dim",
+     "flags": [
+      "--depth-dim"
+     ],
+     "help": "Depth dimension name (default: auto-detect).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 0,
+     "dest": "channel_index",
+     "flags": [
+      "--channel-index"
+     ],
+     "help": "Channel index for mask building (default: 0).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "write_mask",
+     "flags": [
+      "--write-mask"
+     ],
+     "help": "Write 'region_mask' variable to output NetCDF (EVR mode only).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "fail_empty",
+     "flags": [
+      "--fail-empty"
+     ],
+     "help": "Exit non-zero if union mask is empty (EVR mode only).",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "debug",
+     "flags": [
+      "--debug"
+     ],
+     "help": "Verbose diagnostics to stderr.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After aa-sv / aa-clean / aa-depth / aa-evl, before aa-graph, aa-plot, aa-mvbs, ... Every stdin line is one input and gives one output line. Draw mode blocks until you click Save in the browser.",
+   "examples": [
+    "aa-nc x.raw --sonar_model EK60 | aa-sv | aa-evr --evr school.evr | aa-graph",
+    "aa-evr a.nc b.nc --evr gs://bucket/regions/leg1.evr --out-dir masked/",
+    "aa-evl x_Sv.nc --evl bottom.evl | aa-evr --evr school.evr --write-mask",
+    "aa-evr x_Sv.nc --name school.evr        # draw mode"
+   ],
+   "kind": "sv",
+   "options": {
+    "--channel-index": "channel whose depth axis builds the mask (default 0)",
+    "--debug": "verbose diagnostics on stderr",
+    "--depth-dim": "dimension names (default: ping_time|time; depth|range_sample|range_bin|echo_range)",
+    "--evr": "EVR mode: region files, local, gs://, or another fsspec URI (s3://, https://). All regions are unioned.",
+    "--fail-empty": "fail an input whose mask is empty instead of writing all-NaN",
+    "--name": "draw mode: .evr file name (default <stem>_regions.evr)",
+    "--out-dir": "write the outputs here instead of beside each input",
+    "--output-path": "exact output path (one input only); local or gs://",
+    "--overwrite": "replace an existing output that is a different product",
+    "--port": "draw mode: Bokeh server port (default 5006, next free one)",
+    "--suffix": "use the old naming <input stem><TEXT>.nc instead of <base>_<hash8>.nc",
+    "--time-dim": "dimension names (default: ping_time|time; depth|range_sample|range_bin|echo_range)",
+    "--var": "variable the mask is built on (default: first of Sv, Sv_clean, MVBS, TS, NASC)",
+    "--write-mask": "also write the union mask as int8 variable region_mask",
+    "-o": "exact output path (one input only); local or gs://"
+   },
+   "reads": "EVR mode: flat NetCDF paths (.nc/.netcdf4) or gs:// URIs, one per line or as arguments: Sv, cleaned Sv, MVBS, ... with a (ping_time|time) x (depth|range_sample|range_bin|echo_range) variable. Draw mode: one path (only the first input is used).",
+   "role": "transform",
+   "science": [
+    "channel_index",
+    "depth_dim",
+    "time_dim",
+    "var",
+    "write_mask"
+   ],
+   "scienceText": {
+    "channel_index": "Channel whose depth axis builds the mask. Recorded only when --var has a channel dimension.",
+    "depth_dim": "Depth dimension used, as resolved.",
+    "evr": "The region files' CONTENT (not their paths or names). Order and duplicates don't matter: the union is the same.",
+    "time_dim": "Time dimension used, as resolved.",
+    "var": "Variable the mask is built on, as resolved (an auto-detected name hashes the same as the same name given explicitly).",
+    "write_mask": "Adds the region_mask variable to the file."
+   },
+   "summary": "Keep only the data inside Echoview regions (.evr); set the rest to NaN."
+  },
   "aa-freqdiff": {
    "actions": [
     {
@@ -2503,6 +4433,381 @@
    },
    "summary": "Impulse-noise mask for Sv; --apply also writes cleaned Sv."
   },
+  "aa-integrate": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "cells",
+      "regions",
+      "region-cells"
+     ],
+     "default": "cells",
+     "dest": "by",
+     "flags": [
+      "--by"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "auto",
+      "time",
+      "distance",
+      "ping"
+     ],
+     "default": "auto",
+     "dest": "interval_type",
+     "flags": [
+      "--interval-type"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "interval",
+     "flags": [
+      "--interval"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "depth",
+      "range",
+      "surface",
+      "bottom"
+     ],
+     "default": "depth",
+     "dest": "layer_type",
+     "flags": [
+      "--layer-type"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 10.0,
+     "dest": "layer",
+     "flags": [
+      "--layer"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "surface",
+     "flags": [
+      "--surface"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "surface_depth",
+     "flags": [
+      "--surface-depth"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": 0.0,
+     "dest": "surface_offset",
+     "flags": [
+      "--surface-offset"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "bottom",
+     "flags": [
+      "--bottom"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 0.0,
+     "dest": "bottom_offset",
+     "flags": [
+      "--bottom-offset"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "bad",
+     "flags": [
+      "--bad"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "regions",
+     "flags": [
+      "--regions"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "min_sv",
+     "flags": [
+      "--min-sv"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "max_sv",
+     "flags": [
+      "--max-sv"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "frequency",
+     "flags": [
+      "--frequency"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "echodata",
+     "flags": [
+      "--echodata"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "... | aa-sv | aa-depth | aa-location | aa-integrate --bottom bottom.evl --bottom-offset -0.5 --interval 0.5nmi --layer 10 --min-sv -70",
+   "examples": [
+    "aa-integrate sv.nc --interval 0.5nmi --layer 10 --min-sv -70 --bottom bottom.evl",
+    "aa-integrate sv.nc --by region-cells --regions schools.evr --interval 5min",
+    "aa-integrate sv.nc --layer-type bottom --layer 5 --bottom seafloor.nc"
+   ],
+   "kind": "integration",
+   "options": {
+    "--bad": "bad-data regions (types bad, bad_empty); repeatable",
+    "--bottom": "exclude below this line (.evl, or a seafloor product)",
+    "--bottom-offset": "added to the bottom line (negative: shallower), default 0",
+    "--by": "what a row is (default cells)",
+    "--echodata": "EchoData for the track when the Sv has no position",
+    "--frequency": "only these channels (38kHz, ...); repeatable",
+    "--interval": "cell length: 0.5nmi, 926m, 5min, 300s, 100 (pings)",
+    "--interval-type": "along-track cells (default: from --interval's unit; else distance with a track, else time)",
+    "--layer": "layer thickness, metres (default 10)",
+    "--layer-type": "vertical reference (default depth)",
+    "--max-sv": "integration thresholds",
+    "--min-sv": "integration thresholds",
+    "--output_path": "exact output; local or gs://",
+    "--regions": "analysis regions for --by regions / region-cells",
+    "--surface": "exclude above this line / depth",
+    "--surface-depth": "exclude above this line / depth",
+    "--surface-offset": "added to the surface line, default 0",
+    "-cells": "what a row is (default cells)",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One Sv product (.nc or .zarr) path or gs:// URI; depth (aa-depth) recommended; latitude/longitude (aa-location) for distance intervals and positions.",
+   "role": "transform",
+   "science": [
+    "bottom_offset",
+    "by",
+    "frequency",
+    "interval",
+    "interval_type",
+    "layer",
+    "layer_type",
+    "max_sv",
+    "min_sv",
+    "surface_depth",
+    "surface_offset",
+    "var"
+   ],
+   "scienceText": {
+    "bottom_offset": "Metres added to the bottom line.",
+    "by": "Rows: cells, regions or region-cells.",
+    "frequency": "Channels integrated (Hz).",
+    "interval": "Along-track cell length.",
+    "interval_type": "Along-track cell type.",
+    "layer": "Layer thickness, metres.",
+    "layer_type": "Vertical reference of the layers.",
+    "max_sv": "Maximum integration threshold, dB.",
+    "min_sv": "Minimum integration threshold, dB.",
+    "surface_depth": "Fixed exclude-above depth, metres.",
+    "surface_offset": "Metres added to the surface line.",
+    "var": "The Sv variable integrated."
+   },
+   "summary": "Echoview-style echo integration into cells / regions; NASC, Sv_mean, ABC as CSV."
+  },
   "aa-location": {
    "actions": [
     {
@@ -2638,6 +4943,162 @@
     "nmea_sentence": "NMEA sentence type to use (e.g. GGA); default all."
    },
    "summary": "Add latitude/longitude to an Sv dataset (echopype.consolidate.add_location)."
+  },
+  "aa-mask": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "remove",
+     "flags": [
+      "--remove"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "keep",
+     "flags": [
+      "--keep"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "mask",
+     "flags": [
+      "--mask"
+     ],
+     "help": "",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "... | aa-sv | aa-mask --remove impulse.nc --remove transient.nc | aa-mvbs",
+   "examples": [
+    "aa-mask sv.nc --mask sv_impulse.nc --mask sv_attenuated.nc",
+    "aa-mask sv.nc --keep krill_freqdiff.nc"
+   ],
+   "kind": "sv",
+   "options": {
+    "--keep": "keep only samples where this mask is True; repeatable",
+    "--mask": "use the mask's own meaning (aa-* masks); repeatable",
+    "--output_path": "exact output; local or gs://",
+    "--remove": "drop samples where this mask is True; repeatable",
+    "--var": "the mask's variable, when the file has several",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One Sv / MVBS / TS product (.nc or .zarr) path or gs:// URI.",
+   "role": "transform",
+   "science": [
+    "var"
+   ],
+   "scienceText": {
+    "var": "The mask variable read (when given)."
+   },
+   "summary": "Apply masks to Sv: remove noise, or keep only a selection (Echoview's Mask)."
   },
   "aa-min": {
    "actions": [
@@ -4198,6 +6659,45 @@
      "type": "str"
     },
     {
+     "choices": [],
+     "default": null,
+     "dest": "ecs",
+     "flags": [
+      "--ecs"
+     ],
+     "help": "Echoview calibration supplement (.ecs), local path or gs:// URI.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "env_params",
+     "flags": [
+      "--env-param"
+     ],
+     "help": "Environmental override (repeatable), e.g. sound_speed=1490; KEY@38kHz=VALUE for one channel.",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "cal_params",
+     "flags": [
+      "--cal-param"
+     ],
+     "help": "Calibration override (repeatable), e.g. gain_correction@38kHz=26.12.",
+     "kind": "_AppendAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
      "choices": [
       "CW",
       "BB",
@@ -4273,11 +6773,16 @@
    "chaining": "Second stage: aa-nc | aa-sv | aa-graph, or aa-nc | aa-sv | aa-depth | ... (see aa-guide). Note: aa-clean writes the cleaned values to Sv_corrected; aa-mvbs, aa-nasc and aa-graph read Sv.",
    "examples": [
     "aa-nc D20160703-T060000.raw --sonar_model EK60 | aa-sv",
-    "aa-sv file.nc --waveform_mode BB --encode_mode complex   # EK80"
+    "aa-sv file.nc --waveform_mode BB --encode_mode complex   # EK80",
+    "aa-sv file.nc --ecs gs://bucket/cal/HB1603.ecs",
+    "aa-sv file.nc --cal-param gain_correction@38kHz=26.12 --env-param sound_speed=1490"
    ],
    "kind": "sv",
    "options": {
+    "--cal-param": "Override a calibration value (gain_correction, sa_correction, equivalent_beam_angle, ...); KEY@38kHz=VALUE for one channel. Repeatable.",
+    "--ecs": "An Echoview calibration supplement (.ecs), local or gs://: per-transducer values, matched to channels by frequency (aa-ecs writes and shows them).",
     "--encode_mode": "EK80 only. Omit for EK60.",
+    "--env-param": "Override an environmental value (sound_speed, sound_absorption, temperature, salinity, pressure, pH); KEY@38kHz=VALUE for one channel. Repeatable.",
     "--output_path": "Explicit output; '_Sv' is appended to its stem, as always. Local path or gs:// URI.",
     "--waveform_mode": "EK80 only. Omit for EK60.",
     "-o": "Explicit output; '_Sv' is appended to its stem, as always. Local path or gs:// URI."
@@ -4285,11 +6790,15 @@
    "reads": "One EchoData .nc/.zarr path or gs:// URI, from aa-nc, aa-ed or aa-combine.",
    "role": "transform",
    "science": [
+    "cal_params",
     "encode_mode",
+    "env_params",
     "waveform_mode"
    ],
    "scienceText": {
+    "cal_params": "Calibration overrides (--cal-param), as numbers. Hashed only when given.",
     "encode_mode": "EK80 encoding.",
+    "env_params": "Environmental overrides (--env-param), as numbers. Hashed only when given.",
     "waveform_mode": "EK80 waveform. FM and BB are the same computation."
    },
    "summary": "Calibrate EchoData to volume backscattering strength (Sv)."
@@ -4404,6 +6913,406 @@
    "science": [],
    "scienceText": {},
    "summary": "Index a dataset by frequency_nominal instead of channel."
+  },
+  "aa-threshold": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "min",
+     "flags": [
+      "--min"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "max",
+     "flags": [
+      "--max"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "float"
+    },
+    {
+     "choices": [
+      "empty",
+      "nodata"
+     ],
+     "default": "empty",
+     "dest": "below",
+     "flags": [
+      "--below"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "nodata",
+      "empty",
+      "clip"
+     ],
+     "default": "nodata",
+     "dest": "above",
+     "flags": [
+      "--above"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "... | aa-sv | aa-clean | aa-threshold --min -70 | aa-mvbs",
+   "examples": [
+    "aa-threshold sv.nc --min -70",
+    "aa-threshold sv.nc --min -80 --max -30 --above clip"
+   ],
+   "kind": "sv",
+   "options": {
+    "--above": "what a sample above --max becomes (default nodata)",
+    "--below": "what a sample below --min becomes (default empty)",
+    "--max": "maximum threshold, dB",
+    "--min": "minimum threshold, dB",
+    "--output_path": "exact output; local or gs://",
+    "--var": "the values variable (default Sv, Sv_corrected, MVBS, TS...)",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One Sv / MVBS / TS product (.nc or .zarr) path or gs:// URI.",
+   "role": "transform",
+   "science": [
+    "above",
+    "below",
+    "max",
+    "min",
+    "var"
+   ],
+   "scienceText": {
+    "above": "What samples above --max become.",
+    "below": "What samples below --min become.",
+    "max": "Maximum threshold, dB.",
+    "min": "Minimum threshold, dB.",
+    "var": "The variable thresholded (as resolved)."
+   },
+   "summary": "Minimum / maximum Sv thresholds (Echoview's Threshold operator)."
+  },
+  "aa-tiles": {
+   "actions": [
+    {
+     "choices": [],
+     "default": null,
+     "dest": "input_path",
+     "flags": [],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": "?",
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "output_path",
+     "flags": [
+      "-o",
+      "--output_path"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "var",
+     "flags": [
+      "--var"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [
+      "auto",
+      "range",
+      "depth",
+      "sample"
+     ],
+     "default": "auto",
+     "dest": "y",
+     "flags": [
+      "--y"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [
+      "auto",
+      "mean",
+      "max"
+     ],
+     "default": "auto",
+     "dest": "reduce",
+     "flags": [
+      "--reduce"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": 256,
+     "dest": "tile",
+     "flags": [
+      "--tile"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": 2,
+     "dest": "lag",
+     "flags": [
+      "--lag"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "echodata",
+     "flags": [
+      "--echodata"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
+     "choices": [],
+     "default": 3,
+     "dest": "block_levels",
+     "flags": [
+      "--block-levels"
+     ],
+     "help": "",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "int"
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "quiet",
+     "flags": [
+      "--quiet"
+     ],
+     "help": "",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": false,
+     "dest": "force",
+     "flags": [
+      "--force"
+     ],
+     "help": "Recompute even if an identical product already exists.",
+     "kind": "_StoreTrueAction",
+     "nargs": 0,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "base",
+     "flags": [
+      "--base"
+     ],
+     "help": "Base name for outputs (default: the input's base name).",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    },
+    {
+     "choices": [],
+     "default": null,
+     "dest": "dest",
+     "flags": [
+      "--dest"
+     ],
+     "help": "Write the default-named output here instead of beside the input.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": null
+    }
+   ],
+   "chaining": "After any product: ... | aa-sv | aa-depth | aa-tiles. The Workbench runs it when an echogram is opened.",
+   "examples": [
+    "aa-tiles sv.nc",
+    "aa-tiles gs://bucket/derived_products/me/HB1603/x/x_1234abcd.nc --dest gs://bucket/derived_products/me/HB1603/x/",
+    "aa-tiles mask.nc --reduce max"
+   ],
+   "kind": "tiles",
+   "options": {
+    "--echodata": "EchoData to read the ship's track from, when the product has no latitude/longitude",
+    "--lag": "levels before range is reduced too (default 2)",
+    "--output_path": "exact output; local or gs://",
+    "--reduce": "how cells are combined (default: mean; max for masks)",
+    "--tile": "tile size (default 256)",
+    "--var": "the variable (default: Sv, Sv_corrected, MVBS, TS, or the mask)",
+    "--y": "vertical axis (default: depth when the product has it, else range)",
+    "-o": "exact output; local or gs://"
+   },
+   "reads": "One flat product (.nc or .zarr) path or gs:// URI: Sv, Sv with depth, MVBS, TS, a mask.",
+   "role": "representation",
+   "science": [
+    "lag",
+    "reduce",
+    "tile",
+    "var",
+    "y"
+   ],
+   "scienceText": {
+    "lag": "Levels before range is reduced.",
+    "reduce": "How cells are combined.",
+    "tile": "Tile size.",
+    "var": "The variable drawn.",
+    "y": "Vertical axis."
+   },
+   "summary": "Echogram tile pack (.tiles) of an Sv / MVBS / TS / mask product, for viewers."
   },
   "aa-transient": {
    "actions": [
@@ -4677,6 +7586,19 @@
      "type": null
     },
     {
+     "choices": [],
+     "default": null,
+     "dest": "ecs",
+     "flags": [
+      "--ecs"
+     ],
+     "help": "Echoview calibration supplement (.ecs), local path or gs:// URI.",
+     "kind": "_StoreAction",
+     "nargs": null,
+     "required": false,
+     "type": "str"
+    },
+    {
      "choices": [
       "CW",
       "BB",
@@ -4757,6 +7679,7 @@
    "kind": "ts",
    "options": {
     "--cal-param": "override a calibration value; repeatable, e.g. --cal-param gain_correction=25.9",
+    "--ecs": "an Echoview calibration supplement (.ecs), local or gs://; cannot be combined with --env-param/--cal-param",
     "--encode_mode": "EK80 encoding (default: complex). EK60/AZFP: always power.",
     "--env-param": "override an environmental value; repeatable, e.g. --env-param sound_speed=1500",
     "--output_path": "Explicit output; '_ts' is ALWAYS appended to its stem and .nc forced (-o out.nc writes out_ts.nc). Local path or gs:// URI.",

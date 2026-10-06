@@ -19,19 +19,25 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import _paths
+from .annotations import router as annotations_router
 from .baseline import router as baseline_router
+from .calibration import router as calibration_router
+from .costs import router as costs_router
 from .derived import router as derived_router
+from .echogram import router as echogram_router
 from .environment import router as environment_router
 from .files import router as files_router
 from .gcp import router as gcp_router
 from .identity import router as identity_router
 from .jobs import router as jobs_router
+from .lineage import router as lineage_router
 from .ncei import router as ncei_router
 from .pipelines import router as pipelines_router
 from .products import router as products_router
 from .recipes import router as recipes_router
 from .store import router as store_router
 from .terminal import router as terminal_router
+from .toolcalls import router as toolcalls_router
 
 
 class _SPAStaticFiles(StaticFiles):
@@ -82,6 +88,15 @@ def create_app() -> FastAPI:
     # Products in the bucket, and pipelines of console tools run on them.
     app.include_router(products_router)
     app.include_router(pipelines_router)
+    # The Echoview-style tools: echograms (tile packs), lines and regions,
+    # calibration (ECS), the dataflow around a product, and the tool calls
+    # behind them.
+    app.include_router(echogram_router)
+    app.include_router(annotations_router)
+    app.include_router(calibration_router)
+    app.include_router(lineage_router)
+    app.include_router(costs_router)
+    app.include_router(toolcalls_router)
     # The baseline operation: survey + time range -> EchoData asset in the
     # bucket, run as a chain of ordinary jobs.
     app.include_router(baseline_router)

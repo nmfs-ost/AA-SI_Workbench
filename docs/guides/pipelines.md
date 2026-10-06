@@ -16,7 +16,9 @@ next pipeline.
    card draws its chain as the products it passes along
    (EchoData → aa-sv → Sv → aa-graph → Echogram). If the input is already past
    a stage (an Sv into a pipeline that starts with `aa-sv`), that stage is
-   skipped and drawn faint.
+   skipped and drawn faint; so is a stage that only adds what the input
+   already carries (`aa-depth` on an Sv that has depth), when its settings are
+   the tool's own.
 3. **Check the plan.** The open card shows what the server will run: each
    stage's settings, where the products go, anything wrong (a stage that needs
    depth with no `aa-depth` before it; a pipeline that cannot read the input),
@@ -36,6 +38,13 @@ dock). They are read from the installed console tools: their flags, their
 defaults, their own help. Only values that differ from a tool's default are
 sent. A fingerprint marks a setting that changes the product (and so its hash
 and the `_xxxxxxxx` in its name).
+
+Some settings take another product rather than a value: `aa-sv`'s ECS file,
+`aa-integrate`'s bottom line and regions, `aa-mask`'s masks. They list the
+products of the right kind beside the input (newest first), or take any gs://
+URI. The chosen product's content goes into the hash of what is made, so a
+product made with a line saved again later is marked out of date in
+**Dataflow** (see [echograms-and-analysis.md](echograms-and-analysis.md)).
 
 Changed settings apply to the card's plan and runs straight away. *Save* keeps
 them; a built-in pipeline is saved as your own copy. **New pipeline** (or a

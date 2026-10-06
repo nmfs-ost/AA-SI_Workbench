@@ -33,9 +33,10 @@ import base64
 import hashlib
 import json
 import os
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -55,6 +56,9 @@ ASSET_KINDS: dict[str, str] = {
     ".jpg": "image",
     ".jpeg": "image",
     ".evr": "region",
+    ".evl": "line",
+    ".ecs": "calibration",
+    ".tiles": "tiles",
 }
 
 
@@ -102,6 +106,29 @@ class DerivedEntry(BaseModel):
     md5: str = ""
     #: The MD5 the tool published still matches; None when none was recorded.
     intact: bool | None = None
+    #: GCS storage class (STANDARD, NEARLINE, COLDLINE, ARCHIVE): what its
+    #: storage costs per GiB-month. '' for folders and stores.
+    storageClass: str = ""
+
+
+class StoredObject(NamedTuple):
+    """One object, as the cost summary needs it."""
+
+    key: str  # relative to the browsed root
+    size: int
+    storage_class: str
+
+
+class BucketInfo(BaseModel):
+    """Where the bucket is and its default class: what its storage costs."""
+
+    bucket: str
+    location: str = ""
+    locationType: str = ""
+    storageClass: str = ""
+    #: The location could not be read (no permission, or the stand-in bucket):
+    #: the figures use an assumed one.
+    assumed: bool = False
 
 
 def _hex(b64: str | None) -> str:
@@ -116,12 +143,21 @@ def _hex(b64: str | None) -> str:
 def _product_fields(name: str, md5_b64: str | None, metadata: dict | None) -> dict:
     """The entry fields the tools' metadata gives, for one object."""
     from .catalogue import LEVELS
-    from .products import META_HASH, META_MD5, META_RECIPE, META_TOOL, kind_of
+    from .products import (
+        META_HASH,
+        META_KIND,
+        META_MD5,
+        META_RECIPE,
+        META_TOOL,
+        kind_of,
+    )
 
     metadata = metadata or {}
     tool = str(metadata.get(META_TOOL, "") or "")
-    known = tool or name.lower().endswith((".raw", ".png"))
-    kind = kind_of(tool, name) if known else ""
+    known = tool or name.lower().endswith(
+        (".raw", ".png", ".evl", ".evr", ".ecs", ".tiles")
+    )
+    kind = kind_of(tool, name, str(metadata.get(META_KIND, "") or "")) if known else ""
     recorded = metadata.get(META_MD5, "")
     return {
         "productHash": str(metadata.get(META_HASH, "") or ""),
@@ -154,6 +190,10 @@ class DerivedStatus(BaseModel):
 
 class DerivedProvider(Protocol):
     def list(self, prefix: str, limit: int) -> DerivedListing: ...
+
+    def walk(self, prefix: str, max_objects: int) -> Iterator[StoredObject]: ...
+
+    def bucket_info(self) -> BucketInfo: ...
 
 
 def _kind_for(name: str) -> str:
@@ -302,6 +342,7 @@ class GcsProvider:
                     if blob.updated
                     else "",
                     contentType=blob.content_type or "",
+                    storageClass=str(getattr(blob, "storage_class", "") or "STANDARD"),
                     **_product_fields(
                         blob.name.rsplit("/", 1)[-1],
                         getattr(blob, "md5_hash", None),
@@ -316,6 +357,35 @@ class GcsProvider:
             parent=_parent_of(prefix),
             entries=entries,
             truncated=len(blobs) >= limit,
+        )
+
+    def walk(self, prefix: str, max_objects: int) -> Iterator[StoredObject]:
+        """Every object under a prefix (stores' chunks included): name, size
+        and class only, a thousand a page."""
+        root = root_prefix()
+        blobs = self._client.list_blobs(
+            self._bucket,
+            prefix=f"{root}{prefix}",
+            max_results=max_objects,
+            page_size=1000,
+            fields="items(name,size,storageClass),nextPageToken",
+        )
+        for blob in blobs:
+            name = blob.name[len(root) :] if root else blob.name
+            yield StoredObject(
+                name, int(blob.size or 0), str(blob.storage_class or "STANDARD")
+            )
+
+    def bucket_info(self) -> BucketInfo:
+        try:
+            bucket = self._client.get_bucket(bucket_name())
+        except Exception:  # noqa: BLE001 - needs storage.buckets.get; often not granted
+            return BucketInfo(bucket=bucket_name(), assumed=True)
+        return BucketInfo(
+            bucket=bucket_name(),
+            location=str(bucket.location or ""),
+            locationType=str(getattr(bucket, "location_type", "") or ""),
+            storageClass=str(bucket.storage_class or ""),
         )
 
 
@@ -371,9 +441,10 @@ class FakeGcsProvider:
                     continue
                 meta_file = self.root / ".meta" / bucket / (key + ".json")
                 try:
-                    metadata = json.loads(meta_file.read_text()).get("metadata", {})
+                    meta_doc = json.loads(meta_file.read_text())
                 except (OSError, ValueError):
-                    metadata = {}
+                    meta_doc = {}
+                metadata = meta_doc.get("metadata", {}) or {}
                 digest = hashlib.md5(path.read_bytes()).digest()  # noqa: S324 - GCS's own
                 stat = path.stat()
                 entries.append(
@@ -386,6 +457,7 @@ class FakeGcsProvider:
                         updatedAt=datetime.fromtimestamp(stat.st_mtime, UTC)
                         .isoformat(timespec="seconds")
                         .replace("+00:00", "Z"),
+                        storageClass=str(meta_doc.get("storageClass") or "STANDARD"),
                         **_product_fields(
                             path.name, base64.b64encode(digest).decode(), metadata
                         ),
@@ -397,6 +469,42 @@ class FakeGcsProvider:
             parent=_parent_of(prefix),
             entries=entries,
             truncated=False,
+        )
+
+    def walk(self, prefix: str, max_objects: int) -> Iterator[StoredObject]:
+        bucket = bucket_name()
+        base = self.root / bucket
+        root = root_prefix()
+        start = base / f"{root}{prefix}"
+        count = 0
+        for folder, dirs, files in os.walk(start):
+            dirs.sort()
+            for name in sorted(files):
+                path = Path(folder) / name
+                key = path.relative_to(base).as_posix()
+                meta_file = self.root / ".meta" / bucket / (key + ".json")
+                try:
+                    cls = json.loads(meta_file.read_text()).get("storageClass") or ""
+                except (OSError, ValueError):
+                    cls = ""
+                yield StoredObject(
+                    key[len(root) :] if root else key,
+                    path.stat().st_size,
+                    str(cls or "STANDARD"),
+                )
+                count += 1
+                if count >= max_objects:
+                    return
+
+    def bucket_info(self) -> BucketInfo:
+        # The stand-in bucket has no location: say which one is assumed.
+        location = os.getenv("AA_GCS_FAKE_LOCATION", "")
+        return BucketInfo(
+            bucket=bucket_name(),
+            location=location,
+            locationType="region" if location else "",
+            storageClass="STANDARD",
+            assumed=not location,
         )
 
 

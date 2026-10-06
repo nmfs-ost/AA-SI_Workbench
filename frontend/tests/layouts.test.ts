@@ -65,6 +65,10 @@ function fakeApi() {
 const ALL_PANELS = [
   'pipelines',
   'recipes',
+  'echogram',
+  'results',
+  'dataflow',
+  'costs',
   'prepare',
   'files',
   'derived',

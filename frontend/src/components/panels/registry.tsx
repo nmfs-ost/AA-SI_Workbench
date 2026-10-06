@@ -17,6 +17,10 @@ import {
   TimelapseOutlined,
   CodeOutlined,
   MenuBookOutlined,
+  WavesOutlined,
+  TableChartOutlined,
+  SchemaOutlined,
+  SavingsOutlined,
 } from '@mui/icons-material';
 
 import type { PanelDefinition, PanelId } from '../../types';
@@ -37,6 +41,10 @@ import { TerminalPanel } from './TerminalPanel';
 import { LogPanel } from './LogPanel';
 import { ProgressPanel } from './ProgressPanel';
 import { ConsolePanel } from './ConsolePanel';
+import { EchogramPanel } from './echogram/EchogramPanel';
+import { ResultsPanel } from './results/ResultsPanel';
+import { DataflowPanel } from './dataflow/DataflowPanel';
+import { CostsPanel } from './costs/CostsPanel';
 
 /**
  * THE PANEL REGISTRY — the single extension point of the shell.
@@ -61,6 +69,30 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: "aa-recipe-manager's YAML workflow recipes, discovered from disk.",
     region: 'center',
     component: RecipesPanel,
+  },
+  {
+    id: 'echogram',
+    title: 'Echogram',
+    icon: WavesOutlined,
+    description: 'An Sv, MVBS or mask product as an echogram: colour scale, readout, lines and regions.',
+    region: 'center',
+    component: EchogramPanel,
+  },
+  {
+    id: 'results',
+    title: 'Results',
+    icon: TableChartOutlined,
+    description: 'Integration results (NASC by interval and layer, by region).',
+    region: 'center',
+    component: ResultsPanel,
+  },
+  {
+    id: 'costs',
+    title: 'Storage costs',
+    icon: SavingsOutlined,
+    description: 'What the bucket costs to keep: per month and year, by folder, class and product.',
+    region: 'center',
+    component: CostsPanel,
   },
   {
     id: 'editor',
@@ -132,6 +164,14 @@ export const panelDefinitions: readonly PanelDefinition[] = [
     description: 'Inspect metadata for the active item.',
     region: 'right',
     component: MetadataPanel,
+  },
+  {
+    id: 'dataflow',
+    title: 'Dataflow',
+    icon: SchemaOutlined,
+    description: 'What the selected product was made from and what was made from it, and what is out of date.',
+    region: 'right',
+    component: DataflowPanel,
   },
   {
     id: 'configuration',

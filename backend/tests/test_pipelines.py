@@ -279,6 +279,23 @@ def test_a_missing_variable_names_the_tool_that_adds_it():
     assert not any("depth" in p for p in result.problems)  # its history has aa-depth
 
 
+def test_a_stage_adding_what_the_input_already_has_is_skipped():
+    # NASC on an Sv that has depth: aa-depth would remake the same depth.
+    result = plan("nasc", SV_DEPTH)
+    actions = {s.tool: (s.action, s.reason) for s in result.stages}
+    action, reason = actions["aa-depth"]
+    assert action == "skip" and "already has depth" in reason
+    assert actions["aa-location"][0] == "run"
+    location = next(s for s in result.stages if s.tool == "aa-location")
+    assert location.reads == SV_DEPTH
+    # On an Sv without depth it runs; with settings of its own it runs too.
+    assert {s.tool: s.action for s in plan("nasc", SV).stages}["aa-depth"] == "run"
+    spec = builtin("nasc")
+    spec.stages[1].params = {"depth_offset": 5}
+    tuned = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV_DEPTH))
+    assert {s.tool: s.action for s in tuned.stages}["aa-depth"] == "run"
+
+
 def test_a_pipeline_that_cannot_read_the_input_says_so():
     spec = pipelines.PipelineSpec(
         name="x", stages=[pipelines.StageSpec(tool="aa-graph")]

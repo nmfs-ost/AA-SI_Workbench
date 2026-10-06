@@ -330,6 +330,18 @@ export async function startRuns(): Promise<void> {
   if (made.length) poll();
 }
 
+/**
+ * Run a one-off pipeline (not a saved one) on one product: what another panel
+ * asks for (Calibration's "Compute Sv with this ECS"). It shows with the
+ * other runs in the Pipelines panel, open.
+ */
+export async function runSpec(spec: PipelineSpec, input: string): Promise<RunStatus> {
+  const run = await pipelinesApi.run({ pipeline: spec, input, dest: state.dest, force: false });
+  set({ runs: [run, ...state.runs.filter((r) => r.id !== run.id)], activeRunId: run.id });
+  poll();
+  return run;
+}
+
 export async function cancelRun(id: string): Promise<void> {
   try {
     const status = await pipelinesApi.cancel(id);

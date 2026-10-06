@@ -14,6 +14,7 @@ import { FingerprintOutlined, RestartAltRounded } from '@mui/icons-material';
 import type { ParamValue, ToolParam } from '../../../services/pipelinesApi';
 import { compactFieldSx } from '../panelStyles';
 import { sameValue } from './chain';
+import { ProductPicker } from './ProductPicker';
 
 function show(value: ParamValue | undefined): string {
   if (value === undefined || value === null) return '';
@@ -30,11 +31,14 @@ function show(value: ParamValue | undefined): string {
 export function ParamField({
   param,
   value,
+  near = '',
   onChange,
 }: {
   param: ToolParam;
   /** The chosen value; undefined: the tool's default. */
   value: ParamValue | undefined;
+  /** The product the pipeline runs on, for options that take a product. */
+  near?: string;
   onChange: (value: ParamValue | undefined) => void;
 }) {
   const theme = useTheme();
@@ -113,6 +117,16 @@ export function ParamField({
           <Box sx={{ flex: 1, minWidth: 0 }}>{label}</Box>
         </Box>
         <Box sx={{ pl: 4.25 }}>{help}</Box>
+      </Box>
+    );
+  }
+
+  if (param.productKinds?.length) {
+    return (
+      <Box>
+        {label}
+        <ProductPicker param={param} value={value} near={near} onChange={onChange} />
+        {help}
       </Box>
     );
   }

@@ -30,6 +30,11 @@ import {
   SearchOutlined,
   TerminalOutlined,
   UnfoldLessOutlined,
+  SchemaOutlined,
+  ShowChartOutlined,
+  TableChartOutlined,
+  WavesOutlined,
+  SavingsOutlined,
 } from '@mui/icons-material';
 
 import { CopyPathButton } from './CopyPathButton';
@@ -50,6 +55,11 @@ import { LevelChip } from './prepare/ui';
 import { panelColumns, panelDensity } from './panelStyles';
 import { formatBytes, formatRelativeTime, modifiedTooltip } from './rowFormat';
 import { quote } from './shellQuote';
+import { openAnnotation, openEchogram } from '../../state/echogram';
+import { isAnnotation, opensAsEchogram, opensAsResults } from './echogram/openers';
+import { openResults } from './results/ResultsPanel';
+import { CLASS_LABEL, formatMoney, formatRate, monthlyCost, type Prices } from '../../services/costsApi';
+import { initCosts, showCosts, useCosts } from '../../state/costs';
 
 const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
   folder: FolderOutlined,
@@ -58,6 +68,9 @@ const KIND_ICON: Record<DerivedKind, typeof FolderOutlined> = {
   raw: InsightsOutlined,
   table: GridOnOutlined,
   region: DescriptionOutlined,
+  line: ShowChartOutlined,
+  calibration: DescriptionOutlined,
+  tiles: WavesOutlined,
   image: ImageOutlined,
   text: DescriptionOutlined,
   object: DescriptionOutlined,
@@ -69,10 +82,12 @@ const ASSET_KINDS = new Set<DerivedKind>(['netcdf', 'zarr', 'raw']);
 const HASH_COLUMN = 72;
 
 /* The columns give way, narrowest panel first, so the name always has room:
-   Updated goes below 560px of panel, Size below 440px. The hash stays: it is
-   what this panel is for. (Container queries: the panel, not the window.) */
+   Updated goes below 560px of panel, Size below 500px (it is in the cost's
+   tooltip), the cost a month below 360px. The hash stays: it is what this
+   panel is for. (Container queries: the panel, not the window.) */
 const HIDE_UPDATED = { '@container products (max-width: 559px)': { display: 'none' } };
-const HIDE_SIZE = { '@container products (max-width: 439px)': { display: 'none' } };
+const HIDE_SIZE = { '@container products (max-width: 499px)': { display: 'none' } };
+const HIDE_COST = { '@container products (max-width: 359px)': { display: 'none' } };
 
 /** What the Pipelines card needs from a row. */
 export function refOf(entry: DerivedEntry): ProductRef {
@@ -127,11 +142,49 @@ interface DerivedRowProps {
   checked: boolean;
   bucket: string;
   project: string;
+  /** For the cost column; null until read. */
+  prices: Prices | null;
   onActivate: (event: React.MouseEvent) => void;
   onCheck: () => void;
   onRunPipeline: () => void;
   onRefresh: () => void;
   onError: (message: string) => void;
+}
+
+/** What an object costs to keep a month, at the prices in force. Folders and
+    stores are blank here: their totals are in the Storage costs panel. */
+function CostCell({ entry, prices }: { entry: DerivedEntry; prices: Prices | null }) {
+  const theme = useTheme();
+  const show = prices && !entry.isDir && entry.kind !== 'zarr' && entry.sizeBytes > 0;
+  const month = show ? monthlyCost(entry.sizeBytes, entry.storageClass, prices) : 0;
+  const cls = CLASS_LABEL[(entry.storageClass || 'STANDARD').toUpperCase()] ?? entry.storageClass;
+  return (
+    <Tooltip
+      disableInteractive
+      placement="left"
+      title={
+        show
+          ? `${formatMoney(month, { exact: true })} a month · ${formatMoney(month * 12, { exact: true })} a year · ${formatBytes(entry.sizeBytes)}, ${cls}`
+          : entry.kind === 'zarr'
+            ? 'A store: its size and cost are in Storage costs (folder menu)'
+            : ''
+      }
+    >
+      <Typography
+        sx={{
+          width: panelColumns.cost,
+          flexShrink: 0,
+          textAlign: 'right',
+          fontSize: panelDensity.font.meta,
+          color: theme.aa.color.text.muted,
+          fontVariantNumeric: 'tabular-nums',
+          ...HIDE_COST,
+        }}
+      >
+        {show ? formatMoney(month) : ''}
+      </Typography>
+    </Tooltip>
+  );
 }
 
 /** One row of the bucket tree. A component for the same reason `FileRow` is:
@@ -145,6 +198,7 @@ function DerivedRow({
   checked,
   bucket,
   project,
+  prices,
   onActivate,
   onCheck,
   onRunPipeline,
@@ -173,6 +227,15 @@ function DerivedRow({
             icon: RefreshOutlined,
             onSelect: onRefresh,
           },
+          {
+            id: 'costs',
+            label: 'Storage cost of this folder',
+            icon: SavingsOutlined,
+            onSelect: () => {
+              showCosts(entry.path);
+              openPanel('costs');
+            },
+          },
         ]
       : [
           {
@@ -181,6 +244,47 @@ function DerivedRow({
             icon: AccountTreeOutlined,
             onSelect: onRunPipeline,
           },
+          ...(opensAsEchogram(entry.productKind, entry.name)
+            ? [
+                {
+                  id: 'echogram',
+                  label: 'Open as echogram',
+                  icon: WavesOutlined,
+                  onSelect: () => {
+                    void openEchogram(entry.uri);
+                    openPanel('echogram');
+                  },
+                },
+              ]
+            : []),
+          ...(isAnnotation(entry.productKind, entry.name) || entry.productKind === 'seafloor'
+            ? [
+                {
+                  id: 'echogram',
+                  label: 'Open on its echogram',
+                  icon: WavesOutlined,
+                  onSelect: () => {
+                    openPanel('echogram');
+                    openAnnotation(entry.uri).catch((e: unknown) =>
+                      onError(e instanceof Error ? e.message : String(e)),
+                    );
+                  },
+                },
+              ]
+            : []),
+          ...(opensAsResults(entry.productKind, entry.name)
+            ? [
+                {
+                  id: 'results',
+                  label: 'Open results',
+                  icon: TableChartOutlined,
+                  onSelect: () => {
+                    openResults(entry.uri);
+                    openPanel('results');
+                  },
+                },
+              ]
+            : []),
           {
             id: 'inspect',
             label: 'Inspect metadata',
@@ -188,6 +292,15 @@ function DerivedRow({
             onSelect: () => {
               setActiveArtifact({ uri: entry.uri, label: entry.name, origin: 'Derived', kind: entry.kind });
               openPanel('metadata');
+            },
+          },
+          {
+            id: 'dataflow',
+            label: 'Show its dataflow',
+            icon: SchemaOutlined,
+            onSelect: () => {
+              setActiveArtifact({ uri: entry.uri, label: entry.name, origin: 'Derived', kind: entry.kind });
+              openPanel('dataflow');
             },
           },
         ]),
@@ -354,6 +467,8 @@ function DerivedRow({
         >
           {entry.isDir ? '' : formatBytes(entry.sizeBytes)}
         </Typography>
+
+        <CostCell entry={entry} prices={prices} />
 
         {/* Modified. GCS reports `updatedAt` on objects only — a common prefix
             is not a thing that has a timestamp, and neither is a store listed
@@ -550,6 +665,8 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
   }, [children, expanded, query]);
 
   const busy = loading.has('');
+  const costs = useCosts();
+  useEffect(() => initCosts(), []);
 
   return (
     <Box
@@ -720,6 +837,18 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
               </Box>
             </Tooltip>
             <Box sx={{ width: panelColumns.size, flexShrink: 0, textAlign: 'right', ...HIDE_SIZE }}>Size</Box>
+            <Tooltip
+              disableInteractive
+              title={
+                costs.prices
+                  ? `Estimated storage cost a month: the object's size times ${
+                      costs.prices.custom !== null ? costs.prices.customLabel || 'our own price' : "Google's list price"
+                    } for its storage class (Standard ${formatRate(costs.prices.perGiBMonth.STANDARD ?? 0)}). Storage only; see Storage costs for folders and totals.`
+                  : 'Estimated storage cost a month'
+              }
+            >
+              <Box sx={{ width: panelColumns.cost, flexShrink: 0, textAlign: 'right', ...HIDE_COST }}>$/month</Box>
+            </Tooltip>
             <Box sx={{ width: panelColumns.modified, flexShrink: 0, textAlign: 'right', ...HIDE_UPDATED }}>
               Updated
             </Box>
@@ -738,6 +867,7 @@ export const DerivedPanel: FunctionComponent<IDockviewPanelProps> = () => {
                 checked={chosen.has(entry.uri)}
                 bucket={status?.bucket ?? ''}
                 project={status?.project ?? ''}
+                prices={costs.prices}
                 onCheck={() => toggleInput(refOf(entry))}
                 onRunPipeline={() => {
                   setInputs([refOf(entry)]);

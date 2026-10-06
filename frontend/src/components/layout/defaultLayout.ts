@@ -46,6 +46,26 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     title: 'Recipes',
     position: { referencePanel: 'pipelines', direction: 'within' },
   });
+  // The Echogram and the integration Results are the centre's other
+  // documents: a product looked at, and a table read.
+  api.addPanel({
+    id: 'echogram',
+    component: 'echogram',
+    title: 'Echogram',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.addPanel({
+    id: 'results',
+    component: 'results',
+    title: 'Results',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.addPanel({
+    id: 'costs',
+    component: 'costs',
+    title: 'Storage costs',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
   api.getPanel('pipelines')?.api.setActive();
 
   // Left sidebar — the data sources, plus the project itself. These are added
@@ -95,6 +115,12 @@ export function buildHorizontalLayout(api: DockviewApi): void {
     title: 'Metadata',
     position: { referencePanel: 'pipelines', direction: 'right' },
     initialWidth: 300,
+  });
+  api.addPanel({
+    id: 'dataflow',
+    component: 'dataflow',
+    title: 'Dataflow',
+    position: { referencePanel: 'metadata', direction: 'within' },
   });
   api.addPanel({
     id: 'configuration',
@@ -198,6 +224,26 @@ export function buildVerticalLayout(api: DockviewApi): void {
     title: 'Recipes',
     position: { referencePanel: 'pipelines', direction: 'within' },
   });
+  // The Echogram and the integration Results are the centre's other
+  // documents: a product looked at, and a table read.
+  api.addPanel({
+    id: 'echogram',
+    component: 'echogram',
+    title: 'Echogram',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.addPanel({
+    id: 'results',
+    component: 'results',
+    title: 'Results',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
+  api.addPanel({
+    id: 'costs',
+    component: 'costs',
+    title: 'Storage costs',
+    position: { referencePanel: 'pipelines', direction: 'within' },
+  });
   api.getPanel('pipelines')?.api.setActive();
 
   /* Tools dock, added *before* the side docks — this is the whole difference
@@ -258,6 +304,7 @@ export function buildVerticalLayout(api: DockviewApi): void {
     initialWidth: 300,
   });
   for (const [id, title] of [
+    ['dataflow', 'Dataflow'],
     ['configuration', 'Configuration'],
     ['calibration', 'Calibration'],
     ['processingQueue', 'Processing Queue'],

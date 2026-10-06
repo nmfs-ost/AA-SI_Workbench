@@ -276,6 +276,80 @@ def resolve_tool(name: str) -> str:
     )
 
 
+def tool_command(name: str) -> list[str]:
+    """argv[0:] that runs an `aa-*` tool: its console script, or, when the
+    installed aalibrary has the tool's module but not yet its command (a new
+    tool whose entry point is not in the installed package metadata), the
+    module through this interpreter: ``python -m aalibrary.console.aa_x``.
+
+    The module name is built from a name resolve_tool's rules accept, so it
+    can only ever be an aalibrary console module.
+    """
+    try:
+        return [resolve_tool(name)]
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        stem = name.strip()
+        stem = stem if stem.startswith(TOOL_PREFIX) else f"{TOOL_PREFIX}{stem}"
+        module = "aalibrary.console.aa_" + stem[len(TOOL_PREFIX) :].replace("-", "_")
+        valid = re.fullmatch(r"aalibrary\.console\.aa_[a-z0-9_]+", module)
+        python = _tools_python()
+        if valid and _has_module(module, python):
+            return [python, "-m", module]
+        raise
+
+
+def _tools_python() -> str:
+    """The interpreter the installed tools run under (aa-sv's), else this one."""
+    try:
+        script = resolve_tool("aa-sv")
+    except HTTPException:
+        return sys.executable
+    from .workspace import _interpreter
+
+    return _interpreter(script) or sys.executable
+
+
+_modules: dict[tuple[str, str], bool] = {}
+
+
+def _has_module(module: str, python: str) -> bool:
+    """The module is importable by the interpreter that will run it (the
+    tools' environment, which need not be the Workbench's own)."""
+    key = (python, module)
+    if key in _modules:
+        return _modules[key]
+    if python == sys.executable:
+        import importlib.util
+
+        try:
+            found = importlib.util.find_spec(module) is not None
+        except (ImportError, ValueError):
+            found = False
+    else:
+        try:
+            found = (
+                subprocess.run(
+                    [
+                        python,
+                        "-c",
+                        "import importlib.util, sys; "
+                        "sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)",
+                        module,
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.SubprocessError):
+            found = False
+    if found:  # only a yes is kept: an upgrade may add the module later
+        _modules[key] = found
+    return found
+
+
 def _resolve_cwd(raw: str) -> str:
     if not raw:
         return str(Path.home())
@@ -526,19 +600,23 @@ def submit(
     passes one snapshot to every stage); by default, the choice in force now."""
     from .gcp import tool_env
 
-    program = resolve_tool(request.tool)
+    program = tool_command(request.tool)
     cwd = _resolve_cwd(request.cwd)
     args = [str(item) for item in request.args]
     if any("\x00" in arg for arg in args):
         raise HTTPException(status_code=400, detail="An argument contains a NUL byte.")
-    tool = Path(program).name
+    tool = (
+        Path(program[0]).name
+        if len(program) == 1
+        else "aa-" + program[-1].rsplit(".aa_", 1)[-1].replace("_", "-")
+    )
     env = _checked_env(request.env)
 
     job = _Job(
         id=uuid.uuid4().hex[:12],
         tool=tool,
         label=request.label.strip() or f"{tool} {' '.join(args)}".strip(),
-        command=[program, *args],
+        command=[*program, *args],
         cwd=cwd,
         resumed_from=resumed_from,
         env=env,
@@ -603,7 +681,7 @@ def resume(job_id: str) -> _Job:
                     "interrupted run (exit 3) can be resumed."
                 ),
             )
-        args = job.command[1:]
+        args = job.command[1:] if job.command[1:2] != ["-m"] else job.command[3:]
         request = JobRequest(
             tool=job.tool,
             args=args,

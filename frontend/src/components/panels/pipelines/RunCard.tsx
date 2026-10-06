@@ -22,6 +22,8 @@ import {
   RecyclingRounded,
   RemoveCircleOutlineRounded,
   StopRounded,
+  TableChartOutlined,
+  WavesOutlined,
 } from '@mui/icons-material';
 
 import type { ProductInfo, RunStatus, StageRun } from '../../../services/pipelinesApi';
@@ -32,6 +34,9 @@ import { useLayout } from '../../../context/LayoutContext';
 import { formatBytes } from '../rowFormat';
 import { Note } from '../prepare/ui';
 import { HashTag, IntegrityMark, KindTag } from '../products/ProductBits';
+import { openEchogram } from '../../../state/echogram';
+import { opensAsEchogram, opensAsResults } from '../echogram/openers';
+import { openResults } from '../results/ResultsPanel';
 
 /** "1 m 05 s", from two ISO times (the second may be now). */
 export function elapsed(from: string, to?: string): string {
@@ -295,6 +300,32 @@ function OutputRow({ product: p }: { product: ProductInfo }) {
         {p.sizeBytes ? formatBytes(p.sizeBytes) : ''}
       </Typography>
       <Box className="out-actions" sx={{ display: 'flex', opacity: 0.55, transition: 'opacity .12s' }}>
+        {opensAsEchogram(p.kind, p.name) && (
+          <Tooltip title="Open as echogram">
+            <IconButton
+              size="small"
+              onClick={() => {
+                void openEchogram(p.uri);
+                openPanel('echogram');
+              }}
+            >
+              <WavesOutlined sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+        )}
+        {opensAsResults(p.kind, p.name) && (
+          <Tooltip title="Open results">
+            <IconButton
+              size="small"
+              onClick={() => {
+                openResults(p.uri);
+                openPanel('results');
+              }}
+            >
+              <TableChartOutlined sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+        )}
         <Tooltip title="Inspect (Metadata)">
           <IconButton
             size="small"

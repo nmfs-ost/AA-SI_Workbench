@@ -14,6 +14,9 @@ export type DerivedKind =
   | 'raw'
   | 'table'
   | 'region'
+  | 'line'
+  | 'calibration'
+  | 'tiles'
   | 'image'
   | 'text'
   | 'object';
@@ -27,6 +30,8 @@ export interface DerivedEntry {
   isDir: boolean;
   kind: DerivedKind;
   sizeBytes: number;
+  /** GCS storage class (STANDARD, NEARLINE, ...); '' for folders and stores. */
+  storageClass: string;
   updatedAt: string;
   contentType: string;
   /** What the console tools recorded when they published it (see products.py). */

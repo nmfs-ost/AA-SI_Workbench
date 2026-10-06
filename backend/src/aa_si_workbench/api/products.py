@@ -49,6 +49,9 @@ META_BASE = "aa-base"
 META_TOOL = "aa-tool"
 META_MD5 = "aa-content-md5"
 META_RECIPE = "aa-recipe"
+#: What the tool says the object is (newer aalibrary): a mask written beside a
+#: seafloor line is a mask, whichever tool wrote it.
+META_KIND = "aa-kind"
 
 
 class Step(BaseModel):
@@ -136,14 +139,14 @@ def first_line(exc: BaseException) -> str:
     return (text.splitlines()[0] if text else type(exc).__name__)[:200]
 
 
-def _read_small(bucket: str, key: str) -> bytes | None:
+def _read_small(bucket: str, key: str, limit: int = SMALL) -> bytes | None:
     """The bytes of a small object, or None (missing, too big, unreadable)."""
     uris = _uris()
     try:
         info = uris.backend().stat(bucket, key)
     except Exception:  # noqa: BLE001 - unreadable is "not there" here
         return None
-    if info is None or info.size > SMALL:
+    if info is None or info.size > limit:
         return None
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "object"
@@ -173,18 +176,41 @@ def _store_attributes(bucket: str, key: str) -> dict:
     return dict(_read_json(bucket, f"{key}/.zattrs") or {})
 
 
+#: What a file is from its extension alone, for files the tools did not
+#: publish (an Echoview line or region file copied into the bucket).
+EXTENSION_KIND = {
+    ".raw": "raw",
+    ".png": "echogram",
+    ".html": "html",
+    ".evl": "lines",
+    ".evr": "regions",
+    ".ecs": "calibration",
+    ".tiles": "tiles",
+}
+
+
+#: File formats that say what they are, whichever tool wrote them (aa-annotate
+#: writes both line and region files).
+FORMAT_KIND = {
+    ".evl": "lines",
+    ".evr": "regions",
+    ".ecs": "calibration",
+    ".tiles": "tiles",
+}
+
+
 def kind_of(tool: str, name: str, recorded: str = "") -> str:
     if recorded:
         return recorded
+    lowered = name.lower()
+    for suffix, kind in FORMAT_KIND.items():
+        if lowered.endswith(suffix):
+            return kind
     if tool in TOOL_KIND:
         return TOOL_KIND[tool]
-    lowered = name.lower()
-    if lowered.endswith(".raw"):
-        return "raw"
-    if lowered.endswith(".png"):
-        return "echogram"
-    if lowered.endswith(".html"):
-        return "html"
+    for suffix, kind in EXTENSION_KIND.items():
+        if lowered.endswith(suffix):
+            return kind
     return ""
 
 
@@ -237,6 +263,7 @@ def info(uri: str, *, history: bool = True) -> ProductInfo:
     out.recipe = str(metadata.get(META_RECIPE, "") or "")
     out.tool = str(metadata.get(META_TOOL, "") or "")
     out.base = str(metadata.get(META_BASE, "") or "")
+    out.kind = out.kind or str(metadata.get(META_KIND, "") or "")
 
     if history:
         doc = _read_json(bucket, key + SIDECAR)
@@ -319,6 +346,179 @@ def find_echodata(start: ProductInfo) -> str:
     return ""
 
 
+def folder_of(uri: str) -> str:
+    """gs://bucket/a/b/x.nc -> gs://bucket/a/b/"""
+    bucket, key = parse(uri)
+    folder = key.rsplit("/", 1)[0] + "/" if "/" in key else ""
+    return f"gs://{bucket}/{folder}"
+
+
+def folder_entries(folder_uri: str, limit: int = 1000) -> list:
+    """The objects in one folder of the chosen bucket, one level, as the
+    Products panel lists them (with each object's hash, tool and kind); []
+    for a folder in another bucket or one that cannot be listed."""
+    from . import derived
+
+    if not folder_uri.startswith("gs://"):
+        return []
+    bucket, _, key = folder_uri[len("gs://") :].partition("/")
+    if bucket != derived.bucket_name():
+        return []
+    root = derived.root_prefix()
+    if root and not key.startswith(root):
+        return []
+    relative = key[len(root) :] if root else key
+    try:
+        listing = derived.get_provider().list(relative, limit)
+    except Exception:  # noqa: BLE001 - nothing listed is an answer here
+        return []
+    return [entry for entry in listing.entries if not entry.isDir]
+
+
+def read_record(uri: str) -> dict | None:
+    """A product's provenance record (its <product>.aa.json), or None."""
+    bucket, key = parse(uri)
+    return _read_json(bucket, key + SIDECAR)
+
+
+class Table(BaseModel):
+    uri: str
+    columns: list[str] = Field(default_factory=list)
+    #: The rows (of the chosen frequency, when the table has a Frequency column).
+    rows: list[list[str]] = Field(default_factory=list)
+    #: Rows of that frequency in the file (rows holds the first `limit`).
+    total: int = 0
+    truncated: bool = False
+    #: Every frequency in the file, as written (kHz).
+    frequencies: list[str] = Field(default_factory=list)
+    frequency: str = ""
+    #: NASC summed over the layers of each interval, over every row of that
+    #: frequency: [interval, NASC]. Region-cell exports are summed by PRC_NASC
+    #: (the region's share of the cell), so a region in one ping of a cell
+    #: counts as that ping, as Echoview's PRC_ values do.
+    perInterval: list[tuple[int, float]] = Field(default_factory=list)
+    nascColumn: str = ""
+    detail: str = ""
+
+
+#: Integration exports are read whole (the panel summarises every row).
+TABLE_BYTES = 64 * 1024 * 1024
+
+
+def table(uri: str, limit: int = 2000, frequency: str = "") -> Table:
+    """An integration export (CSV) for the Results panel: the rows of one
+    frequency, and NASC per interval over all of them."""
+    import csv
+    import io
+
+    bucket, key = parse(uri)
+    out = Table(uri=f"gs://{bucket}/{key}")
+    if not key.lower().endswith(".csv"):
+        out.detail = "Not a CSV product."
+        return out
+    data = _read_small(bucket, key, TABLE_BYTES)
+    if data is None:
+        out.detail = "Not in the bucket, unreadable, or larger than 64 MB."
+        return out
+    reader = csv.reader(io.StringIO(data.decode("utf-8", "replace")))
+    header = next(reader, None)
+    if not header:
+        return out
+    out.columns = header
+    col = {name: i for i, name in enumerate(header)}
+    fi = col.get("Frequency")
+    body = list(reader)
+    if fi is not None:
+        out.frequencies = list(dict.fromkeys(r[fi] for r in body if len(r) > fi))
+        out.frequency = (
+            frequency
+            if frequency in out.frequencies
+            else (out.frequencies[0] if out.frequencies else "")
+        )
+        body = [r for r in body if len(r) > fi and r[fi] == out.frequency]
+    out.total = len(body)
+    out.rows = body[:limit]
+    out.truncated = len(body) > limit
+    nasc = col.get("PRC_NASC", col.get("NASC"))
+    ii = col.get("Interval")
+    if nasc is not None and ii is not None:
+        out.nascColumn = header[nasc]
+        sums: dict[int, float] = {}
+        for r in body:
+            try:
+                k = int(float(r[ii]))
+                v = float(r[nasc])
+            except (ValueError, IndexError):
+                continue
+            if v == v:  # NaN is no data, not zero
+                sums[k] = sums.get(k, 0.0) + v
+        out.perInterval = sorted(sums.items())
+    return out
+
+
+class Nearby(BaseModel):
+    uri: str
+    name: str
+    kind: str = ""
+    productHash: str = ""
+    tool: str = ""
+    updatedAt: str = ""
+
+
+def nearby(uri: str, kinds: list[str], limit: int = 200) -> list[Nearby]:
+    """Products of these kinds beside a product (its folder, and the folder its
+    products go to): the choices for an option that takes a product, an ECS
+    for aa-sv or a line file for aa-integrate, say. Newest first."""
+    from .echogram import _destination
+
+    wanted = {k for k in kinds if k}
+    folders = [folder_of(uri)]
+    try:
+        dest = _destination(uri)
+    except Exception:  # noqa: BLE001 - no bucket chosen: its own folder only
+        dest = ""
+    if dest and dest not in folders:
+        folders.append(dest)
+    out: list[Nearby] = []
+    seen: set[str] = set()
+    for folder in folders:
+        for entry in folder_entries(folder):
+            kind = entry.productKind or kind_of("", entry.name)
+            if entry.uri in seen or (wanted and kind not in wanted):
+                continue
+            seen.add(entry.uri)
+            out.append(
+                Nearby(
+                    uri=entry.uri,
+                    name=entry.name,
+                    kind=kind,
+                    productHash=entry.productHash,
+                    tool=entry.tool,
+                    updatedAt=entry.updatedAt,
+                )
+            )
+    out.sort(key=lambda n: n.updatedAt, reverse=True)
+    return out[:limit]
+
+
+@router.get("/nearby", response_model=list[Nearby])
+def get_nearby(
+    uri: str = Query(..., min_length=6), kinds: str = Query("", max_length=200)
+) -> list[Nearby]:
+    if not uri.startswith("gs://"):
+        raise HTTPException(status_code=400, detail="A gs:// URI.")
+    return nearby(uri, [k.strip() for k in kinds.split(",")])
+
+
 @router.get("/info", response_model=ProductInfo)
 def get_info(uri: str = Query(..., min_length=6)) -> ProductInfo:
     return info(uri)
+
+
+@router.get("/table", response_model=Table)
+def get_table(
+    uri: str = Query(..., min_length=6),
+    limit: int = Query(2000, ge=1, le=20000),
+    frequency: str = Query("", max_length=20),
+) -> Table:
+    return table(uri, limit, frequency)

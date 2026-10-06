@@ -17,6 +17,10 @@ export type PanelRegion = 'left' | 'right' | 'bottom' | 'center';
 export type BuiltinPanelId =
   | 'pipelines'
   | 'recipes'
+  | 'echogram'
+  | 'costs'
+  | 'results'
+  | 'dataflow'
   | 'editor'
   | 'metadata'
   | 'configuration'
