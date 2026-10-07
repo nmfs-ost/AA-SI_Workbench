@@ -338,7 +338,8 @@ export const ProcessingQueuePanel: FunctionComponent<IDockviewPanelProps> = () =
     return (
       <PanelPlaceholder
         icon={PlaylistPlayOutlined}
-        title="Processing Queue"
+        panelTitle="Processing queue"
+        title="Nothing queued"
         description={
           state.loading
             ? 'Looking for running jobs…'

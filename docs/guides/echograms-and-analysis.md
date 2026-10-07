@@ -23,13 +23,56 @@ hour of data; after that it opens at once, for anyone.
 - **Moving around.** Wheel to zoom (Shift: time only, Alt: depth only), drag
   to pan, **Z** for a zoom box, **F** for everything. The channels are drawn
   one above the other; the chips in the toolbar hide or show each.
-- **Colours.** EK500 (Echoview's default) or a continuous scheme, a minimum and
-  maximum in dB (arrow keys nudge them), and below the minimum either the
-  background or the weakest colour. *Auto* uses the data's 2nd and 98th
-  percentiles. Sv starts at Echoview's familiar −70 to −34 dB.
+- **Colours.** The choices:
+  - *The theme's* colormap. This is the default. It is EK500 except under a
+    colormap theme (see below).
+  - EK500, Echoview's default.
+  - One of Matplotlib's colormaps: viridis, plasma, inferno, magma, cividis,
+    turbo, jet, ocean, cubehelix or gray. These are Matplotlib's own tables,
+    so the viewer draws an Sv in exactly the colours `aa-graph --cmap` draws it
+    in.
+
+  Then a minimum and maximum in dB (arrow keys nudge them), and below the
+  minimum either the background or the weakest colour. *Auto* uses the data's
+  2nd and 98th percentiles. Sv starts at Echoview's familiar −70 to −34 dB.
 - **Readout.** The bar at the bottom gives the time, ping, depth, value,
-  position and any lines or regions under the cursor. The track map on the
-  right shows where the ship was; click it to go there.
+  position and any lines or regions under the cursor.
+- **Track.** The side panel maps where the data were collected:
+  - The coastline (Natural Earth, served by the Workbench itself) and a
+    latitude/longitude grid.
+  - The whole track, with the stretch on screen marked. The ship's heading is
+    shown at the end, and the ping under the cursor as a ring.
+  - Below the map: the ship and survey (from where the product sits in the
+    bucket), when, how far and how fast.
+
+  Click the track to go to that ping. The ⤢ button opens a larger map:
+  - Zoom from the whole world down to the ship's wake, and drag to pan.
+  - Colour the track by time, in the theme's colormap.
+  - A world inset shows where the map is.
+  - Beside the map: start and end times and positions (degrees and decimal
+    minutes), duration, distance sailed, mean speed, the extent, the stretch
+    on screen, and the ping under the pointer.
+
+  Jumps faster than 40 knots (GPS glitches) are not counted in the distance.
+
+### Colormap themes
+
+**View ▸ Viridis / Plasma / Inferno / Magma / Cividis / Turbo / Jet Theme
+(Matplotlib)** makes one colormap the scheme for the whole Workbench. Each
+theme:
+
+- Draws the interface from that colormap: the dark end tints the chrome, the
+  accent and the editor's colours come from the colormap, and a band of it
+  runs under the menu bar.
+- Draws echograms in that colormap by default (*The theme's* above).
+- Makes *The theme's* the colormap for the echogram Prepare EchoData draws
+  (`aa-graph --cmap`).
+- Offers that colormap first for a pipeline's `aa-graph` (**Configuration ▸
+  Colormap**, which shows each colormap as a swatch).
+
+The themes are generated from Matplotlib by `scripts/build_colormap_themes.py`
+and checked for contrast like the other themes. Run the script again when
+Matplotlib's tables change; a backend test fails until you do.
 
 ### Lines
 

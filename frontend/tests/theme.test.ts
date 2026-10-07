@@ -121,8 +121,17 @@ describe('the decoration band', () => {
      change how an existing theme looks. Both facts are pinned here. */
 
   it('is invisible in every palette that shipped before it', () => {
-    for (const palette of ALL.filter((p) => p.id !== 'pride')) {
+    for (const palette of ALL.filter((p) => p.id !== 'pride' && !p.colormap)) {
       expect(tokensFor(palette.id).color.decoration.band).toBe('transparent');
+    }
+  });
+
+  it('is the colormap itself in a colormap theme', () => {
+    const viridis = tokensFor('viridis').color.decoration.band;
+    // Matplotlib's viridis runs #440154 → #fde725.
+    expect(viridis).toMatch(/^linear-gradient\(90deg, #440154 0%, .* #fde725 100%\)$/);
+    for (const palette of ALL.filter((p) => p.colormap)) {
+      expect(tokensFor(palette.id).color.decoration.band).toContain('linear-gradient');
     }
   });
 

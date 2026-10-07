@@ -14,8 +14,9 @@ import { compactFieldSx, compactPopupSx } from '../panelStyles';
 import type { PrepareState } from '../../../state/prepare';
 import { resetOptions, update } from '../../../state/prepare';
 import { Caption } from './ui';
-
-const COLORMAPS = ['viridis', 'magma', 'inferno', 'plasma', 'cividis', 'jet'];
+import { MATPLOTLIB_COLORMAPS } from '../../../theme/colormaps.generated';
+import { themeCmap } from '../../../state/prepare';
+import { useThemeMode } from '../../../state/theme';
 
 /**
  * The settings most runs never touch, each named for what it does rather than
@@ -25,6 +26,7 @@ const COLORMAPS = ['viridis', 'magma', 'inferno', 'plasma', 'cividis', 'jet'];
 export function AdvancedSection({ s, bucketDefault }: { s: PrepareState; bucketDefault: string }) {
   const theme = useTheme();
   const c = theme.aa.color;
+  const mode = useThemeMode();
 
   const num = (
     label: string,
@@ -132,7 +134,10 @@ export function AdvancedSection({ s, bucketDefault }: { s: PrepareState; bucketD
             SelectProps={{ MenuProps: { PaperProps: { sx: compactPopupSx } } }}
             sx={{ ...compactFieldSx, flex: 1, minWidth: 0 }}
           >
-            {COLORMAPS.map((m) => (
+            <MenuItem value="theme" sx={{ fontSize: 12, minHeight: 28 }}>
+              The theme’s ({themeCmap(mode)})
+            </MenuItem>
+            {MATPLOTLIB_COLORMAPS.map(([m]) => (
               <MenuItem key={m} value={m} sx={{ fontSize: 12, minHeight: 28 }}>
                 {m}
               </MenuItem>

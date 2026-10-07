@@ -33,7 +33,7 @@ import {
   simplify,
   nextRegionId,
 } from '../src/components/panels/echogram/shapes';
-import { project, scaleBar } from '../src/components/panels/echogram/TrackMap';
+import { project, scaleBar } from '../src/components/panels/echogram/geo';
 import { layers, place } from '../src/components/panels/dataflow/layout';
 import { isAnnotation, opensAsEchogram, opensAsResults } from '../src/components/panels/echogram/openers';
 

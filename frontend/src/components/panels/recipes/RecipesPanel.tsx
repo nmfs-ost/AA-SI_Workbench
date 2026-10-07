@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { FunctionComponent } from 'react';
 import type { IDockviewPanelProps } from 'dockview';
-import { Box, CircularProgress, Tooltip, Typography, useTheme } from '@mui/material';
+import { Box, CircularProgress, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import RefreshOutlined from '@mui/icons-material/RefreshOutlined';
 
@@ -12,6 +12,7 @@ import {
   useRecipes,
 } from '../../../state/recipes';
 import { RecipeCard } from './RecipeCard';
+import { PanelBar, PanelHeader } from '../PanelHeader';
 
 /**
  * Recipes panel — aa-recipe-manager's YAML recipes, as cards.
@@ -53,69 +54,38 @@ export const RecipesPanel: FunctionComponent<IDockviewPanelProps> = () => {
         backgroundColor: theme.aa.color.bg.editor,
       }}
     >
-      {/* Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.25,
-          height: theme.aa.size.row,
-          boxSizing: 'border-box',
-          flexShrink: 0,
-          borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-          color: theme.aa.color.text.secondary,
-        }}
-      >
-        <MenuBookOutlined sx={{ fontSize: 16 }} />
-        <Typography sx={{ fontSize: 12, fontWeight: 600, flex: 1 }}>Recipes</Typography>
-        <Typography sx={{ fontSize: 11, color: theme.aa.color.text.muted }}>
-          {state.status === 'ready' ? `${state.recipes.length} found` : ''}
-        </Typography>
-        <Tooltip title="Re-scan the recipes folder">
-          <Box
-            component="button"
-            onClick={() => void loadRecipes()}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'none',
-              border: `1px solid ${theme.aa.color.border.subtle}`,
-              borderRadius: `${theme.aa.radius.sm}px`,
-              color: theme.aa.color.text.secondary,
-              cursor: 'pointer',
-              px: 0.5,
-              py: 0.2,
-              '&:hover': {
-                borderColor: theme.aa.color.accent.main,
-                color: theme.aa.color.accent.main,
-              },
-            }}
-          >
-            <RefreshOutlined sx={{ fontSize: 14 }} />
-          </Box>
-        </Tooltip>
-      </Box>
+      <PanelHeader
+        icon={<MenuBookOutlined className="panel-header-icon" />}
+        title="Recipes"
+        subtitle={state.status === 'ready' ? `${state.recipes.length} found` : ''}
+        actions={
+          <Tooltip title="Re-scan the recipes folder">
+            <IconButton size="small" onClick={() => void loadRecipes()} aria-label="Re-scan the recipes folder">
+              <RefreshOutlined sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+        }
+      />
 
       {/* Where these came from */}
       {state.root && (
-        <Typography
-          sx={{
-            px: 1.25,
-            py: 0.5,
-            fontSize: 10.5,
-            fontFamily: theme.aa.font.mono,
-            color: theme.aa.color.text.muted,
-            borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {state.root}
-          {state.builtin && ' · bundled examples (aa-recipe-manager)'}
-          {!state.filesOnDisk && ' · mock data'}
-        </Typography>
+        <PanelBar>
+          <Typography
+            sx={{
+              fontSize: 10.5,
+              fontFamily: theme.aa.font.mono,
+              color: theme.aa.color.text.muted,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+            }}
+          >
+            {state.root}
+            {state.builtin && ' · bundled examples (aa-recipe-manager)'}
+            {!state.filesOnDisk && ' · mock data'}
+          </Typography>
+        </PanelBar>
       )}
 
       {/* Cards */}

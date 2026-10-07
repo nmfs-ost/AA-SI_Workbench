@@ -104,6 +104,8 @@ export interface ProductInfo {
   md5: string;
   crc32c: string;
   generation: string;
+  /** GCS storage class ('' for a store, or when not reported). */
+  storageClass?: string;
   /** SHA-256 of what was computed: the science. */
   productHash: string;
   /** The processing without the data: the <hash8> in the file's name. */
@@ -160,9 +162,20 @@ export function refFromInfo(info: ProductInfo): ProductRef {
 /* ------------------------------------------------------------------ */
 
 export interface StageSpec {
+  /** An aa-* console tool, or 'bash' / 'python' for a step of your own. */
   tool: string;
   /** Only the settings that differ from the tool's defaults. */
   params: Record<string, ParamValue>;
+  /**
+   * A step of your own: the Bash command or Python code it runs. It gets the
+   * product on stdin and as $IN (and $DEST, where products go); the last line
+   * it prints names its product, or the input passes on unchanged.
+   */
+  command?: string;
+  /** Its name on the card. */
+  label?: string;
+  /** The kind of product it prints ('' : the kind it was given). */
+  produces?: string;
 }
 
 export interface PipelineSpec {
@@ -185,6 +198,8 @@ export interface PlannedStage {
   index: number;
   tool: string;
   label: string;
+  /** A step of your own: what it runs. */
+  code?: string;
   group: string;
   consumes: string[];
   produces: string;

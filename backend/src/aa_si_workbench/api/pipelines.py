@@ -40,7 +40,14 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from . import catalogue, jobs, products
-from .catalogue import FEATURE_LABELS, FEATURE_TOOL, KIND_LABELS, Catalogue, ToolDef
+from .catalogue import (
+    FEATURE_LABELS,
+    FEATURE_TOOL,
+    KIND_LABELS,
+    LEVELS,
+    Catalogue,
+    ToolDef,
+)
 from .gcp import GcpContext, config_dir, tool_env
 from .gcp import current as gcp_current
 
@@ -56,9 +63,27 @@ ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 # Pipelines: built in, and saved
 # --------------------------------------------------------------------------- #
 class StageSpec(BaseModel):
+    #: An aa-* console tool, or "bash" / "python" for a step of your own.
     tool: str
     #: Only the settings that differ from the tool's defaults.
     params: dict[str, Any] = Field(default_factory=dict)
+    #: A step of your own: the Bash command (tee, grep, a script of yours ...)
+    #: or the Python code it runs. It gets the input product on stdin and as
+    #: $IN; the last line it prints names its product, or (nothing printed, or
+    #: not a product) the input passes on unchanged.
+    command: str = ""
+    #: Its name on the card ("Log the Sv", "Copy to the share").
+    label: str = ""
+    #: The kind of product it prints ('' : the kind it was given).
+    produces: str = ""
+
+
+#: Stages that are not console tools: run as Bash or Python.
+OWN_STEPS = {"bash": "Shell command", "python": "Python"}
+
+
+def is_own(stage: StageSpec) -> bool:
+    return stage.tool in OWN_STEPS
 
 
 class PipelineSpec(BaseModel):
@@ -217,6 +242,55 @@ def _slug(name: str) -> str:
     return slug
 
 
+def own_argv(tool: str, code: str) -> list[str]:
+    """How a step of one's own runs (as shown, and in the script)."""
+    if tool == "bash":
+        return ["bash", "-eo", "pipefail", "-c", code]
+    return ["python3", "-c", code]
+
+
+def own_output(stdout: list[str], given: str, cwd: Path | None = None) -> str:
+    """What a step of one's own passes on: the last line it printed when that
+    names a product (gs://, or a file or folder that exists, a relative one
+    read from the folder the step ran in, *cwd*, the home folder), else what
+    it was given (a step that only logs, copies or checks). The plan's script
+    does the same (its own-step lines)."""
+    last = next((line.strip() for line in reversed(stdout) if line.strip()), "")
+    if last.startswith("gs://") and len(last) > len("gs://"):
+        return last
+    if last and not last.startswith("-") and "\x00" not in last:
+        try:
+            path = Path(last).expanduser()
+            if not path.is_absolute():
+                path = (cwd or Path.home()) / path
+            if path.exists():
+                return str(path)
+        except OSError:
+            pass
+    return given
+
+
+def _checked_own(stage: StageSpec) -> StageSpec:
+    """A step of one's own, as it may be stored and run."""
+    code = stage.command.replace("\r\n", "\n")
+    if not code.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=f"A {OWN_STEPS[stage.tool]} step needs its command.",
+        )
+    if len(code) > 20_000 or "\x00" in code:
+        raise HTTPException(
+            status_code=400, detail="A step's command: up to 20,000 characters."
+        )
+    label = " ".join(stage.label.split())[:60]
+    produces = stage.produces.strip()
+    if produces and produces not in KIND_LABELS:
+        raise HTTPException(
+            status_code=400, detail=f"Not a kind of product: {produces!r}"
+        )
+    return StageSpec(tool=stage.tool, command=code, label=label, produces=produces)
+
+
 def validate_spec(spec: PipelineSpec, cat: Catalogue | None = None) -> PipelineSpec:
     """A pipeline as it may be stored: known tools, settings of the right type."""
     name = spec.name.strip()
@@ -231,6 +305,9 @@ def validate_spec(spec: PipelineSpec, cat: Catalogue | None = None) -> PipelineS
     cat = cat or catalogue.get()
     stages: list[StageSpec] = []
     for stage in spec.stages:
+        if is_own(stage):
+            stages.append(_checked_own(stage))
+            continue
         if not TOOL_RE.fullmatch(stage.tool):
             raise HTTPException(
                 status_code=400, detail=f"Not a console tool: {stage.tool!r}"
@@ -311,6 +388,8 @@ class PlannedStage(BaseModel):
     index: int
     tool: str
     label: str
+    #: A step of one's own (bash, python): what it runs.
+    code: str = ""
     group: str = ""
     consumes: list[str] = Field(default_factory=list)
     produces: str = ""
@@ -457,23 +536,47 @@ def _product_values(tool_def: ToolDef, values: dict[str, Any]) -> list[tuple[str
     return out
 
 
-def _chain_holds(tools: list[ToolDef | None], kind: str) -> bool:
+class OwnStep:
+    """A step of one's own in a chain: reads anything, passes on what it is
+    given unless it says what it makes."""
+
+    def __init__(self, produces: str = ""):
+        self.produces = produces
+
+
+Link = ToolDef | OwnStep | None
+
+
+def _chain_holds(tools: list[Link], kind: str) -> bool:
     """Every stage reads what the one before it writes, from *kind* on."""
     for tool_def in tools:
+        if isinstance(tool_def, OwnStep):
+            kind = tool_def.produces or kind
+            continue
         if tool_def is None or kind not in tool_def.consumes:
             return False
         kind = kind if tool_def.passthrough else tool_def.produces
     return True
 
 
-def start_index(tools: list[ToolDef | None], kind: str) -> int:
+def start_index(tools: list[Link], kind: str) -> int:
     """Where a pipeline picks up a product of *kind*: the first stage that
     reads it and from which the rest of the chain holds (else the first that
-    reads it, so the plan can say what breaks). -1: no stage reads it."""
-    readers = [i for i, t in enumerate(tools) if t is not None and kind in t.consumes]
+    reads it, so the plan can say what breaks). -1: no stage reads it.
+
+    A step of one's own reads anything: the chain may start at one (a `tee`
+    between a stage the input is past and the next one runs on the input)."""
+    readers = [
+        i
+        for i, t in enumerate(tools)
+        if isinstance(t, OwnStep) or (t is not None and kind in t.consumes)
+    ]
     for i in readers:
         if _chain_holds(tools[i:], kind):
             return i
+    first_tool = next((i for i in readers if not isinstance(tools[i], OwnStep)), None)
+    if first_tool is not None:
+        return first_tool
     return readers[0] if readers else -1
 
 
@@ -507,13 +610,16 @@ def plan(req: PlanRequest, *, input_info: products.ProductInfo | None = None) ->
                 "Choose a GCP project and bucket first: products are written to it."
             )
 
-    tools = [catalogue.tool(cat, stage.tool) for stage in req.pipeline.stages]
+    tools: list[Link] = [
+        OwnStep(stage.produces) if is_own(stage) else catalogue.tool(cat, stage.tool)
+        for stage in req.pipeline.stages
+    ]
     kind = info.kind
     start = 0
     if kind:
         start = start_index(tools, kind)
         if start < 0:
-            first = next((t for t in tools if t is not None), None)
+            first = next((t for t in tools if isinstance(t, ToolDef)), None)
             wanted = ", ".join(_label_of(k) for k in (first.consumes if first else []))
             out.problems.append(
                 f"No stage of this pipeline reads {_label_of(kind)}: it starts from "
@@ -538,6 +644,56 @@ def plan(req: PlanRequest, *, input_info: products.ProductInfo | None = None) ->
     ):
         planned = PlannedStage(index=index, tool=stage.tool, label=stage.tool)
         out.stages.append(planned)
+        if isinstance(tool_def, OwnStep):
+            planned.label = stage.label or OWN_STEPS[stage.tool]
+            planned.group = "Your own"
+            planned.code = stage.command
+            if index < start:
+                planned.action = "skip"
+                planned.reason = (
+                    f"Not needed: the input is already {_label_of(kind)}, past the "
+                    "stages before this one."
+                )
+                continue
+            refused = jobs.own_code_refused()
+            if refused:
+                planned.problems.append(refused)
+            if not stage.command.strip():
+                planned.problems.append(f"{planned.label}: write its command first.")
+            elif len(stage.command) > 20_000 or "\x00" in stage.command:
+                planned.problems.append(f"{planned.label}: up to 20,000 characters.")
+            produced = stage.produces or kind
+            planned.produces = produced
+            planned.level = LEVELS.get(produced, "")
+            planned.reads = reads
+            planned.command = own_argv(stage.tool, stage.command)
+            var = f"OUT{index + 1}"
+            runner = " ".join(shlex.quote(a) for a in planned.command)
+            script_lines.append(f"# {_comment(planned.label)} (your own step)")
+            # As the Workbench runs it: from the home folder, the input on
+            # stdin and as $IN; the last line it prints that is not blank.
+            script_lines.append(
+                f"{var}=$(cd ~ && printf '%s\\n' \"${previous_var}\" | "
+                f'IN="${previous_var}" DEST="$DEST" {runner} '
+                "| awk 'NF {last = $0} END {print last}')"
+            )
+            # That line names a product (gs://, or a file: a relative one is in
+            # the home folder), or the input passes on.
+            script_lines.append(
+                f'case "${var}" in gs://?*) ;; "") {var}="${previous_var}" ;; '
+                f'*) {var}="${{{var}/#\\~/$HOME}}"; [[ "${var}" = /* ]] || '
+                f'{var}="$HOME/${var}"; '
+                f'[[ -e "${var}" ]] || {var}="${previous_var}" ;; esac'
+            )
+            script_lines.append(
+                f'echo {shlex.quote(_comment(planned.label) + ": ")}"${var}"'
+            )
+            previous_var = var
+            reads = f"<the {planned.label} output>"
+            if produced != kind:
+                known, unknown = set(), True
+            kind = produced
+            continue
         if tool_def is None:
             planned.problems.append(
                 f"{stage.tool} is not a tool the Workbench can chain, or it is not "
@@ -666,6 +822,8 @@ def _script(input_uri: str, out: Plan, lines: list[str]) -> str:
     for name, value in tool_env(gcp_current()).items():
         head.append(f"export {name}={shlex.quote(value)}")
     head.append(f"IN={shlex.quote(input_uri)}")
+    if any("(your own step)" in line for line in lines):
+        head.append(f"DEST={shlex.quote(out.destination)}")
     return "\n".join([*head, *lines]) + "\n"
 
 
@@ -877,6 +1035,11 @@ def _execute_stages(run: _Run) -> None:
             return
         if planned.action == "skip":
             continue
+        if planned.tool in OWN_STEPS:
+            current = _run_own(run, planned, stage, current, env, gcp_env)
+            if not current:
+                return
+            continue
         tool_def = catalogue.tool(cat, planned.tool)
         if tool_def is None:
             with _lock:
@@ -987,6 +1150,93 @@ def _execute_stages(run: _Run) -> None:
                 run.status.outputs.insert(0, product)
         current = output
     _finish(run, "succeeded")
+
+
+def _wait(run: _Run, stage: StageRun, job: jobs._Job) -> tuple[Any, list[str]]:
+    """Follow a stage's job to its end: (its status, its log)."""
+    with _lock:
+        stage.state = "running"
+        stage.jobId = job.id
+        stage.startedAt = _now()
+        run.job = job.id
+        cancel_now = run.cancel
+    if cancel_now:
+        try:
+            jobs.cancel(job.id)
+        except HTTPException:
+            pass
+    while True:
+        status = jobs.status_of_job(job)
+        if status.state in jobs.FINAL_STATES:
+            break
+        time.sleep(POLL_SECONDS)
+    log = jobs.tail_of_job(job, 200)
+    with _lock:
+        stage.finishedAt = _now()
+        stage.log = log[-12:]
+        run.job = ""
+    return status, log
+
+
+def _run_own(
+    run: _Run,
+    planned: PlannedStage,
+    stage: StageRun,
+    current: str,
+    env: dict[str, str],
+    gcp_env: dict[str, str],
+) -> str:
+    """Run a step of one's own (Bash or Python) on *current*. What it passes
+    on ('' : the run has ended)."""
+    try:
+        job = jobs.submit_step(
+            planned.tool,
+            planned.code,
+            stdin_text=current + "\n",
+            env={**env, "IN": current, "DEST": run.plan.destination},
+            # The home folder, as in the Terminal: a `tee log.txt` lands
+            # where the user expects to find it.
+            cwd="",
+            label=f"{run.status.pipelineName} · {planned.label}",
+            gcp_env=gcp_env,
+        )
+    except HTTPException as exc:
+        with _lock:
+            stage.state = "failed"
+            stage.detail = str(exc.detail)
+        _finish(run, "failed", f"{planned.label}: {exc.detail}")
+        return ""
+    with _lock:
+        stage.command = own_argv(planned.tool, planned.code)
+    status, log = _wait(run, stage, job)
+    if status.state != "succeeded":
+        reason = status.error or f"{status.state} (exit {status.exitCode})"
+        with _lock:
+            stage.state = "cancelled" if run.cancel else "failed"
+            stage.detail = reason
+        if run.cancel:
+            _finish(run, "cancelled")
+        else:
+            message = f"{planned.label} (your own step) stopped: {reason}"
+            if log:
+                message += "\n" + "\n".join(log[-6:])
+            _finish(run, "failed", message)
+        return ""
+    output = own_output(status.stdout, current, Path.home())
+    product = None
+    if output != current and output.startswith("gs://"):
+        try:
+            product = products.info(output)
+        except HTTPException:
+            product = None
+    with _lock:
+        stage.state = "succeeded"
+        stage.output = output
+        stage.product = product
+        stage.detail = "" if output != current else "Passed its input on."
+        if product is not None:
+            run.status.outputs.insert(0, product)
+    return output
 
 
 def get_run(run_id: str) -> _Run:

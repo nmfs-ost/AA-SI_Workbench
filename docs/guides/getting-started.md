@@ -126,9 +126,12 @@ Rebuild a production bundle at any time with `aa-workbench build`.
 
 ## On a Google Cloud Workstation
 
-Run `aa-workbench` on the workstation, then forward the port (default 8000) to
-your laptop — one port carries the whole app. Because the UI and API share an
-origin, nothing else needs configuring.
+Run `aa-workbench` on the workstation. It prints the address to open,
+`https://8000-<workstation>.<cluster>.cloudworkstations.dev/`, which stays the
+same every session on that workstation: bookmark it. One port carries the
+whole app, so nothing else needs configuring. For `http://localhost:8000` on
+your own computer (any workstation), see `aa-workbench url` and
+[stable-address.md](stable-address.md).
 
 ## Command summary
 
@@ -139,3 +142,4 @@ origin, nothing else needs configuring.
 | `aa-workbench dev` | Frontend + backend with hot reload (developers). |
 | `aa-workbench build` | Compile the frontend for production. |
 | `aa-workbench project` | List the GCP projects and buckets you can use; choose or forget one. |
+| `aa-workbench url` | The address to open and bookmark (the same every session on a workstation), and a tunnel command for your own computer. |

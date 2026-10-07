@@ -407,7 +407,9 @@ export const TerminalPanel: FunctionComponent<IDockviewPanelProps> = () => {
           alignItems: 'center',
           gap: 1,
           px: 1,
-          py: 0.5,
+          /* One row tall, border included, like every panel's first row. */
+          height: theme.aa.size.row,
+          boxSizing: 'border-box',
           flexShrink: 0,
           borderBottom: `1px solid ${theme.aa.color.border.subtle}`,
         }}

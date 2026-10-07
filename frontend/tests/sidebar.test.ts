@@ -17,7 +17,6 @@ const REGIONS: Record<string, PanelRegion> = {
   prepare: 'left',
   files: 'left',
   derived: 'left',
-  omao: 'left',
   pipelines: 'center',
   editor: 'center',
   terminal: 'bottom',
@@ -32,7 +31,7 @@ const regionOf = (id: string) =>
 
 describe('dockSideOfGroup', () => {
   it('names the sources dock', () => {
-    expect(dockSideOfGroup(group('prepare', 'files', 'derived', 'omao'), regionOf)).toBe(
+    expect(dockSideOfGroup(group('prepare', 'files', 'derived'), regionOf)).toBe(
       'left',
     );
     expect(dockSideOfGroup(group('files'), regionOf)).toBe('left');

@@ -19,12 +19,18 @@ import { paletteList } from '../../theme';
    Window menu is generated from the panel registry: a palette that exists but
    cannot be selected is invisible, and a menu entry naming a palette that was
    removed is a dead command. One list, no drift. */
-const themeItems: MenuItemDefinition[] = paletteList.map((palette) => ({
+const themeItem = (palette: (typeof paletteList)[number]): MenuItemDefinition => ({
   id: `view-theme-${palette.id}`,
-  label: palette.label,
+  label: palette.colormap ? `${palette.label} (Matplotlib)` : palette.label,
   action: 'set-theme',
   themeMode: palette.id,
-}));
+});
+/* The colormap themes after their own divider: they are one family. */
+const themeItems: MenuItemDefinition[] = [
+  ...paletteList.filter((palette) => !palette.colormap).map(themeItem),
+  { id: 'view-div-colormaps', divider: true },
+  ...paletteList.filter((palette) => palette.colormap).map(themeItem),
+];
 
 /* Dynamic panels (the file editor) are excluded: they're opened by opening a
    file, and a "Window ▸ Editor" item would open an empty one. */
@@ -159,6 +165,7 @@ export const menus: MenuDefinition[] = [
     label: 'Help',
     items: [
       { id: 'help-docs', label: 'Documentation', action: 'open-external', href: repo.docsUrl },
+      { id: 'help-address', label: 'Link to this Workbench…', action: 'open-dialog', dialogId: 'address' },
       { id: 'help-div-1', divider: true },
       {
         id: 'help-report-bug',

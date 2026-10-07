@@ -13,7 +13,9 @@ import {
   useEchogram,
   type Layer,
 } from '../../../state/echogram';
-import type { Paint } from './colormaps';
+import { resolveColormap, type Paint } from './colormaps';
+import { colormapOf } from '../../../theme/tokens';
+import { useThemeMode } from '../../../state/theme';
 import {
   drawOver,
   lineColor,
@@ -94,15 +96,17 @@ export function EchogramView({ onHover }: { onHover: (hover: Hover | null) => vo
   const cursor = useRef<{ px: number; py: number } | null>(null);
   const lastHover = useRef<Hover | null>(null);
 
+  const themeColormap = colormapOf(useThemeMode());
+  const colormap = resolveColormap(s.colormap, themeColormap);
   const paintSpec: Paint = useMemo(
     () => ({
-      colormap: s.colormap,
+      colormap,
       vmin: s.vmin,
       vmax: s.vmax,
       belowMin: s.belowMin,
       mask: s.manifest?.nature === 'mask' ? [242, 204, 96] : undefined,
     }),
-    [s.colormap, s.vmin, s.vmax, s.belowMin, s.manifest?.nature],
+    [colormap, s.vmin, s.vmax, s.belowMin, s.manifest?.nature],
   );
 
   /* ---------------------------------------------------------------- */

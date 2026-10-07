@@ -4,18 +4,37 @@
  * EK500 is the Simrad EK500 colour table, the scheme Echoview, pyEcholab and
  * a generation of acousticians read echograms in: thirteen discrete steps,
  * white (weakest) through greys, blues, greens, yellow, orange, pink, red to
- * browns (strongest). The others are continuous.
+ * browns (strongest). The rest are Matplotlib's own tables, generated from
+ * matplotlib (theme/colormaps.generated.ts), so the viewer draws an Sv in
+ * exactly the colours aa-graph --cmap draws it in.
+ *
+ * "theme" is the colormap of the colormap theme in force (View ▸ Viridis
+ * Theme …), and EK500 under the other themes.
  */
 
-export type ColormapId = 'ek500' | 'viridis' | 'inferno' | 'ocean' | 'grey';
+import { MATPLOTLIB_COLORMAPS, MATPLOTLIB_TABLES } from '../../../theme/colormaps.generated';
+
+/** 'theme', 'ek500', or a Matplotlib colormap name ('viridis' …). */
+export type ColormapId = string;
 
 export const COLORMAPS: { id: ColormapId; label: string }[] = [
   { id: 'ek500', label: 'EK500' },
-  { id: 'viridis', label: 'Viridis' },
-  { id: 'inferno', label: 'Inferno' },
-  { id: 'ocean', label: 'Ocean' },
-  { id: 'grey', label: 'Grey' },
+  ...MATPLOTLIB_COLORMAPS.map(([id, label]) => ({ id, label })),
 ];
+
+/** Names that earlier versions stored. */
+const ALIASES: Record<string, string> = { grey: 'gray' };
+
+/** A colormap the viewer can draw ('ek500' for anything unknown). */
+export function knownColormap(id: string): string {
+  const name = ALIASES[id] ?? id;
+  return name === 'ek500' || name in MATPLOTLIB_TABLES ? name : 'ek500';
+}
+
+/** What 'theme' means under a theme: its colormap, or EK500. */
+export function resolveColormap(id: ColormapId, themeColormap: string): string {
+  return id === 'theme' ? knownColormap(themeColormap || 'ek500') : knownColormap(id);
+}
 
 type RGB = [number, number, number];
 
@@ -35,56 +54,10 @@ const EK500: RGB[] = [
   [120, 60, 40],
 ];
 
-const VIRIDIS: RGB[] = [
-  [68, 1, 84],
-  [72, 40, 120],
-  [62, 74, 137],
-  [49, 104, 142],
-  [38, 130, 142],
-  [31, 158, 137],
-  [53, 183, 121],
-  [109, 205, 89],
-  [180, 222, 44],
-  [253, 231, 37],
-];
-
-const INFERNO: RGB[] = [
-  [0, 0, 4],
-  [31, 12, 72],
-  [85, 15, 109],
-  [136, 34, 106],
-  [186, 54, 85],
-  [227, 89, 51],
-  [249, 140, 10],
-  [249, 201, 50],
-  [252, 255, 164],
-];
-
-const OCEAN: RGB[] = [
-  [10, 20, 40],
-  [16, 52, 96],
-  [20, 96, 140],
-  [30, 150, 160],
-  [110, 200, 150],
-  [210, 230, 120],
-  [255, 220, 90],
-  [255, 150, 60],
-  [230, 70, 50],
-];
-
-const GREY: RGB[] = [
-  [20, 20, 20],
-  [245, 245, 245],
-];
-
-function continuous(stops: RGB[]): Uint8ClampedArray {
+function fromHex(packed: string): Uint8ClampedArray {
   const lut = new Uint8ClampedArray(256 * 4);
   for (let i = 0; i < 256; i++) {
-    const f = (i / 255) * (stops.length - 1);
-    const a = Math.floor(f);
-    const b = Math.min(stops.length - 1, a + 1);
-    const t = f - a;
-    for (let k = 0; k < 3; k++) lut[i * 4 + k] = stops[a][k] + (stops[b][k] - stops[a][k]) * t;
+    for (let k = 0; k < 3; k++) lut[i * 4 + k] = parseInt(packed.slice(i * 6 + k * 2, i * 6 + k * 2 + 2), 16);
     lut[i * 4 + 3] = 255;
   }
   return lut;
@@ -99,16 +72,15 @@ function discrete(stops: RGB[]): Uint8ClampedArray {
   return lut;
 }
 
-const cache = new Map<ColormapId, Uint8ClampedArray>();
+const cache = new Map<string, Uint8ClampedArray>();
 
+/** The table for a colormap ('theme' must be resolved first). */
 export function lut(id: ColormapId): Uint8ClampedArray {
-  let table = cache.get(id);
+  const name = knownColormap(id);
+  let table = cache.get(name);
   if (!table) {
-    table =
-      id === 'ek500'
-        ? discrete(EK500)
-        : continuous({ viridis: VIRIDIS, inferno: INFERNO, ocean: OCEAN, grey: GREY }[id]);
-    cache.set(id, table);
+    table = name === 'ek500' ? discrete(EK500) : fromHex(MATPLOTLIB_TABLES[name]);
+    cache.set(name, table);
   }
   return table;
 }
@@ -117,12 +89,13 @@ export function lut(id: ColormapId): Uint8ClampedArray {
 export function cssGradient(id: ColormapId, direction = 'to right'): string {
   const table = lut(id);
   const stops: string[] = [];
-  const n = id === 'ek500' ? EK500.length : 12;
+  const name = knownColormap(id);
+  const n = name === 'ek500' ? EK500.length : 16;
   for (let i = 0; i < n; i++) {
     const a = Math.round((i / n) * 255);
     const b = Math.round(((i + 1) / n) * 255) - 1;
     const color = (k: number) => `rgb(${table[k * 4]},${table[k * 4 + 1]},${table[k * 4 + 2]})`;
-    if (id === 'ek500') stops.push(`${color(a)} ${(i / n) * 100}%`, `${color(a)} ${((i + 1) / n) * 100}%`);
+    if (name === 'ek500') stops.push(`${color(a)} ${(i / n) * 100}%`, `${color(a)} ${((i + 1) / n) * 100}%`);
     else stops.push(`${color(Math.min(255, Math.max(0, b)))} ${((i + 0.5) / n) * 100}%`);
   }
   return `linear-gradient(${direction}, ${stops.join(', ')})`;

@@ -1,4 +1,5 @@
 import type { ThemeBase, ThemeMode } from '../types';
+import { COLORMAP_PALETTE_COLORS } from './colormapPalettes.generated';
 
 /**
  * Design tokens for AA-SI.
@@ -541,6 +542,28 @@ const pride: AaTokens = {
 };
 
 /**
+ * The colours of a colormap theme, as scripts/build_colormap_themes.py writes
+ * them: every colour slot, and the colormap itself as the band.
+ */
+export type ColormapPaletteColors = Omit<AaTokens['color'], 'decoration'> & { band: string };
+
+/**
+ * The Matplotlib colormap themes.
+ *
+ * Each is the dark palette's layering, lightness for lightness, tinted with
+ * the hue of the colormap's dark end; the accent and the editor's colours are
+ * the colormap's own, picked where they read; the colormap runs as a band
+ * under the menu bar; and echograms are drawn in it by default, in the viewer
+ * and in what aa-graph is asked to draw, so the interface and the data share
+ * one scheme. Generated, never tuned by hand (see the script), because the
+ * point is that they are the colormap.
+ */
+function colormapPalette(name: string): AaTokens {
+  const { band, ...color } = COLORMAP_PALETTE_COLORS[name];
+  return { color: { ...color, decoration: { band } }, font: dark.font, radius: dark.radius, size: dark.size };
+}
+
+/**
  * A palette and the facts about it that aren't colours.
  *
  * `base` is what MUI, `color-scheme` and Dockview are told (see `ThemeBase`).
@@ -554,7 +577,17 @@ export interface PaletteDefinition {
   label: string;
   base: ThemeBase;
   tokens: AaTokens;
+  /** A Matplotlib colormap theme: the colormap echograms are drawn in. */
+  colormap?: string;
 }
+
+const fromColormap = (id: ThemeMode, label: string): PaletteDefinition => ({
+  id,
+  label: `${label} Theme`,
+  base: 'dark',
+  tokens: colormapPalette(id),
+  colormap: id,
+});
 
 export const palettes: Record<ThemeMode, PaletteDefinition> = {
   dark: { id: 'dark', label: 'Dark Theme', base: 'dark', tokens: dark },
@@ -562,6 +595,13 @@ export const palettes: Record<ThemeMode, PaletteDefinition> = {
   noaa: { id: 'noaa', label: 'NOAA Theme', base: 'dark', tokens: noaa },
   spring: { id: 'spring', label: 'Spring Theme', base: 'light', tokens: spring },
   pride: { id: 'pride', label: 'Pride Theme', base: 'dark', tokens: pride },
+  viridis: fromColormap('viridis', 'Viridis'),
+  plasma: fromColormap('plasma', 'Plasma'),
+  inferno: fromColormap('inferno', 'Inferno'),
+  magma: fromColormap('magma', 'Magma'),
+  cividis: fromColormap('cividis', 'Cividis'),
+  turbo: fromColormap('turbo', 'Turbo'),
+  jet: fromColormap('jet', 'Jet'),
 };
 
 /** Menu order. Object key order is not a contract; this is. */
@@ -571,7 +611,19 @@ export const paletteList: readonly PaletteDefinition[] = [
   palettes.noaa,
   palettes.spring,
   palettes.pride,
+  palettes.viridis,
+  palettes.plasma,
+  palettes.inferno,
+  palettes.magma,
+  palettes.cividis,
+  palettes.turbo,
+  palettes.jet,
 ];
+
+/** The colormap echograms are drawn in under a theme ('' : the theme has none). */
+export function colormapOf(mode: ThemeMode): string {
+  return palettes[mode].colormap ?? '';
+}
 
 /** The tokens for a mode. */
 export function tokensFor(mode: ThemeMode): AaTokens {

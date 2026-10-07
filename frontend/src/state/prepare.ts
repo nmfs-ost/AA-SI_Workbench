@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 import type { RawFile, SonarModel, Survey, Vessel } from '../services/ncei/nceiTypes';
-import { nceiSource } from '../services/ncei/nceiService';
+import { catalogFor, sourcesApi } from '../services/sources/sourcesApi';
+import type { DataSource, SourceConfig } from '../services/sources/sourcesApi';
 import {
   extentOf,
   formatUtc,
@@ -13,6 +14,9 @@ import type { RangePlan } from '../components/panels/prepare/plan';
 import { BASELINE_SIMULATED, baselineApi } from '../services/baselineApi';
 import { setActiveArtifact } from './activeSubject';
 import { onGcpChange } from './gcp';
+import { getThemeMode } from './theme';
+import { colormapOf } from '../theme/tokens';
+import type { ThemeMode } from '../types';
 import type {
   BaselineConfig,
   BaselineRequest,
@@ -35,6 +39,10 @@ import type {
  */
 
 export interface PrepareState {
+  /** The data sources (NCEI, OMAO, …) and the one chosen. */
+  sources: DataSource[];
+  source: string;
+  sourcesError: string;
   vessels: Vessel[];
   surveys: Survey[];
   sonars: SonarModel[];
@@ -89,12 +97,16 @@ const DEFAULTS = {
   keepLocal: false,
   workRoot: '',
   freeAsYouGo: true,
-  echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'viridis' },
+  /* cmap 'theme': the colormap theme's, else aa-graph's own default. */
+  echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'theme' },
   waveformMode: 'CW' as const,
   encodeMode: 'complex' as const,
 };
 
 let state: PrepareState = {
+  sources: [],
+  source: 'ncei',
+  sourcesError: '',
   vessels: [],
   surveys: [],
   sonars: [],
@@ -137,6 +149,7 @@ function setLoading(key: keyof PrepareState['loading'], value: boolean): void {
 const STORAGE_KEY = 'aa-si.prepare';
 
 interface Saved {
+  source?: string;
   vessel?: string;
   survey?: string;
   sonar?: string;
@@ -161,6 +174,7 @@ let restoring: Saved | null = null;
 function save(): void {
   if (restoring) return; // don't overwrite what we are still restoring
   const saved: Saved = {
+    source: state.source,
     vessel: state.vessel?.id,
     survey: state.survey?.id,
     sonar: state.sonar?.id,
@@ -199,7 +213,100 @@ function load(): Saved | null {
 /* Catalogue                                                           */
 /* ------------------------------------------------------------------ */
 
-let token = { surveys: 0, sonars: 0, files: 0 };
+let token = { vessels: 0, surveys: 0, sonars: 0, files: 0 };
+
+/** The chosen source's drill-down. */
+function catalog() {
+  return catalogFor(state.source);
+}
+
+/** The sources as listed (for code outside React). */
+export function getPrepareSources(): DataSource[] {
+  return state.sources;
+}
+
+/** The chosen source, as listed (undefined until the list arrives). */
+export function currentSource(s: PrepareState): DataSource | undefined {
+  return s.sources.find((x) => x.id === s.source);
+}
+
+/** List the sources again (after one is added or connected). */
+export async function loadSources(): Promise<void> {
+  try {
+    const sources = await sourcesApi.list();
+    set({ sources, sourcesError: '' });
+  } catch (e) {
+    set({ sourcesError: (e as Error).message });
+  }
+}
+
+/** Take raw files from another source: its vessels, from the top. */
+export async function selectSource(id: string): Promise<void> {
+  if (id === state.source && state.vessels.length) return;
+  token.surveys += 1;
+  token.sonars += 1;
+  token.files += 1;
+  restoring = null;
+  set({
+    source: id,
+    vessels: [],
+    vessel: null,
+    survey: null,
+    sonar: null,
+    surveys: [],
+    sonars: [],
+    files: [],
+    catalogError: '',
+    start: '',
+    end: '',
+  });
+  await listVessels();
+}
+
+/** Connect a source (set where its files are) or add one; then take files
+ *  from it, which is what connecting it was for. */
+export async function saveSource(config: SourceConfig): Promise<DataSource> {
+  const saved = await sourcesApi.save(config);
+  await loadSources();
+  state = { ...state, vessels: [] };
+  await selectSource(saved.id);
+  return saved;
+}
+
+/** Remove an added source (or a built-in's location). */
+export async function removeSource(id: string): Promise<void> {
+  await sourcesApi.remove(id);
+  await loadSources();
+  if (state.source === id) {
+    const fallback = state.sources.some((x) => x.id === id) ? id : 'ncei';
+    state = { ...state, vessels: [] };
+    await selectSource(fallback);
+  }
+}
+
+async function listVessels(): Promise<void> {
+  const mine = ++token.vessels;
+  const source = currentSource(state);
+  if (source && !source.ready) {
+    restoring = null;
+    return; // the card says why, and how to connect it
+  }
+  setLoading('vessels', true);
+  try {
+    const vessels = await catalog().listVessels();
+    if (mine !== token.vessels) return;
+    set({ vessels });
+    const wanted = restoring?.vessel && vessels.find((v) => v.id === restoring?.vessel);
+    if (wanted) await selectVessel(wanted);
+    else restoring = null;
+  } catch (e) {
+    if (mine !== token.vessels) return;
+    restoring = null;
+    set({ catalogError: `Could not load vessels: ${(e as Error).message}` });
+  } finally {
+    if (mine === token.vessels) setLoading('vessels', false);
+  }
+}
 
 /** A first range for a freshly chosen survey: its first six hours, on the hour. */
 function openingRange(files: RawFile[]): { start: string; end: string } {
@@ -218,7 +325,7 @@ export async function selectVessel(vessel: Vessel | null): Promise<void> {
   if (!vessel) return;
   setLoading('surveys', true);
   try {
-    const surveys = await nceiSource.listSurveys(vessel.id);
+    const surveys = await catalog().listSurveys(vessel.id);
     if (mine !== token.surveys) return;
     set({ surveys });
     const wanted = restoring?.survey && surveys.find((s) => s.id === restoring?.survey);
@@ -238,7 +345,7 @@ export async function selectSurvey(survey: Survey | null): Promise<void> {
   if (!survey || !state.vessel) return;
   setLoading('sonars', true);
   try {
-    const sonars = await nceiSource.listSonars(state.vessel.id, survey.id);
+    const sonars = await catalog().listSonars(state.vessel.id, survey.id);
     if (mine !== token.sonars) return;
     set({ sonars });
     const wanted = restoring?.sonar && sonars.find((s) => s.id === restoring?.sonar);
@@ -258,7 +365,7 @@ export async function selectSonar(sonar: SonarModel | null): Promise<void> {
   if (!sonar || !state.vessel || !state.survey) return;
   setLoading('files', true);
   try {
-    const files = await nceiSource.listRawFiles(state.vessel.id, state.survey.id, sonar.id);
+    const files = await catalog().listRawFiles(state.vessel.id, state.survey.id, sonar.id);
     if (mine !== token.files) return;
     const saved = restoring;
     restoring = null;
@@ -312,8 +419,14 @@ export function currentPlan(s: PrepareState): RangePlan | null {
 }
 
 /** The request the backend runs, from the form and its plan. */
+/** The Matplotlib colormap 'theme' stands for: the theme's, or aa-graph's default. */
+export function themeCmap(mode: ThemeMode = getThemeMode()): string {
+  return colormapOf(mode) || 'viridis';
+}
+
 export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest {
   return {
+    source: s.source,
     vessel: s.vessel?.id ?? '',
     survey: s.survey?.id ?? '',
     sonar: s.sonar?.id ?? '',
@@ -332,7 +445,10 @@ export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest 
     gapFactor: s.gapFactor,
     strict: s.strict,
     keepLocal: s.keepLocal,
-    echogramOptions: s.echogramOptions,
+    echogramOptions: {
+      ...s.echogramOptions,
+      cmap: s.echogramOptions.cmap === 'theme' ? themeCmap() : s.echogramOptions.cmap,
+    },
     waveformMode: s.waveformMode,
     encodeMode: s.encodeMode,
     workRoot: s.workRoot.trim(),
@@ -454,8 +570,13 @@ export function initPrepare(): void {
   const saved = load();
   if (saved) {
     restoring = saved;
-    const { vessel: _v, survey: _s, sonar: _m, start: _a, end: _b, ...options } = saved;
-    state = { ...state, ...options };
+    const { vessel: _v, survey: _s, sonar: _m, start: _a, end: _b, source: _src, ...options } = saved;
+    state = { ...state, ...options, source: saved.source || 'ncei' };
+    // viridis was the stored default before colormap themes; it is what
+    // 'theme' still draws under every other theme.
+    if (state.echogramOptions.cmap === 'viridis') {
+      state = { ...state, echogramOptions: { ...state.echogramOptions, cmap: 'theme' } };
+    }
   }
   void loadConfig();
   // A new project or bucket: where products go changed. The NCEI listing
@@ -465,23 +586,19 @@ export function initPrepare(): void {
   // would lose the saved survey, sonar and time range.
   onGcpChange((context, previous) => {
     void loadConfig();
+    // Only NCEI's listing depends on the project (its BigQuery cache).
+    if (state.source !== 'ncei') return;
     if (previous && previous.nceiCacheProject === context.nceiCacheProject) return;
     reloadWhenRestored(0);
   });
   void (async () => {
-    setLoading('vessels', true);
-    try {
-      const vessels = await nceiSource.listVessels();
-      set({ vessels });
-      const wanted = saved?.vessel && vessels.find((v) => v.id === saved.vessel);
-      if (wanted) await selectVessel(wanted);
-      else restoring = null;
-    } catch (e) {
+    await loadSources();
+    // A source that was removed meanwhile: back to NCEI.
+    if (state.sources.length && !currentSource(state)) {
       restoring = null;
-      set({ catalogError: `Could not load vessels: ${(e as Error).message}` });
-    } finally {
-      setLoading('vessels', false);
+      set({ source: 'ncei' });
     }
+    await listVessels();
   })();
   void (async () => {
     try {
@@ -515,19 +632,7 @@ async function reloadCatalogue(): Promise<void> {
     start: state.start,
     end: state.end,
   };
-  setLoading('vessels', true);
-  try {
-    const vessels = await nceiSource.listVessels();
-    set({ vessels });
-    const wanted = restoring?.vessel && vessels.find((v) => v.id === restoring?.vessel);
-    if (wanted) await selectVessel(wanted);
-    else restoring = null;
-  } catch (e) {
-    restoring = null;
-    set({ catalogError: `Could not load vessels: ${(e as Error).message}` });
-  } finally {
-    setLoading('vessels', false);
-  }
+  await listVessels();
 }
 
 /* ------------------------------------------------------------------ */

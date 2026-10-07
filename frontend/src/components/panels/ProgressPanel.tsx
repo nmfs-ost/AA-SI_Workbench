@@ -6,7 +6,8 @@ import { PanelPlaceholder } from './PanelPlaceholder';
 export const ProgressPanel: FunctionComponent<IDockviewPanelProps> = () => (
   <PanelPlaceholder
     icon={TimelapseOutlined}
-    title="Progress"
+    panelTitle="Progress"
+    title="Nothing here yet"
     description="Progress of long-running tasks will be displayed here."
   />
 );

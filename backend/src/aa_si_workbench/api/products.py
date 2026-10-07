@@ -79,6 +79,8 @@ class ProductInfo(BaseModel):
     md5: str = ""
     crc32c: str = ""
     generation: str = ""
+    #: GCS storage class ('' for a store or when not reported).
+    storageClass: str = ""
     productHash: str = ""
     recipe: str = ""
     tool: str = ""
@@ -239,6 +241,7 @@ def info(uri: str, *, history: bool = True) -> ProductInfo:
         out.md5 = _hex(stat.md5)
         out.crc32c = _hex(stat.crc32c)
         out.generation = str(stat.generation or "")
+        out.storageClass = str(getattr(stat, "storage_class", "") or "")
         metadata = dict(stat.metadata or {})
         recorded_md5 = metadata.get(META_MD5, "")
         if recorded_md5 and stat.md5:

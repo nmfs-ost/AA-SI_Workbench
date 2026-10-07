@@ -6,7 +6,8 @@ import { PanelPlaceholder } from './PanelPlaceholder';
 export const LogPanel: FunctionComponent<IDockviewPanelProps> = () => (
   <PanelPlaceholder
     icon={ListAltOutlined}
-    title="Log"
+    panelTitle="Log"
+    title="Nothing here yet"
     description="Application log messages will stream here."
   />
 );

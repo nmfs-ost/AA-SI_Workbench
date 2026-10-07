@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+
 import { tokens, tokensFor } from '../src/theme';
+import { paletteList } from '../src/theme/tokens';
 import type { ThemeMode } from '../src/types';
 import { panelColumns, panelDensity } from '../src/components/panels/panelStyles';
 
@@ -18,7 +21,7 @@ import { panelColumns, panelDensity } from '../src/components/panels/panelStyles
  * cannot change only one.
  */
 
-const MODES: ThemeMode[] = ['dark', 'light', 'noaa', 'spring', 'pride'];
+const MODES: ThemeMode[] = paletteList.map((p) => p.id);
 
 describe('side strip width', () => {
   it('is a theme token, not a per-file constant', () => {
@@ -78,5 +81,43 @@ describe('browser row columns', () => {
        same width; if it did not, every heading would sit two icons to the
        right of the values it names. */
     expect(panelColumns.actions).toBeGreaterThan(0);
+  });
+});
+
+describe('row lines', () => {
+  /* Every first row in the window (a dock's tab strip, a panel's header) is
+     one row tall with one line under it, so where two docks meet the line
+     runs straight on. Measured in the browser when this was fixed (the tab
+     strip's line was border.strong and a header's border.subtle, so the line
+     changed colour at every dock edge); pinned here in the sources. */
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+  it('under a dock’s tab strip is the line under a panel header', () => {
+    const css = read('src/theme/dockview-overrides.css');
+    const strip = /\.tabs-and-actions-container\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(strip).toMatch(/border-bottom:\s*1px solid var\(--aa-border-subtle\)/);
+    const header = read('src/components/panels/PanelHeader.tsx');
+    expect(header.match(/borderBottom: `1px solid \$\{(c|theme\.aa\.color)\.border\.subtle\}`/g)).toHaveLength(2);
+    expect(header.match(/height: theme\.aa\.size\.row/g)).toHaveLength(2);
+  });
+
+  it('is there even when a panel has nothing to show', () => {
+    /* A panel whose whole body is its empty state names itself, so its
+       header row (and the line under it) does not vanish with the content. */
+    for (const file of [
+      'LogPanel.tsx',
+      'ProgressPanel.tsx',
+      'ConsolePanel.tsx',
+      'ProcessingQueuePanel.tsx',
+      'pipelines/ConfigurationPanel.tsx',
+      'recipes/RecipeConfiguration.tsx',
+      'calibration/CalibrationPanel.tsx',
+    ]) {
+      expect(read(`src/components/panels/${file}`), file).toContain('panelTitle=');
+    }
+  });
+
+  it('is one row tall in the toolbars that are not PanelBars', () => {
+    expect(read('src/components/panels/TerminalPanel.tsx')).toMatch(/height: theme\.aa\.size\.row,\s*boxSizing: 'border-box'/);
   });
 });

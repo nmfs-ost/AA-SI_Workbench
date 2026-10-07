@@ -54,6 +54,57 @@ writes can be added after it.
 Saved pipelines are kept per user on the workstation,
 `~/.config/aa-si-workbench/pipelines.json`.
 
+## Steps of your own: Bash and Python
+
+Not every stage has to be a console tool. In **New pipeline** (or *Edit
+stages…*), **Add a stage** lists *Your own* first:
+
+- **Shell command**: any Bash, including pipes, `tee`, `grep`, `gsutil` and
+  your own scripts.
+- **Python step**: code run by aalibrary's Python, so `import aalibrary` works.
+
+Either can go anywhere in the chain. A step gets the product the stage before
+it made in three ways:
+
+- on stdin, one line;
+- as `$IN` (in Python, `os.environ["IN"]`);
+- with `$DEST`, the folder products go to.
+
+What it hands on:
+
+- When the last line it prints is a product, the next stage reads that. A
+  product is a `gs://` URI or a file that exists; a relative path is read from
+  the home folder.
+- Otherwise the input passes on unchanged. So `tee -a ~/sv.log` logs the Sv's
+  path and hands the same Sv to `aa-graph`.
+
+Set **Passes on** when the step makes a different kind of product, for example
+a Python step that writes an Sv. The chain then checks that the next tool reads
+that kind.
+
+How a step runs:
+
+- In your home folder, as you, the same as the Terminal.
+- A Bash step stops at the first command that fails (`bash -eo pipefail`).
+  Remember that `grep` with no match counts as a failure.
+- Its output shows in the run's log.
+- A failed step stops the run, like a tool that fails.
+
+Steps of your own are planned but not hashed: the console tools after them
+still record what they read, so the products keep their provenance. A step is
+edited in **Configuration**, which shows its command.
+
+The plan's copyable script runs a step the same way the Workbench does: from
+the home folder, with the input on stdin and as `$IN`, and the same rule for
+what it hands on. Run the script in the AA-SI environment
+(`source ~/venv313/bin/activate`), so its `python3` is aalibrary's, as the
+Workbench's is.
+
+Steps of your own run code as you, as the Terminal does, and follow the
+Terminal's rule. While the Workbench listens on more than this machine
+(`aa-workbench serve --host 0.0.0.0`), they are refused unless
+`AASI_ALLOW_REMOTE_TERMINAL=true`.
+
 ## The hashes
 
 Each product shows three identities, and the product hash leads:
@@ -68,6 +119,39 @@ On the pipeline's input and a run's products, a tick means the object's MD5
 still matches the one its tool recorded; a warning (also shown in the Products
 panel) means it was rewritten after publishing, so its provenance may not
 describe it. Click a hash to copy it whole.
+
+## Remaking a product anywhere
+
+Select a product and **Metadata** shows, under *Remake it*, the console
+commands that made it:
+
+- **This file, from its inputs**: the last step, reading the inputs in the
+  bucket.
+- **The whole chain, from the raw files**: a Bash script, from the raw files
+  to this product.
+
+Neither has a path from the workstation that made it:
+
+- raw files are `"$RAW/<name>"`;
+- products go to `--dest "$DEST"`;
+- inputs in the bucket keep their `gs://` URIs.
+
+Anyone can copy the script or download it as a `.sh` file, set `RAW` and
+`DEST`, and run it. The same inputs and settings make the same product hash,
+so the script remakes the same products under the same names.
+
+Lines and regions drawn in the Echogram, and calibrations saved from
+Calibration, are referenced by their URI, not remade. The script comes from
+`aa-metadata --commands`.
+
+*File* above it shows the object itself:
+
+- its size and level;
+- its storage class and what it costs a month;
+- whether its MD5 still matches the one its tool recorded;
+- its generation.
+
+*Made from* lists its inputs; click one to select it.
 
 ## Where products go
 
@@ -87,7 +171,8 @@ into someone else's products. *Elsewhere…* sends one run's products to another
 - `api/pipelines.py`: built-in and saved pipelines, the plan (`POST
   /api/pipelines/plan`), runs (`/api/pipelines/runs`), one job per stage, each
   reading the product the stage before printed, pinned to the run's GCP
-  project.
+  project. A stage with `tool` `bash` or `python` is a step of your own
+  (`command`, `label`, `produces`); `jobs.submit_step` runs it.
 - `api/products.py`: one product's hashes and history from its metadata and
   `.aa.json` record (`GET /api/products/info`), never downloading it. The
   Products listing (`api/derived.py`) carries the same fields per row.

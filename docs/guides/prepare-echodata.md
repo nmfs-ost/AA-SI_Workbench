@@ -15,9 +15,12 @@ convert to echopype EchoData, L2A calibrate.
 
 ## Using it
 
-1. **Source.** Choose the vessel and survey. An echosounder that is the
-   survey's only one is chosen for you. The line under the fields says how many
-   raw files NCEI lists and the dates they span.
+1. **Source.** First where the raw files come from: **NCEI** (the default),
+   **OMAO**, or an archive added under **Sources…** (see
+   [data-sources.md](data-sources.md)). A source that is not connected yet
+   says so, with a link to connect it. Then choose the vessel and survey. An
+   echosounder that is the survey's only one is chosen for you. The line under
+   the fields says how many raw files the source lists and the dates they span.
 2. **Time range.** The top strip is the whole survey: where the ship was
    logging, and the gaps. Drag across it to choose a range, or drag the
    highlighted range to move it. The strip beneath shows the files around the
@@ -110,7 +113,7 @@ identity is checked against them.
 | Stage | Tool | Level | What |
 |---|---|---|---|
 | Request | `aa-request` | L0 | The request document: vessel, survey, echosounder, and the file-aligned window (first file's start to last file's start). |
-| Fetch | `aa-fetch` | L0 | Downloads those raw files from NCEI into a scratch folder. The card then checks that exactly the planned files arrived; missing files stop the run and are named; extra ones are set aside, not combined. |
+| Fetch | `aa-fetch` | L0 | Downloads those raw files from NCEI into a scratch folder. From another source: `aa-download` (an archive in a bucket) or `cp` (a folder on the workstation) copies exactly the planned files. The card then checks that exactly the planned files arrived; missing files stop the run and are named; extra ones are set aside, not combined. |
 | Convert | `aa-ed` | L1 | Each raw file to EchoData. With a single file, it writes the asset directly (there is nothing to combine). |
 | Combine | `aa-combine` | L1 | The files, in time order, into one EchoData written to the bucket, with a QC report beside it. |
 | Calibrate | `aa-sv` | L2A | Sv beside it, named `<asset>_<recipe8>.nc`. |

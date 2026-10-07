@@ -37,6 +37,7 @@ import { HashTag, IntegrityMark, KindTag } from '../products/ProductBits';
 import { openEchogram } from '../../../state/echogram';
 import { opensAsEchogram, opensAsResults } from '../echogram/openers';
 import { openResults } from '../results/ResultsPanel';
+import { commandText } from './chain';
 
 /** "1 m 05 s", from two ISO times (the second may be now). */
 export function elapsed(from: string, to?: string): string {
@@ -229,7 +230,9 @@ function StageRow({ stage }: { stage: StageRun }) {
       >
         <StateIcon state={stage.state} />
         <Typography sx={{ fontSize: 12, fontWeight: 600, color: c.text.primary, flexShrink: 0 }}>{stage.label}</Typography>
-        <Typography sx={{ fontSize: 11, color: c.text.muted, flexShrink: 0 }}>{stage.tool}</Typography>
+        <Typography sx={{ fontSize: 11, color: c.text.muted, flexShrink: 0 }}>
+          {stage.tool === 'bash' ? 'Bash' : stage.tool === 'python' ? 'Python' : stage.tool}
+        </Typography>
         <Typography sx={{ flex: 1, minWidth: 0, fontSize: 11, color: c.text.secondary }} noWrap title={stage.output || stage.detail}>
           {stage.state === 'succeeded' ? output : stage.detail}
         </Typography>
@@ -264,7 +267,7 @@ function StageRow({ stage }: { stage: StageRun }) {
             overflow: 'auto',
           }}
         >
-          {stage.command.length > 0 && `$ ${stage.command.join(' ')}\n`}
+          {stage.command.length > 0 && `${commandText(stage.tool, stage.command)}\n`}
           {stage.log.join('\n')}
         </Box>
       )}

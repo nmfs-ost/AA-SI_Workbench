@@ -21,20 +21,27 @@ import {
   AddRounded,
   ArrowDownwardRounded,
   ArrowUpwardRounded,
+  CodeRounded,
   DeleteOutlineRounded,
+  ExpandMoreRounded,
+  TerminalRounded,
 } from '@mui/icons-material';
 
 import type { Catalogue, PipelineSpec, StageSpec } from '../../../services/pipelinesApi';
 import { savePipeline } from '../../../state/pipelines';
 import { LevelChip } from '../prepare/ui';
 import { Flow } from './PipelineCard';
-import { kindLabel, toolOf, walk } from './chain';
+import { OwnStepEditor } from './OwnStepEditor';
+import { commandPreview, isOwn, kindLabel, ownStep, stageLabel, toolOf, walk } from './chain';
 
 /**
  * Make a pipeline, or change one's stages: a name, and the console tools in
  * order. Only tools that read what the stage before writes can be added after
  * it; the others are listed, greyed, with what they read. Settings are edited
  * on the card afterwards (Configuration), where each tool's own defaults show.
+ *
+ * Not every stage is a console tool: a Bash command (tee, grep, gsutil, a
+ * script) or Python code can go anywhere in the chain, written here.
  */
 export function PipelineEditorDialog({
   open,
@@ -54,6 +61,8 @@ export function PipelineEditorDialog({
   const [description, setDescription] = useState('');
   const [stages, setStages] = useState<StageSpec[]>([]);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
+  /** The step of your own whose command is open for editing. */
+  const [openStep, setOpenStep] = useState(-1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -61,7 +70,14 @@ export function PipelineEditorDialog({
     if (!open) return;
     setName(initial?.name ?? '');
     setDescription(initial?.description ?? '');
-    setStages(initial?.stages.map((s) => ({ tool: s.tool, params: { ...s.params } })) ?? []);
+    setStages(
+      initial?.stages.map((s) =>
+        isOwn(s)
+          ? { tool: s.tool, params: {}, command: s.command ?? '', label: s.label ?? '', produces: s.produces ?? '' }
+          : { tool: s.tool, params: { ...s.params } },
+      ) ?? [],
+    );
+    setOpenStep(-1);
     setError('');
   }, [open, initial]);
 
@@ -82,6 +98,17 @@ export function PipelineEditorDialog({
     const [item] = next.splice(i, 1);
     next.splice(i + by, 0, item);
     setStages(next);
+    if (openStep === i) setOpenStep(i + by);
+    else if (openStep === i + by) setOpenStep(i);
+  };
+  const remove = (i: number) => {
+    setStages(stages.filter((_, j) => j !== i));
+    setOpenStep(openStep === i ? -1 : openStep > i ? openStep - 1 : openStep);
+  };
+  const addOwn = (tool: 'bash' | 'python') => {
+    setStages([...stages, ownStep(tool)]);
+    setOpenStep(stages.length);
+    setMenu(null);
   };
 
   const save = async () => {
@@ -158,33 +185,48 @@ export function PipelineEditorDialog({
           >
             {stages.length === 0 && (
               <Typography sx={{ p: 1.5, fontSize: 12, color: c.text.muted }}>
-                No stages yet. The first stage decides what the pipeline starts from (EchoData for
-                aa-sv, Sv for most others).
+                No stages yet. The first console tool decides what the pipeline starts from (EchoData
+                for aa-sv, Sv for most others). Steps of your own (Bash, Python) can go anywhere.
               </Typography>
             )}
             {stages.map((stage, i) => {
               const tool = toolOf(catalogue, stage.tool);
               const step = steps[i];
+              const own = isOwn(stage);
               return (
+                <Box key={`${stage.tool}-${i}`} sx={{ '& + &': { borderTop: `1px solid ${c.border.subtle}` } }}>
                 <Box
-                  key={`${stage.tool}-${i}`}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1,
                     px: 1.25,
                     minHeight: 40,
-                    '& + &': { borderTop: `1px solid ${c.border.subtle}` },
                     backgroundColor: step?.mismatch ? alpha(c.status.error, 0.06) : 'transparent',
                   }}
                 >
                   <Typography sx={{ width: 16, fontSize: 11, fontWeight: 700, color: c.text.muted }}>{i + 1}</Typography>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: c.text.primary }}>
-                      {tool?.label ?? stage.tool}{' '}
-                      <Box component="span" sx={{ fontWeight: 400, fontSize: 11, color: c.text.muted }}>
-                        {stage.tool}
-                        {Object.keys(stage.params).length ? ` · ${Object.keys(stage.params).length} settings changed` : ''}
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: c.text.primary }} noWrap>
+                      {own && (
+                        <TerminalRounded sx={{ fontSize: 13, mr: 0.5, verticalAlign: '-2px', color: c.text.muted }} />
+                      )}
+                      {stageLabel(stage, catalogue)}{' '}
+                      <Box
+                        component="span"
+                        sx={{
+                          fontWeight: 400,
+                          fontSize: 11,
+                          color: c.text.muted,
+                          fontFamily: own ? theme.aa.font.mono : undefined,
+                        }}
+                      >
+                        {own
+                          ? commandPreview(stage) || '(no command yet)'
+                          : stage.tool}
+                        {!own && Object.keys(stage.params).length
+                          ? ` · ${Object.keys(stage.params).length} settings changed`
+                          : ''}
                       </Box>
                     </Typography>
                     {step?.mismatch && (
@@ -199,6 +241,18 @@ export function PipelineEditorDialog({
                       </Typography>
                     </Box>
                   )}
+                  {own && (
+                    <IconButton
+                      size="small"
+                      onClick={() => setOpenStep(openStep === i ? -1 : i)}
+                      aria-label={openStep === i ? 'Close the command' : 'Edit the command'}
+                      aria-expanded={openStep === i}
+                    >
+                      <ExpandMoreRounded
+                        sx={{ fontSize: 16, transform: openStep === i ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                      />
+                    </IconButton>
+                  )}
                   <IconButton size="small" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">
                     <ArrowUpwardRounded sx={{ fontSize: 15 }} />
                   </IconButton>
@@ -212,11 +266,22 @@ export function PipelineEditorDialog({
                   </IconButton>
                   <IconButton
                     size="small"
-                    onClick={() => setStages(stages.filter((_, j) => j !== i))}
-                    aria-label={`Remove ${stage.tool}`}
+                    onClick={() => remove(i)}
+                    aria-label={`Remove ${own ? stageLabel(stage, catalogue) : stage.tool}`}
                   >
                     <DeleteOutlineRounded sx={{ fontSize: 15 }} />
                   </IconButton>
+                </Box>
+                {own && openStep === i && (
+                  <Box sx={{ px: 1.25, pt: 0.5, pb: 1.25, backgroundColor: c.bg.editor }}>
+                    <OwnStepEditor
+                      stage={stage}
+                      catalogue={catalogue}
+                      autoFocus
+                      onChange={(patch) => setStages(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)))}
+                    />
+                  </Box>
+                )}
                 </Box>
               );
             })}
@@ -251,6 +316,23 @@ export function PipelineEditorDialog({
           onClose={() => setMenu(null)}
           slotProps={{ paper: { sx: { maxHeight: 440, minWidth: 320 } } }}
         >
+          <ListSubheader sx={{ lineHeight: '28px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            Your own
+          </ListSubheader>
+          <MenuItem dense onClick={() => addOwn('bash')} sx={{ gap: 1 }}>
+            <TerminalRounded sx={{ fontSize: 16, color: c.text.muted }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 12.5 }}>Shell command</Typography>
+              <Typography sx={{ fontSize: 10.5, color: c.text.muted }}>Bash: tee, grep, gsutil, a script of yours</Typography>
+            </Box>
+          </MenuItem>
+          <MenuItem dense onClick={() => addOwn('python')} sx={{ gap: 1 }}>
+            <CodeRounded sx={{ fontSize: 16, color: c.text.muted }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 12.5 }}>Python step</Typography>
+              <Typography sx={{ fontSize: 10.5, color: c.text.muted }}>Code run with aalibrary’s Python</Typography>
+            </Box>
+          </MenuItem>
           {(catalogue?.groups ?? []).flatMap((group) => {
             const tools = (catalogue?.tools ?? []).filter((t) => t.group === group);
             if (!tools.length) return [];

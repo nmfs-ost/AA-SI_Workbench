@@ -6,7 +6,8 @@ import { PanelPlaceholder } from './PanelPlaceholder';
 export const ConsolePanel: FunctionComponent<IDockviewPanelProps> = () => (
   <PanelPlaceholder
     icon={CodeOutlined}
-    title="Console"
+    panelTitle="Console"
+    title="Nothing here yet"
     description="Console output from tools and scripts will appear here."
   />
 );

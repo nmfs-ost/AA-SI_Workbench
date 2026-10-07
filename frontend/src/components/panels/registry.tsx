@@ -6,7 +6,6 @@ import {
   DataObjectOutlined,
   PlaylistPlayOutlined,
   LayersOutlined,
-  SailingOutlined,
   HubOutlined,
   DescriptionOutlined,
   AccountTreeOutlined,
@@ -35,7 +34,6 @@ import { MetadataPanel } from './MetadataPanel';
 import { ProcessingQueuePanel } from './ProcessingQueuePanel';
 import { PreparePanel } from './prepare/PreparePanel';
 import { DerivedPanel } from './DerivedPanel';
-import { OmaoPanel } from './OmaoPanel';
 import { ResourcesPanel } from './resources/ResourcesPanel';
 import { TerminalPanel } from './TerminalPanel';
 import { LogPanel } from './LogPanel';
@@ -133,14 +131,6 @@ export const panelDefinitions: readonly PanelDefinition[] = [
       'Products in the bucket, with their hashes. Select one (or tick several) to run a pipeline on it.',
     region: 'left',
     component: DerivedPanel,
-  },
-  {
-    id: 'omao',
-    title: 'OMAO',
-    icon: SailingOutlined,
-    description: 'OMAO vessel acoustics data.',
-    region: 'left',
-    component: OmaoPanel,
   },
   /* The project itself, rather than a source of data.
      It sits on the left because that strip already carries the shell's

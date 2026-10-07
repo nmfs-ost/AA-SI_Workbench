@@ -229,6 +229,8 @@ class _Job:
     #: when it is submitted: a choice changed while it waits in the queue, or
     #: between the stages of one run, does not move it.
     gcp_env: dict[str, str] = field(default_factory=dict)
+    #: Given to the job on stdin (a pipeline step's input); None: no stdin.
+    stdin_text: str | None = None
 
 
 _jobs: OrderedDict[str, _Job] = OrderedDict()
@@ -418,13 +420,22 @@ def _consume_progress(job: _Job, text: str) -> bool:
 
 
 def _pump_stdout(job: _Job, stream) -> None:
-    """stdout is the *result*. Kept whole, never merged into the log."""
+    """stdout is the *result*. Kept whole, never merged into the log.
+
+    A pipeline's own step (Bash, Python) is the exception: what it prints is
+    what the user wants to see (a grep, a listing), so it is in the log too,
+    and only its last lines are kept as the result (it may print a lot)."""
+    step = job.stdin_text is not None
     try:
         for raw in stream:
             line = raw.rstrip("\n")
             if line.strip():
                 with _lock:
                     job.stdout.append(line)
+                    if step and len(job.stdout) > 200:
+                        del job.stdout[:100]
+                if step:
+                    _append(job, _ANSI.sub("", line))
     except Exception:  # noqa: BLE001 - a dead stream must not kill the thread
         pass
 
@@ -518,7 +529,7 @@ def _spawn(job: _Job) -> None:
             # THE deadlock guard. A tool with no positionals and an inherited
             # open pipe waits on stdin forever; DEVNULL gives it an immediate
             # EOF so input resolution falls through to --workdir or the CWD.
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL if job.stdin_text is None else subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -537,6 +548,13 @@ def _spawn(job: _Job) -> None:
     job.state = "running"
     job.started_at = _now()
     job.process = process
+    if job.stdin_text is not None and process.stdin is not None:
+        # Small (a product's URI): written at once, then EOF, as `echo | cmd`.
+        try:
+            process.stdin.write(job.stdin_text)
+            process.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass  # the step did not read it: fine
 
     threads = [
         threading.Thread(
@@ -629,6 +647,95 @@ def submit(
     return job
 
 
+#: What a pipeline's own steps may be given in their environment.
+_STEP_ENV = re.compile(r"(AA_[A-Z0-9_]+|IN|DEST|STEP_DIR)")
+
+
+def own_code_refused() -> str:
+    """Why code a user wrote (a pipeline's own step) may not run here, or ''.
+
+    It is the Terminal's privilege, so it has the Terminal's rule: only while
+    the server listens on this machine alone, unless
+    AASI_ALLOW_REMOTE_TERMINAL says everyone who can reach the port is
+    trusted."""
+    host = os.getenv("AASI_BIND_HOST", "127.0.0.1")
+    allow = os.getenv("AASI_ALLOW_REMOTE_TERMINAL", "").lower() in {"1", "true", "yes"}
+    if host in {"127.0.0.1", "::1", "localhost", ""} or allow:
+        return ""
+    return (
+        f"Steps of your own (Bash, Python) are off because the server is bound to "
+        f"{host}: they run code as you, like the Terminal. Set "
+        "AASI_ALLOW_REMOTE_TERMINAL=true only on a host where everyone who can "
+        "reach this port is trusted."
+    )
+
+
+def submit_step(
+    kind: str,
+    code: str,
+    *,
+    stdin_text: str,
+    env: dict[str, str],
+    cwd: str,
+    label: str,
+    gcp_env: dict[str, str] | None = None,
+    args: list[str] | None = None,
+    trusted: bool = False,
+) -> _Job:
+    """Queue a pipeline's own step: a Bash command (``bash -eo pipefail -c``)
+    or Python code (the tools' interpreter, ``python -c``), given the input
+    product on stdin and as ``$IN``.
+
+    The same privilege as the Terminal panel (the user's own shell on their
+    workstation), reached only through a pipeline the user wrote and ran, and
+    refused as the Terminal is (own_code_refused). *trusted*: code the
+    Workbench wrote itself (a copy whose files are arguments), not a user's.
+    """
+    from .gcp import tool_env
+
+    refused = "" if trusted else own_code_refused()
+    if refused:
+        raise HTTPException(status_code=403, detail=refused)
+    if kind not in ("bash", "python"):
+        raise HTTPException(status_code=400, detail=f"Not a kind of step: {kind!r}")
+    if not code.strip() or "\x00" in code or len(code) > 20_000:
+        raise HTTPException(
+            status_code=400,
+            detail="A step needs its command (up to 20,000 characters).",
+        )
+    bad = [key for key in env if not _STEP_ENV.fullmatch(key)]
+    if bad or any("\x00" in str(v) for v in env.values()):
+        raise HTTPException(
+            status_code=400, detail=f"Not settings a step may get: {', '.join(bad)}"
+        )
+    if args and any("\x00" in a for a in args):
+        raise HTTPException(
+            status_code=400, detail="A step's arguments cannot hold NUL."
+        )
+    # Arguments, when given, are $1 … (Bash) or sys.argv[1:] (Python): values
+    # passed as values, never spliced into the code.
+    program = (
+        [shutil.which("bash") or "/bin/bash", "-eo", "pipefail", "-c", code, "bash"]
+        if kind == "bash"
+        else [_tools_python(), "-c", code]
+    ) + list(args or [])
+    job = _Job(
+        id=uuid.uuid4().hex[:12],
+        tool=kind,
+        label=label.strip() or kind,
+        command=program,
+        cwd=_resolve_cwd(cwd),
+        env={k: str(v) for k, v in env.items()},
+        gcp_env=dict(gcp_env) if gcp_env is not None else tool_env(),
+        stdin_text=stdin_text,
+    )
+    with _lock:
+        _jobs[job.id] = job
+        _evict()
+    _drain_queue()
+    return job
+
+
 def cancel(job_id: str) -> _Job:
     with _lock:
         job = _jobs.get(job_id)
@@ -673,12 +780,12 @@ def resume(job_id: str) -> _Job:
         job = _jobs.get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail=f"No job {job_id}.")
-        if job.state not in RESUMABLE_STATES:
+        if job.state not in RESUMABLE_STATES or job.stdin_text is not None:
             raise HTTPException(
                 status_code=409,
                 detail=(
                     f"Job {job_id} is {job.state}, not partial. Only an "
-                    "interrupted run (exit 3) can be resumed."
+                    "interrupted run (exit 3) of a console tool can be resumed."
                 ),
             )
         args = job.command[1:] if job.command[1:2] != ["-m"] else job.command[3:]

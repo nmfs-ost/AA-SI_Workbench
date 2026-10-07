@@ -15,9 +15,9 @@ import type { DockSide } from './sidebarChrome';
  * The strip of icons along an outer edge — the only navigation in the shell
  * that never moves.
  *
- * The problem it solves, three times over. On the left, four different storage
- * systems share one dock (a public S3 archive, the workstation's own disk, a
- * GCS bucket of derived products, the OMAO fleet); on the right, four different
+ * The problem it solves, three times over. On the left, several storage
+ * systems share one dock (the data sources Prepare EchoData lists, the
+ * workstation's own disk, a GCS bucket of products); on the right, four different
  * views of the current selection; along the bottom, five places output turns
  * up. In every case a row of small text tabs makes it easy to lose track of
  * which one you're reading, and "Processing Queue" eats a third of a narrow

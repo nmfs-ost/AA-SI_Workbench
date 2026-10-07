@@ -7,6 +7,7 @@ import type { PlanFile } from '../src/components/panels/prepare/plan';
 import type { Preview } from '../src/services/baselineApi';
 import { baselineApi, simSpaceNeeded } from '../src/services/baselineApi';
 import { buildRequest } from '../src/state/prepare';
+import { idFromName } from '../src/components/panels/prepare/SourcesDialog';
 
 /**
  * Working space: where a run works, and freeing space as it goes. The server
@@ -96,8 +97,32 @@ describe('toScript', () => {
     expect(pathArg("/x/it's")).toBe("'/x/it'\\''s'");
   });
 
+  it('copies from a folder archive into $RUN, making the folder first', () => {
+    const script = toScript({
+      ...preview,
+      source: 'OMAO',
+      scratch: '/data/aa runs/<run>',
+      stages: [
+        { id: 'fetch', label: 'Fetch', tool: 'cp', level: 'L0', description: 'Copy the raw files from OMAO.',
+          command: ['cp', '-p', '--', '/mnt/omao/V/S/EK60/D1.raw', '/data/aa runs/<run>/raw/'], frees: [] },
+      ],
+    });
+    expect(script).toContain('# HB: OMAO -> EchoData');
+    const lines = script.split('\n');
+    const copy = lines.findIndex((l) => l.startsWith('cp '));
+    expect(lines[copy - 1]).toBe('mkdir -p "$RUN/raw/"');
+    expect(lines[copy]).toBe('cp -p -- /mnt/omao/V/S/EK60/D1.raw "$RUN/raw/"');
+  });
+
   it('falls back to a temporary folder when no working folder is named', () => {
     expect(toScript({ ...preview, workRoot: undefined })).toContain('RUN=$(mktemp -d)');
+  });
+});
+
+describe('sources', () => {
+  it('get an id from their name', () => {
+    expect(idFromName('  Shimada share (2024) ')).toBe('shimada-share-2024');
+    expect(idFromName('OMAO')).toBe('omao');
   });
 });
 

@@ -25,6 +25,8 @@ export interface EchogramOptions {
 }
 
 export interface BaselineRequest {
+  /** Where the raw files come from (services/sources): ncei, omao, or one added. */
+  source?: string;
   vessel: string;
   survey: string;
   sonar: string;
@@ -130,11 +132,15 @@ export interface Asset {
 
 export interface Preview {
   base: string;
+  /** The source's name (NCEI, OMAO …). */
+  source?: string;
   destination: string;
   stages: StagePreview[];
   assets: Asset[];
   /** The folder the run's own folder is made in. */
   workRoot?: string;
+  /** The run's own folder as the commands name it. */
+  scratch?: string;
 }
 
 export type StageState = 'pending' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
@@ -174,12 +180,22 @@ export interface RunStatus {
   work?: WorkUsage;
 }
 
+/** The console commands that made a product (aa-metadata --commands). */
+export interface ProductCommands {
+  /** The last step, from its inputs (gs:// URIs). */
+  command: string;
+  /** The whole chain from the raw files, as a Bash script ($RAW, $DEST). */
+  script: string;
+  notes: string[];
+}
+
 export interface Provenance {
   uri: string;
   found: boolean;
   document: Record<string, unknown> | null;
   verified: boolean | null;
   message: string;
+  commands?: ProductCommands | null;
 }
 
 export interface BaselineApi {

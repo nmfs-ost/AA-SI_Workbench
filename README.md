@@ -33,14 +33,17 @@ The first start takes about 20 seconds while it builds the interface; after
 that it starts at once. Leave this terminal open: the Workbench runs as long as
 it does. (To stop it, press `Ctrl+C` there.)
 
-**3. Open it in your browser.** In the Google Cloud console, go to
-**Cloud Workstations → Workstations**. Next to your workstation, click the
-arrow beside **Launch** and choose **Connect to web app on port**, then enter
-**8000**.
+**3. Open it in your browser.** `aa-workbench` prints the address, like
+`https://8000-<your-workstation>.<cluster>.cloudworkstations.dev/`. Open it and
+bookmark it. It stays the same every session on this workstation, so next time
+the bookmark is all you need after steps 1 and 2.
 
-That opens an address like
-`https://8000-<your-workstation>.<cluster>.cloudworkstations.dev`. Bookmark it:
-next time, after steps 1 and 2, the bookmark is all you need.
+(Or, in the Google Cloud console: **Cloud Workstations → Workstations**, the
+arrow beside **Launch**, **Connect to web app on port**, **8000**. A link that
+ends in `?_workstationAccessToken=…` is a one-time sign-in; bookmark the
+address without it. **Help ▸ Link to this Workbench…** shows it, and
+[docs/guides/stable-address.md](docs/guides/stable-address.md) explains how to
+get one address for any workstation or for a whole team.)
 
 ## Your first session
 
@@ -65,16 +68,16 @@ for anything you would rather type.
 
 | Panel | What it's for |
 |---|---|
-| **Prepare EchoData** | An NCEI survey and time range → EchoData, Sv and an echogram in the bucket. |
+| **Prepare EchoData** | A survey and time range from a data source (NCEI, OMAO, or an archive you add) → EchoData, Sv and an echogram in the bucket. |
 | **Products** | Your project's bucket: every product with its level (L1 EchoData, L2A Sv, L3 MVBS/NASC, …) and its product hash. Select one to run a pipeline on it. |
-| **Pipelines** | The AA-SI console tools chained and run on the selected product. |
-| **Echogram** | An Sv, MVBS or mask product as an echogram: thresholds, colour schemes, readout, track map; lines and regions drawn and saved as Echoview files. |
+| **Pipelines** | The AA-SI console tools chained and run on the selected product, with Bash or Python steps of your own between them. |
+| **Echogram** | An Sv, MVBS or mask product as an echogram: thresholds, colour schemes (EK500 and Matplotlib's), readout, the ship's track on a map; lines and regions drawn and saved as Echoview files. |
 | **Results** | Integration results (NASC by interval and layer, or by region), as a chart and a table. |
 | **Storage costs** | What the bucket costs to keep, per month and year, by folder, storage class and product. Products also shows each file's cost a month. |
 | **Calibration** | The calibration echopype will use for an EchoData, changed and saved as an ECS file, and Sv computed with it. |
 | **Dataflow** | What a product was made from and what was made from it; what is out of date. |
 | **Configuration** | The settings of the open pipeline's tools, with each tool's own defaults and help. |
-| **Metadata** | How the selected product was made: its tools, settings, inputs and hashes. |
+| **Metadata** | How the selected product was made: its tools, settings, inputs and hashes, its file and storage, and the console commands that remake it on any workstation. |
 | **Processing Queue** | Every tool the Workbench is running or has run, with its log. |
 | **Files** | The workstation's own files. |
 | **Terminal** | A shell in the AA-SI environment. |

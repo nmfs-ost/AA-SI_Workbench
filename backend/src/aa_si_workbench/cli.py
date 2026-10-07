@@ -211,6 +211,28 @@ def _context_line(context) -> str:  # noqa: ANN001 - a GcpContext
     return f"gs://{context.bucket} in {project} ({context.source})"
 
 
+def cmd_url(args: argparse.Namespace) -> None:
+    """Where to open the Workbench, and how to get the same address every time."""
+    from .api.address import address
+
+    os.environ.setdefault("AASI_PORT", str(args.port))
+    here = address()
+    if here.url:
+        print(f"This workstation:  {here.url}")
+        print("  Bookmark it. It stays the same while this workstation exists and the")
+        print(f"  Workbench runs on port {here.port}. If a link you were given ends")
+        print("  in ?_workstationAccessToken=…, drop that: it is a one-time sign-in.")
+        print()
+        print("From your own computer (with gcloud), one address for any workstation:")
+        print(f"  {here.tunnel}")
+        print(f"  then open {here.localUrl}  (PROJECT, REGION, CLUSTER, CONFIG:")
+        print("  from the workstation's page in the Cloud console)")
+    else:
+        print(f"Not on a Cloud Workstation (no $WEB_HOST): open {here.localUrl}")
+    print()
+    print("A team-wide address: docs/guides/stable-address.md")
+
+
 def cmd_build(_args: argparse.Namespace) -> None:
     _build_frontend()
     print(f"UI built at: {_paths.frontend_dist_dir()}")
@@ -221,6 +243,8 @@ def cmd_serve(args: argparse.Namespace) -> None:
     # Published so the environment updater can refuse to rewrite this venv
     # when the server is reachable from off-host (see api/environment.py).
     os.environ["AASI_BIND_HOST"] = args.host
+    # The address panel (api/address.py) names the port it is reached on.
+    os.environ["AASI_PORT"] = str(args.port)
 
     dist = _paths.frontend_dist_dir()
     if dist is None:
@@ -247,11 +271,17 @@ def cmd_serve(args: argparse.Namespace) -> None:
             )
 
     url = f"http://{args.host}:{args.port}"
-    banner = (
-        f"\n  AA-SI Workbench\n"
-        f"  → {url}\n"
-        f"  NCEI source: {args.source}   (Ctrl+C to stop)\n"
-    )
+    from .api.address import address
+
+    here = address()
+    banner = f"\n  AA-SI Workbench\n  → {url}\n"
+    if here.url:
+        # On a Cloud Workstation: the address that stays the same.
+        banner += (
+            f"  → {here.url}   (open this in your browser and bookmark it: it is\n"
+            f"    the same every time you start the Workbench on this workstation)\n"
+        )
+    banner += f"  NCEI source: {args.source}   (Ctrl+C to stop)\n"
     print(banner)
 
     if args.open_browser:
@@ -380,6 +410,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="NCEI backend: s3 (default) or cache.",
     )
     p_dev.set_defaults(func=cmd_dev)
+
+    p_url = sub.add_parser(
+        "url", help="The address to open the Workbench at, and to bookmark."
+    )
+    p_url.add_argument(
+        "--port", type=int, default=8000, help="The port it serves on (default 8000)."
+    )
+    p_url.set_defaults(func=cmd_url)
 
     p_build = sub.add_parser("build", help="Build the frontend for production.")
     p_build.set_defaults(func=cmd_build)

@@ -38,6 +38,36 @@ export function toolOf(catalogue: Catalogue | null, name: string): ToolDef | und
   return catalogue?.tools.find((t) => t.name === name);
 }
 
+/** Steps that are not console tools: a Bash command or Python code of your own. */
+export const OWN_STEPS: Record<string, string> = { bash: 'Shell command', python: 'Python' };
+
+export function isOwn(stage: StageSpec): boolean {
+  return stage.tool in OWN_STEPS;
+}
+
+/** A new step of your own, ready to edit. */
+export function ownStep(tool: 'bash' | 'python'): StageSpec {
+  return {
+    tool,
+    params: {},
+    command: tool === 'bash' ? 'tee -a "$HOME/pipeline.log"' : 'import sys\n\nproduct = sys.stdin.read().strip()\nprint(product)',
+    label: '',
+    produces: '',
+  };
+}
+
+/** A stage's name: the tool's label, or the name given to a step of your own. */
+export function stageLabel(stage: StageSpec, catalogue: Catalogue | null): string {
+  if (isOwn(stage)) return stage.label?.trim() || OWN_STEPS[stage.tool];
+  return toolOf(catalogue, stage.tool)?.label ?? stage.tool;
+}
+
+/** The first line of a step's command, shortened for a card. */
+export function commandPreview(stage: StageSpec, max = 48): string {
+  const line = (stage.command ?? '').split('\n').find((l) => l.trim() && !l.trim().startsWith('#'))?.trim() ?? '';
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
 /** The kind a stage writes, given the kind it reads. */
 export function producedBy(tool: ToolDef, reads: string): string {
   return tool.passthrough && reads ? reads : tool.produces;
@@ -47,6 +77,10 @@ export function producedBy(tool: ToolDef, reads: string): string {
 function chainHolds(stages: StageSpec[], kind: string, catalogue: Catalogue): boolean {
   let current = kind;
   for (const stage of stages) {
+    if (isOwn(stage)) {
+      current = stage.produces || current;
+      continue;
+    }
     const tool = toolOf(catalogue, stage.tool);
     if (!tool || !tool.consumes.includes(current)) return false;
     current = producedBy(tool, current);
@@ -63,10 +97,13 @@ function chainHolds(stages: StageSpec[], kind: string, catalogue: Catalogue): bo
  */
 export function startIndex(stages: StageSpec[], kind: string, catalogue: Catalogue): number {
   if (!kind) return 0;
+  // A step of your own reads anything: the chain may start at one.
   const readers = stages
-    .map((s, i) => (toolOf(catalogue, s.tool)?.consumes.includes(kind) ? i : -1))
+    .map((s, i) => (isOwn(s) || toolOf(catalogue, s.tool)?.consumes.includes(kind) ? i : -1))
     .filter((i) => i >= 0);
-  return readers.find((i) => chainHolds(stages.slice(i), kind, catalogue)) ?? readers[0] ?? -1;
+  const holds = readers.find((i) => chainHolds(stages.slice(i), kind, catalogue));
+  if (holds !== undefined) return holds;
+  return readers.find((i) => !isOwn(stages[i])) ?? readers[0] ?? -1;
 }
 
 export interface Fit {
@@ -78,8 +115,9 @@ export interface Fit {
 
 /** Whether a pipeline can take every selected product, and how. */
 export function fit(pipeline: PipelineSpec, kinds: string[], catalogue: Catalogue): Fit {
-  if (pipeline.stages.some((s) => !toolOf(catalogue, s.tool))) {
-    const missing = pipeline.stages.find((s) => !toolOf(catalogue, s.tool))!.tool;
+  const missingTool = (s: StageSpec) => !isOwn(s) && !toolOf(catalogue, s.tool);
+  if (pipeline.stages.some(missingTool)) {
+    const missing = pipeline.stages.find(missingTool)!.tool;
     return { ok: false, skipped: 0, reason: `${missing} is not installed.` };
   }
   if (kinds.length === 0) return { ok: true, skipped: 0, reason: '' };
@@ -90,7 +128,7 @@ export function fit(pipeline: PipelineSpec, kinds: string[], catalogue: Catalogu
       return { ok: false, skipped: 0, reason: `The chain breaks after ${kindLabel(kind, catalogue)} comes in.` };
     }
     if (start < 0) {
-      const first = toolOf(catalogue, pipeline.stages[0]?.tool ?? '');
+      const first = toolOf(catalogue, pipeline.stages.find((s) => !isOwn(s))?.tool ?? '');
       const wants = first ? first.consumes.map((k) => kindLabel(k, catalogue)).join(' or ') : '';
       return {
         ok: false,
@@ -112,6 +150,13 @@ export function walk(
   const start = Math.max(0, startIndex(stages, inputKind, catalogue));
   let kind = inputKind;
   return stages.map((stage, i) => {
+    if (isOwn(stage)) {
+      if (i < start) return { reads: '', writes: stage.produces || '', skip: true, mismatch: '' };
+      const reads = kind;
+      kind = stage.produces || kind;
+      const mismatch = stage.command?.trim() ? '' : `${stageLabel(stage, catalogue)}: write its command.`;
+      return { reads, writes: kind, skip: false, mismatch };
+    }
     const tool = toolOf(catalogue, stage.tool);
     if (!tool) return { reads: kind, writes: '', skip: false, mismatch: `${stage.tool} is not installed.` };
     if (i < start) return { reads: '', writes: tool.produces, skip: true, mismatch: '' };
@@ -155,6 +200,8 @@ export function stagesEqual(a: StageSpec[], b: StageSpec[]): boolean {
   return a.every((s, i) => {
     const t = b[i];
     if (s.tool !== t.tool) return false;
+    if ((s.command ?? '') !== (t.command ?? '') || (s.label ?? '') !== (t.label ?? '')) return false;
+    if ((s.produces ?? '') !== (t.produces ?? '')) return false;
     const keys = new Set([...Object.keys(s.params), ...Object.keys(t.params)]);
     return [...keys].every((k) => sameValue(s.params[k], t.params[k]));
   });
@@ -167,6 +214,7 @@ export function shortHash(hash: string, n = 8): string {
 
 /** The settings a stage changes, as "Range bin 5m · Method coarsen". */
 export function describeValues(stage: StageSpec, tool: ToolDef | undefined): string {
+  if (isOwn(stage)) return commandPreview(stage);
   if (!tool) return '';
   return tool.params
     .filter((p) => p.id in stage.params)
@@ -177,4 +225,12 @@ export function describeValues(stage: StageSpec, tool: ToolDef | undefined): str
       return `${p.label} ${String(v)}`;
     })
     .join(' · ');
+}
+
+/** A stage's command as typed: a step of your own shows its code as written. */
+export function commandText(tool: string, command: string[]): string {
+  const code = command[command.length - 1] ?? '';
+  if (tool === 'bash') return code.split('\n').map((line, i) => `${i ? '> ' : '$ '}${line}`).join('\n');
+  if (tool === 'python') return `# Python\n${code}`;
+  return `$ ${command.join(' ')}`;
 }

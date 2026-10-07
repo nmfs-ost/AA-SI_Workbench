@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { Catalogue, PipelineSpec, ToolDef, ToolParam } from '../src/services/pipelinesApi';
 import {
+  commandText,
   describeValues,
   fit,
+  ownStep,
+  stageLabel,
   shortHash,
   stagesEqual,
   startIndex,
@@ -167,5 +170,48 @@ describe('hashes', () => {
   it('are shown as their first eight characters, as the tools print them', () => {
     expect(shortHash('a13d29c552465cdc1b9525b1f5f3ef11')).toBe('a13d29c5');
     expect(shortHash('')).toBe('');
+  });
+});
+
+describe('steps of your own (Bash, Python)', () => {
+  const tee = { tool: 'bash', params: {}, command: 'tee -a "$HOME/sv.log"', label: 'Log the Sv', produces: '' };
+  const toSv = { tool: 'python', params: {}, command: 'print("gs://b/x.nc")', label: '', produces: 'sv' };
+  const withOwn = (...stages: PipelineSpec['stages']): PipelineSpec => ({ ...pipeline(), stages });
+  const s = (t: string) => ({ tool: t, params: {} });
+
+  it('pass on what they are given unless they say what they make', () => {
+    const steps = walk([s('aa-sv'), tee, s('aa-graph')], catalogue, 'echodata');
+    expect(steps.map((x) => x.writes)).toEqual(['sv', 'sv', 'echogram']);
+    expect(steps.every((x) => !x.mismatch)).toBe(true);
+    expect(walk([toSv, s('aa-graph')], catalogue, 'echodata').map((x) => x.writes)).toEqual(['sv', 'echogram']);
+  });
+
+  it('run on the input when the stage before them is skipped, as the server plans it', () => {
+    const stages = [s('aa-sv'), tee, s('aa-graph')];
+    expect(startIndex(stages, 'sv', catalogue)).toBe(1);
+    expect(walk(stages, catalogue, 'sv').map((x) => x.skip)).toEqual([true, false, false]);
+    // Before a stage the input is past: skipped with it.
+    expect(walk([tee, s('aa-sv'), s('aa-graph')], catalogue, 'sv').map((x) => x.skip)).toEqual([true, true, false]);
+    // One that makes an Sv lets a pipeline take an EchoData it otherwise could not.
+    expect(fit(withOwn(toSv, s('aa-graph')), ['echodata'], catalogue).ok).toBe(true);
+    expect(fit(withOwn(s('aa-graph')), ['echodata'], catalogue).ok).toBe(false);
+  });
+
+  it('are never "not installed", and need their command', () => {
+    expect(fit(withOwn(tee, s('aa-graph')), [], catalogue).ok).toBe(true);
+    expect(walk([{ ...tee, command: '  ' }], catalogue)[0].mismatch).toMatch(/write its command/);
+  });
+
+  it('are named and compared by what they run', () => {
+    expect(stageLabel(tee, catalogue)).toBe('Log the Sv');
+    expect(stageLabel(ownStep('bash'), catalogue)).toBe('Shell command');
+    expect(describeValues(tee, undefined)).toBe('tee -a "$HOME/sv.log"');
+    expect(stagesEqual([tee], [{ ...tee }])).toBe(true);
+    expect(stagesEqual([tee], [{ ...tee, command: 'cat' }])).toBe(false);
+  });
+
+  it('show their code as written in a run', () => {
+    expect(commandText('bash', ['bash', '-eo', 'pipefail', '-c', 'a | tee b\nc'])).toBe('$ a | tee b\n> c');
+    expect(commandText('aa-sv', ['aa-sv', 'gs://x', '--dest=gs://y/'])).toBe('$ aa-sv gs://x --dest=gs://y/');
   });
 });

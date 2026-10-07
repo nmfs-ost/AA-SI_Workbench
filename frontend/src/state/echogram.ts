@@ -85,7 +85,8 @@ const initial: EchogramState = {
   view: null,
   bounds: null,
   channelsOn: [],
-  colormap: 'ek500',
+  /* The theme's colormap (EK500 under a theme without one). */
+  colormap: 'theme',
   vmin: -70,
   vmax: -34,
   belowMin: 'background',
@@ -128,7 +129,7 @@ function rememberedColours(): Partial<EchogramState> {
     const raw = localStorage.getItem(COLOURS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as { colormap?: ColormapId; belowMin?: 'background' | 'lowest' };
-    return { colormap: parsed.colormap ?? 'ek500', belowMin: parsed.belowMin ?? 'background' };
+    return { colormap: parsed.colormap ?? 'theme', belowMin: parsed.belowMin ?? 'background' };
   } catch {
     return {};
   }

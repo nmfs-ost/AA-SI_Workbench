@@ -18,12 +18,13 @@ import {
   DeleteOutlineRounded,
   EditOutlined,
   MoreVertRounded,
+  TerminalRounded,
   WarningAmberRounded,
 } from '@mui/icons-material';
 
 import type { Catalogue, PipelineSpec } from '../../../services/pipelinesApi';
 import { LevelChip } from '../prepare/ui';
-import { kindLabel, toolOf, walk } from './chain';
+import { commandPreview, isOwn, kindLabel, stageLabel, toolOf, walk } from './chain';
 import type { Fit } from './chain';
 
 /**
@@ -230,7 +231,7 @@ export function Flow({
   const c = theme.aa.color;
   if (!catalogue) return null;
   const steps = walk(pipeline.stages, catalogue, inputKind);
-  const first = toolOf(catalogue, pipeline.stages[0]?.tool ?? '');
+  const first = toolOf(catalogue, pipeline.stages.find((s) => !isOwn(s))?.tool ?? '');
   const startKind = inputKind && !steps[0]?.skip ? inputKind : first?.consumes[0] ?? '';
   const level = (kind: string) => catalogue.levels[kind] ?? '';
 
@@ -241,6 +242,64 @@ export function Flow({
         const step = steps[i];
         const tool = toolOf(catalogue, stage.tool);
         const faint = step?.skip;
+        if (isOwn(stage)) {
+          const last = i === pipeline.stages.length - 1;
+          // A step that passes its product on draws no new product node.
+          const writes = step?.writes ?? '';
+          const changes = Boolean(stage.produces) && writes !== (steps[i - 1]?.writes || startKind);
+          return (
+            <Box key={`${stage.tool}-${i}`} sx={{ display: 'contents' }}>
+              <Tooltip
+                disableInteractive
+                title={
+                  step?.mismatch ||
+                  (faint
+                    ? `Not needed: the input is already ${kindLabel(inputKind, catalogue)}.`
+                    : `${stage.tool === 'bash' ? 'Bash' : 'Python'}: ${commandPreview(stage, 120) || '(no command yet)'}`)
+                }
+              >
+                <Box
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.4,
+                    color: step?.mismatch ? c.status.error : faint ? c.text.disabled : c.text.muted,
+                    opacity: faint ? 0.55 : 1,
+                  }}
+                >
+                  <ArrowForwardRounded sx={{ fontSize: 12 }} />
+                  <Box
+                    component="span"
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 0.4,
+                      height: 20,
+                      px: 0.6,
+                      borderRadius: `${theme.aa.radius.sm}px`,
+                      border: `1px dashed ${step?.mismatch ? c.status.error : c.border.strong}`,
+                      fontFamily: theme.aa.font.mono,
+                      fontSize: 10.5,
+                      color: 'inherit',
+                      textDecoration: faint ? 'line-through' : 'none',
+                      maxWidth: 180,
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    <TerminalRounded sx={{ fontSize: 12, flexShrink: 0 }} />
+                    {stage.label?.trim() ? stageLabel(stage, catalogue) : commandPreview(stage, 28) || stageLabel(stage, catalogue)}
+                  </Box>
+                  {(changes || last) && <ArrowForwardRounded sx={{ fontSize: 12 }} />}
+                </Box>
+              </Tooltip>
+              {(changes || last) && (
+                <KindNode kind={writes} level={level(writes)} catalogue={catalogue} faint={faint} last={last} />
+              )}
+            </Box>
+          );
+        }
         return (
           <Box key={`${stage.tool}-${i}`} sx={{ display: 'contents' }}>
             <Tooltip

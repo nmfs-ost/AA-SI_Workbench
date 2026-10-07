@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import type { ThemeMode } from '../types';
-import { isThemeMode } from '../theme';
+import { isThemeMode } from '../theme/tokens';
 
 /**
  * The active palette.

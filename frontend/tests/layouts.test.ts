@@ -72,7 +72,6 @@ const ALL_PANELS = [
   'prepare',
   'files',
   'derived',
-  'omao',
   'resources',
   'metadata',
   'configuration',
@@ -131,7 +130,7 @@ describe('both layouts', () => {
     for (const build of [buildHorizontalLayout, buildVerticalLayout]) {
       const f = fakeApi();
       build(f.api);
-      for (const id of ['files', 'derived', 'omao', 'resources']) {
+      for (const id of ['files', 'derived', 'resources']) {
         expect(f.find(id)).toMatchObject({ reference: 'prepare', direction: 'within' });
       }
       // Added first in its group, so it is the tab a fresh layout fronts.

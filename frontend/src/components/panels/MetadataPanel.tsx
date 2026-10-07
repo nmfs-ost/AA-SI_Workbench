@@ -60,7 +60,7 @@ function MetadataBody() {
   /* A product file — the Prepare card's EchoData and Sv, an echogram, a
      NetCDF picked in Products or Files: the console tools wrote how it was
      made into it, and `aa-metadata` reads that back. */
-  if (/^(gs|file):\/\//.test(subject.uri) && /\.(nc|netcdf4|png|html|json)$/i.test(subject.label)) {
+  if (/^(gs|file):\/\//.test(subject.uri) && /\.(nc|netcdf4|png|html|json|csv|evl|evr|ecs|tiles)$/i.test(subject.label)) {
     return <ProvenanceView subject={subject} />;
   }
 

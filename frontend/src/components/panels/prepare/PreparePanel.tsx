@@ -13,7 +13,9 @@ import { getPipelinesState, inputFromUri } from '../../../state/pipelines';
 import {
   buildRequest,
   currentPlan,
+  currentSource,
   dismissRun,
+  getPrepareSources,
   initPrepare,
   setRange,
   startRun,
@@ -135,7 +137,12 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
   const nodes: RouteNode[] = s.run
     ? runNodes(s.run)
     : [
-        { label: 'NCEI', level: '', state: sourceReady ? 'ready' : 'idle', title: 'Source: the NCEI water-column archive' },
+        {
+          label: currentSource(s)?.name ?? 'Source',
+          level: '',
+          state: sourceReady ? 'ready' : 'idle',
+          title: `Source: ${currentSource(s)?.description || 'where the raw files come from'}`,
+        },
         { label: 'Time range', level: 'L0', state: plan ? 'ready' : 'idle', title: 'Retrieve the raw files that cover the range' },
         { label: 'EchoData', level: 'L1', state: plan ? 'ready' : 'idle', title: 'Convert and combine into one EchoData' },
         { label: 'Sv', level: 'L2A', state: !s.sv ? 'off' : plan ? 'ready' : 'idle', title: 'Calibrate: volume backscattering strength' },
@@ -187,8 +194,8 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Box sx={{ px: 1.5, pt: 1.5, pb: 1.75 }}>
           <Typography sx={{ fontSize: 11.5, color: c.text.secondary, lineHeight: 1.55, mb: 1.5 }}>
-            A stretch of an NCEI survey, made into one EchoData asset in the project bucket, ready
-            for what comes next.
+            A stretch of a survey (from NCEI, OMAO or another source), made into one EchoData asset
+            in the project bucket, ready for what comes next.
           </Typography>
           <LifecycleRoute nodes={nodes} />
         </Box>
@@ -236,7 +243,9 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                 n={1}
                 title="Source"
                 done={sourceReady}
-                summary={s.survey && s.sonar ? `NCEI · ${s.survey.id} · ${s.sonar.id}` : 'NCEI'}
+                summary={[currentSource(s)?.name ?? s.source.toUpperCase(), s.survey?.id, s.survey && s.sonar?.id]
+                  .filter(Boolean)
+                  .join(' · ')}
               >
                 <SourceStep s={s} />
               </Step>
@@ -450,7 +459,7 @@ function whyNot(
   if (!s.survey) return 'Choose a survey.';
   if (!s.sonar) return 'Choose an echosounder.';
   if (s.loading.files) return 'Listing the raw files…';
-  if (s.files.length === 0) return 'This echosounder has no raw files in NCEI.';
+  if (s.files.length === 0) return `This echosounder has no raw files in ${currentSource(s)?.name ?? 'this source'}.`;
   if (!x.rangeOk) return 'Choose a time range.';
   if (!x.plan) return 'No files cover this time range.';
   if (x.baseError) return x.baseError;
@@ -472,12 +481,17 @@ function toNode(states: StageStatus['state'][]): NodeState {
   return 'idle';
 }
 
+/** A run's source by name ('NCEI' for runs made before there were others). */
+function sourceName(id: string | undefined): string {
+  return (id ? getPrepareSources().find((x) => x.id === id)?.name : '') || (id ? id.toUpperCase() : 'NCEI');
+}
+
 function runNodes(run: RunStatus): RouteNode[] {
   const st = (id: string) => run.stages.find((x) => x.id === id)?.state ?? 'skipped';
   const bucket: NodeState =
     run.state === 'succeeded' ? 'done' : run.state === 'failed' ? 'idle' : toNode([st('record')]);
   return [
-    { label: 'NCEI', level: '', state: toNode([st('request')]) },
+    { label: sourceName(run.request.source), level: '', state: toNode([st('request')]) },
     { label: 'Time range', level: 'L0', state: toNode([st('fetch')]) },
     { label: 'EchoData', level: 'L1', state: toNode([st('convert'), st('combine')]) },
     { label: 'Sv', level: 'L2A', state: toNode([st('sv'), st('echogram')]) },

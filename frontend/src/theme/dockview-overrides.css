@@ -84,7 +84,12 @@
   box-shadow: inset 0 2px 0 0 var(--aa-accent-muted);
 }
 
-/* A subtle seam under the tab strip. */
+/* The line under the tab strip: the same line as the one under every panel's
+   header row (PanelHeader, border.subtle), so where a dock with tabs meets a
+   dock showing a header the line runs straight on, one colour, one height.
+   border.strong is kept for the seams between regions (sashes, the menu bar,
+   the status bar, the side strips). */
 .aa-dockview .tabs-and-actions-container {
-  border-bottom: 1px solid var(--aa-border-strong);
+  border-bottom: 1px solid var(--aa-border-subtle);
+  box-sizing: border-box;
 }

@@ -8,6 +8,13 @@ import 'dockview/dist/styles/dockview.css';
 import './theme/dockview-overrides.css';
 
 import App from './App';
+import { withoutSignInToken } from './services/addressApi';
+
+// A link that signed this browser in to the Cloud Workstation carries a
+// one-time ?_workstationAccessToken=…. The address bar shows the address
+// without it, the one to bookmark (see Help ▸ Link to this Workbench).
+const clean = withoutSignInToken(window.location.href);
+if (clean !== window.location.href) window.history.replaceState(window.history.state, '', clean);
 
 const container = document.getElementById('root');
 if (!container) {

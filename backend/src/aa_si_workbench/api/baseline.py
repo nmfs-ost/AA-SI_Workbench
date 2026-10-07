@@ -78,7 +78,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from . import jobs, workspace
+from . import jobs, sources, workspace
 from .gcp import GcpContext, project_of_bucket, tool_env
 from .gcp import current as gcp_current
 
@@ -121,8 +121,10 @@ class EchogramOptions(BaseModel):
 
 
 class BaselineRequest(BaseModel):
-    """What the pipeline card sends. Names are NCEI's own (folder ids)."""
+    """What the pipeline card sends. Names are the source's own (folder ids)."""
 
+    #: Where the raw files come from (sources.py): ncei, omao, or one added.
+    source: str = "ncei"
     vessel: str = Field(min_length=1)  # e.g. Henry_B._Bigelow
     survey: str = Field(min_length=1)  # e.g. HB1603
     sonar: str = Field(min_length=1)  # e.g. EK60
@@ -193,11 +195,15 @@ class StagePreview(BaseModel):
 
 class Preview(BaseModel):
     base: str
+    #: The source's name (NCEI, OMAO …).
+    source: str = "NCEI"
     destination: str
     stages: list[StagePreview]
     assets: list[dict]
     #: The folder the run's own folder is made in.
     workRoot: str = ""
+    #: The run's own folder as the commands name it (a placeholder).
+    scratch: str = ""
 
 
 class Workspace(BaseModel):
@@ -471,6 +477,15 @@ class Context:
     #: The GCP project and bucket when the run was made: every stage runs in
     #: it, even if the choice changes while the run goes.
     gcp: GcpContext = field(default_factory=lambda: gcp_current())
+    #: Where the raw files come from (NCEI unless the card chose another).
+    source: sources.DataSource = field(default_factory=lambda: sources.BUILTINS[0])
+    #: Another source's raw files, where they are: gs:// URIs or paths.
+    source_files: list[str] = field(default_factory=list)
+
+    @property
+    def fetch_tool(self) -> str:
+        """aa-fetch (NCEI), aa-download (a gs:// archive) or cp (a folder)."""
+        return self.source.fetch or "aa-fetch"
 
     @property
     def single(self) -> bool:
@@ -564,6 +579,10 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
             "--force",
         ]
     if stage_id == "fetch":
+        if ctx.fetch_tool == "aa-download":
+            return ["--dest", str(ctx.raw_dir), *ctx.source_files]
+        if ctx.fetch_tool == "cp":
+            return ["-p", "--", *ctx.source_files, f"{ctx.raw_dir}/"]
         return [
             ctx.output("request", str(ctx.request_doc)),
             "-o",
@@ -640,6 +659,17 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
     if stage_id == "record":
         return [ctx.output("request", str(ctx.request_doc)), ctx.dest]
     raise ValueError(stage_id)
+
+
+def stage_view(stage: Stage, ctx: Context) -> tuple[str, str]:
+    """(tool, description) of a stage for this request: the fetch is the
+    source's own (aa-fetch from NCEI, a copy from an archive)."""
+    if stage.id != "fetch" or ctx.fetch_tool == "aa-fetch":
+        return stage.tool, stage.description
+    return (
+        ctx.fetch_tool,
+        f"Copy the raw files from {ctx.source.name} into a scratch folder.",
+    )
 
 
 def frees_after(stage_id: str, ctx: Context) -> list[str]:
@@ -797,10 +827,13 @@ def _verify_fetch(ctx: Context) -> tuple[str, str]:
     """(error, note) comparing what arrived with what the card promised."""
     got = {p.name for p in ctx.raw_dir.glob("*.raw")}
     expected = set(ctx.req.expectedFiles)
+    ncei = ctx.fetch_tool == "aa-fetch"
     if not got:
         return (
             "aa-fetch finished but downloaded no .raw files. The NCEI metadata "
-            "cache may not list this survey or window.",
+            "cache may not list this survey or window."
+            if ncei
+            else f"The copy from {ctx.source.name} delivered no .raw files.",
             "",
         )
     if not expected:
@@ -815,10 +848,13 @@ def _verify_fetch(ctx: Context) -> tuple[str, str]:
             f"aa-fetch delivered {len(got & expected)} of the {len(expected)} files "
             f"the time range covers. Missing: {shown}. NCEI's metadata cache "
             "(BigQuery) may not list them yet; the listing the card used is "
-            "NCEI's S3 archive.",
+            "NCEI's S3 archive."
+            if ncei
+            else f"The copy from {ctx.source.name} delivered {len(got & expected)} "
+            f"of the {len(expected)} files the time range covers. Missing: {shown}.",
             "",
         )
-    note = f"{len(expected)} raw files fetched, as planned."
+    note = f"{len(expected)} raw files fetched from {ctx.source.name}, as planned."
     if extra:
         # The request's window is file-aligned, so an extra file is one NCEI's
         # cache dates differently from its name. It is set aside, not
@@ -882,18 +918,21 @@ def _execute_stages(run: _Run) -> None:
             continue
         args = stage_args(stage.id, ctx)
         try:
-            job = jobs.submit(
-                jobs.JobRequest(
-                    tool=stage.tool,
-                    args=args,
-                    cwd=str(ctx.scratch),
-                    env=env,
-                    label=f"{ctx.base} · {stage.label}",
-                ),
-                # The fetch looks files up in the NCEI cache the card listed
-                # them from; the other stages work in the chosen project.
-                gcp_env=tool_env(ctx.gcp, ncei=stage.id == "fetch"),
-            )
+            if stage.id == "fetch" and ctx.fetch_tool != "aa-fetch":
+                job = _copy_from_source(ctx, args, env)
+            else:
+                job = jobs.submit(
+                    jobs.JobRequest(
+                        tool=stage.tool,
+                        args=args,
+                        cwd=str(ctx.scratch),
+                        env=env,
+                        label=f"{ctx.base} · {stage.label}",
+                    ),
+                    # The fetch looks files up in the NCEI cache the card listed
+                    # them from; the other stages work in the chosen project.
+                    gcp_env=tool_env(ctx.gcp, ncei=stage.id == "fetch"),
+                )
         except HTTPException as exc:
             with _lock:
                 stage.state = "failed"
@@ -903,7 +942,11 @@ def _execute_stages(run: _Run) -> None:
         with _lock:
             stage.state = "running"
             stage.jobId = job.id
-            stage.command = list(job.command)
+            # A copy from an archive shows as the preview does (cp …), not
+            # as the shell that runs it.
+            stage.command = (
+                [stage.tool, *args] if stage.tool == "cp" else list(job.command)
+            )
             stage.startedAt = _now()
             run.current_job = job.id
             cancel_now = run.cancel_requested
@@ -961,6 +1004,10 @@ def _execute_stages(run: _Run) -> None:
         # A tool that found its product already made says "reusing" and does
         # nothing: the same inputs with the same settings are the same product.
         reused = any("reusing" in line for line in jobs.tail_of(job.id, 200))
+        if stage.id == "fetch":
+            # The folder the files went to, whichever way they came (aa-download
+            # prints each file; aa-fetch the folder).
+            output = str(ctx.raw_dir)
         with _lock:
             stage.output = output
             stage.state = "done"
@@ -1065,6 +1112,49 @@ def _execute_stages(run: _Run) -> None:
     _finish(run, "succeeded")
 
 
+def _copy_from_source(ctx: Context, args: list[str], env: dict[str, str]) -> jobs._Job:
+    """The fetch from an archive: aa-download (gs://) or cp (a folder)."""
+    ctx.raw_dir.mkdir(parents=True, exist_ok=True)
+    label = f"{ctx.base} · Fetch from {ctx.source.name}"
+    if ctx.fetch_tool == "aa-download":
+        return jobs.submit(
+            jobs.JobRequest(
+                tool="aa-download",
+                args=args,
+                cwd=str(ctx.scratch),
+                env=env,
+                label=label,
+            ),
+            gcp_env=tool_env(ctx.gcp),
+        )
+    # cp, as the preview shows it; the files are arguments, never code.
+    return jobs.submit_step(
+        "bash",
+        'cp -p -- "$@" && printf \'%s\\n\' "${@: -1}"',
+        stdin_text="",
+        env=env,
+        cwd=str(ctx.scratch),
+        label=label,
+        gcp_env=tool_env(ctx.gcp),
+        args=args[2:],
+        trusted=True,
+    )
+
+
+def _source_files(req: BaselineRequest, source: sources.DataSource) -> list[str]:
+    """Where an archive's files are; [] for NCEI (aa-fetch finds them)."""
+    if source.kind == "ncei":
+        return []
+    if not req.expectedFiles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Which of {source.name}'s raw files: the request names none.",
+        )
+    return sources.provider(source.id).locations(
+        req.vessel, req.survey, req.sonar, list(req.expectedFiles)
+    )
+
+
 def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
     named = default_base(req)  # also checks the range
     base = req.base.strip() or named
@@ -1073,8 +1163,16 @@ def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
         raise HTTPException(status_code=400, detail=f"Not a usable base name: {base!r}")
     user = detect_user()
     dest = destination(req, base, user)
+    source = sources.get(req.source)
+    if not source.ready:
+        raise HTTPException(status_code=409, detail=source.detail)
     return Context(
-        req=req, base=base, dest=dest, scratch=scratch or run_root() / f"{base}-preview"
+        req=req,
+        base=base,
+        dest=dest,
+        scratch=scratch or run_root() / f"{base}-preview",
+        source=source,
+        source_files=_source_files(req, source),
     )
 
 
@@ -1218,21 +1316,26 @@ def post_preview(req: BaselineRequest) -> Preview:
     """The exact argv each stage would run, before anything runs."""
     root = work_root(req)
     ctx = _context(req, scratch=root / "<run>")
-    stages = [
-        StagePreview(
-            id=s.id,
-            label=s.label,
-            tool=s.tool,
-            level=s.level,
-            description=s.description,
-            command=[s.tool, *stage_args(s.id, ctx)],
-            frees=frees_after(s.id, ctx),
+    stages = []
+    for s in STAGES:
+        if not enabled(s.id, req, ctx.single):
+            continue
+        tool, description = stage_view(s, ctx)
+        stages.append(
+            StagePreview(
+                id=s.id,
+                label=s.label,
+                tool=tool,
+                level=s.level,
+                description=description,
+                command=[tool, *stage_args(s.id, ctx)],
+                frees=frees_after(s.id, ctx),
+            )
         )
-        for s in STAGES
-        if enabled(s.id, req, ctx.single)
-    ]
     return Preview(
         base=ctx.base,
+        source=ctx.source.name,
+        scratch=str(ctx.scratch),
         destination=ctx.dest,
         stages=stages,
         assets=[a.model_dump() for a in planned_assets(ctx)],
@@ -1286,14 +1389,21 @@ def post_run(req: BaselineRequest) -> RunStatus:
         raise HTTPException(
             status_code=409, detail=f"Cannot make the working folder {scratch}: {exc}"
         ) from exc
-    ctx = Context(req=req, base=base_ctx.base, dest=base_ctx.dest, scratch=scratch)
+    ctx = Context(
+        req=req,
+        base=base_ctx.base,
+        dest=base_ctx.dest,
+        scratch=scratch,
+        source=base_ctx.source,
+        source_files=base_ctx.source_files,
+    )
     stages = [
         StageStatus(
             id=s.id,
             label=s.label,
-            tool=s.tool,
+            tool=stage_view(s, ctx)[0],
             level=s.level,
-            description=s.description,
+            description=stage_view(s, ctx)[1],
             state="pending" if enabled(s.id, req, ctx.single) else "skipped",
         )
         for s in STAGES
@@ -1352,12 +1462,23 @@ def post_cancel(run_id: str) -> RunStatus:
 # --------------------------------------------------------------------------- #
 # Provenance of a product (for the Metadata panel)
 # --------------------------------------------------------------------------- #
+class Commands(BaseModel):
+    """The console commands that made a product (aa-metadata --commands): the
+    last step from its inputs, and the chain from the raw files as a script.
+    Portable: inputs by gs:// URI, raw files under $RAW, outputs to $DEST."""
+
+    command: str = ""
+    script: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
 class Provenance(BaseModel):
     uri: str
     found: bool
     document: dict | None = None
     verified: bool | None = None
     message: str = ""
+    commands: Commands | None = None
 
 
 #: Above this, a product with no provenance sidecar is not downloaded just to
@@ -1404,18 +1525,37 @@ def get_provenance(uri: str = Query(..., min_length=1)) -> Provenance:
     too_big = _without_sidecar_and_large(uri)
     if too_big:
         return Provenance(uri=uri, found=False, message=too_big)
-    try:
-        proc = subprocess.run(  # noqa: S603 - resolved aa-* tool, argv only
-            [program, "--json", "--verify", "--", uri],
+
+    def run(*extra: str) -> subprocess.CompletedProcess:
+        return subprocess.run(  # noqa: S603 - resolved aa-* tool, argv only
+            [program, "--json", "--verify", *extra, "--", uri],
             capture_output=True,
             text=True,
             timeout=float(os.getenv("AASI_PROVENANCE_TIMEOUT", "120")),
             stdin=subprocess.DEVNULL,
             env={**os.environ, **tool_env()},
         )
+
+    try:
+        proc = run("--commands")
+        if proc.returncode == 2 and "--commands" in proc.stderr:
+            proc = run()  # an aalibrary from before --commands
     except subprocess.TimeoutExpired:
         return Provenance(uri=uri, found=False, message="aa-metadata took too long.")
-    line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("{")), "")
+    docs = [ln for ln in proc.stdout.splitlines() if ln.startswith("{")]
+    line = docs[0] if docs else ""
+    commands = None
+    for extra in docs[1:]:
+        try:
+            got = json.loads(extra)
+        except ValueError:
+            continue
+        if got.get("schema") == "aa-commands/1":
+            commands = Commands(
+                command=str(got.get("command") or ""),
+                script=str(got.get("script") or ""),
+                notes=[str(n) for n in got.get("notes") or []],
+            )
     if not line:
         message = (
             proc.stderr.strip().splitlines()[-1]
@@ -1432,7 +1572,9 @@ def get_provenance(uri: str = Query(..., min_length=1)) -> Provenance:
         verified = True
     elif "MISMATCH" in proc.stderr:
         verified = False
-    return Provenance(uri=uri, found=True, document=document, verified=verified)
+    return Provenance(
+        uri=uri, found=True, document=document, verified=verified, commands=commands
+    )
 
 
 # --------------------------------------------------------------------------- #

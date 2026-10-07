@@ -7,7 +7,20 @@
  * lives in `theme/tokens.ts`, and `Record<ThemeMode, PaletteDefinition>` there
  * is what turns a missing palette into a type error rather than a blank screen.
  */
-export type ThemeMode = 'dark' | 'light' | 'noaa' | 'spring' | 'pride';
+export type ThemeMode =
+  | 'dark'
+  | 'light'
+  | 'noaa'
+  | 'spring'
+  | 'pride'
+  /* Matplotlib colormap themes (theme/tokens.ts). */
+  | 'viridis'
+  | 'plasma'
+  | 'inferno'
+  | 'magma'
+  | 'cividis'
+  | 'turbo'
+  | 'jet';
 
 /**
  * Whether a palette is fundamentally light or dark.

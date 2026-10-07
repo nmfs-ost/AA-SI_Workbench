@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -510,3 +511,214 @@ def test_a_failed_run_leaves_no_scratch_behind(tools, monkeypatch, tmp_path):
     )
     assert status.state == "failed"
     assert not list((tmp_path / "runs").glob("pipeline-*"))
+
+
+# --------------------------------------------------------------------------- #
+# Steps of one's own: Bash and Python
+# --------------------------------------------------------------------------- #
+def own(*stages: pipelines.StageSpec) -> pipelines.PipelineSpec:
+    return pipelines.PipelineSpec(name="Mine", stages=list(stages))
+
+
+def bash(command: str, **kw) -> pipelines.StageSpec:
+    return pipelines.StageSpec(tool="bash", command=command, **kw)
+
+
+def test_own_steps_are_saved_with_their_command():
+    client = TestClient(create_app())
+    made = client.post(
+        "/api/pipelines",
+        json=own(
+            pipelines.StageSpec(tool="aa-sv"),
+            bash("tee -a ~/sv.log", label="  Log   the Sv \n"),
+            pipelines.StageSpec(tool="python", command="print(input())"),
+            pipelines.StageSpec(tool="aa-graph"),
+        ).model_dump(),
+    )
+    assert made.status_code == 200, made.text
+    stages = made.json()["stages"]
+    assert stages[1]["command"] == "tee -a ~/sv.log"
+    assert stages[1]["label"] == "Log the Sv"
+    assert stages[2]["tool"] == "python"
+    for bad in (bash("   "), bash("x\x00"), bash("tee", produces="nonsense")):
+        refused = client.post("/api/pipelines", json=own(bad).model_dump())
+        assert refused.status_code == 400
+
+
+def test_an_own_step_runs_on_what_the_stage_before_it_made():
+    spec = own(
+        pipelines.StageSpec(tool="aa-sv"),
+        bash('tee -a sv.log; echo "$(date)" >&2', label="Log the Sv"),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    on_ed = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=ED))
+    assert on_ed.problems == []
+    assert [s.action for s in on_ed.stages] == ["run", "run", "run"]
+    step = on_ed.stages[1]
+    assert step.label == "Log the Sv" and step.group == "Your own"
+    assert step.command[:4] == ["bash", "-eo", "pipefail", "-c"]
+    assert step.reads == "<the Sv output>" and step.produces == "sv"
+    assert on_ed.stages[2].reads == "<the Log the Sv output>"
+    assert 'OUT2=$(cd ~ && printf \'%s\\n\' "$OUT1" | IN="$OUT1"' in on_ed.script
+    assert 'OUT3=$(aa-graph "$OUT2"' in on_ed.script
+    # Given an Sv, the step after the Sv stage still runs: on the input.
+    on_sv = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV))
+    assert on_sv.problems == []
+    assert [s.action for s in on_sv.stages] == ["skip", "run", "run"]
+    assert on_sv.stages[1].reads == SV
+
+
+def test_a_step_that_says_what_it_makes_starts_the_chain():
+    spec = own(
+        pipelines.StageSpec(tool="python", command="...", produces="sv"),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    result = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=ED))
+    assert result.problems == []
+    assert [s.action for s in result.stages] == ["run", "run"]
+    assert result.stages[0].command[:2] == ["python3", "-c"]
+    # Before a stage the input is past, it is skipped with that stage.
+    spec = own(
+        bash("echo hi >&2"),
+        pipelines.StageSpec(tool="aa-sv"),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    result = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV))
+    assert [s.action for s in result.stages] == ["skip", "skip", "run"]
+    assert pipelines.plan(
+        pipelines.PlanRequest(pipeline=own(bash(" ")), input=SV)
+    ).problems
+
+
+def test_the_script_runs_own_steps_as_written(tmp_path):
+    spec = own(
+        bash("tee -a steps.log", label='Log "$(touch pwned)"'),
+        pipelines.StageSpec(
+            tool="python", command="import sys\nprint(sys.stdin.read().strip() + '.x')"
+        ),
+        bash("echo not a product"),
+    )
+    result = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV))
+    assert result.problems == [], result.problems
+    script = tmp_path / "run.sh"
+    # The products: the stand-in bucket has no gsutil, so a path stands in.
+    (tmp_path / "sv.nc").write_text("sv")
+    (tmp_path / "sv.nc.x").write_text("x")
+    script.write_text(
+        result.script.replace(f"IN={SV}", f"IN={tmp_path / 'sv.nc'}").replace(
+            "python3 -c", f"{sys.executable} -c"
+        )
+        + 'echo "FINAL=$OUT3"\n'
+    )
+    import subprocess
+
+    home = tmp_path / "home"
+    home.mkdir()
+    done = subprocess.run(
+        ["bash", str(script)],
+        cwd=tmp_path,
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    # Steps run from the home folder, as the Workbench runs them.
+    assert (home / "steps.log").read_text().strip() == str(tmp_path / "sv.nc")
+    assert f"FINAL={tmp_path / 'sv.nc.x'}" in done.stdout
+    assert not (tmp_path / "pwned").exists()
+
+
+def test_a_relative_product_is_read_from_the_home_folder_in_both(
+    tools, tmp_path, monkeypatch
+):
+    """The run and the plan's script agree on what a step hands on."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    spec = own(
+        pipelines.StageSpec(tool="aa-sv"),
+        bash("touch mine.nc && echo mine.nc", label="Make my own"),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    status = wait(pipelines.start(pipelines.PlanRequest(pipeline=spec, input=ED)).id)
+    assert status.state == "succeeded", status.error
+    assert status.stages[1].output == str(home / "mine.nc")
+    assert status.stages[2].command[1] == str(home / "mine.nc")
+    # The script: the same step, the same answer.
+    only = own(bash("touch mine.nc && echo mine.nc"))
+    script = pipelines.plan(pipelines.PlanRequest(pipeline=only, input=SV)).script
+    import subprocess
+
+    done = subprocess.run(
+        ["bash", "-c", script + 'echo "FINAL=$OUT1"\n'],
+        cwd=tmp_path,
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert f"FINAL={home / 'mine.nc'}" in done.stdout
+
+
+def test_own_steps_are_refused_when_the_server_is_reachable_from_outside(
+    tools, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AASI_BIND_HOST", "0.0.0.0")
+    monkeypatch.delenv("AASI_ALLOW_REMOTE_TERMINAL", raising=False)
+    spec = own(bash(f"touch {tmp_path / 'ran'}"))
+    planned = pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV))
+    assert any("bound to 0.0.0.0" in p for p in planned.problems)
+    refused = TestClient(create_app()).post(
+        "/api/pipelines/runs", json={"pipeline": spec.model_dump(), "input": SV}
+    )
+    assert refused.status_code == 409
+    with pytest.raises(Exception) as caught:
+        jobs.submit_step("bash", "true", stdin_text="", env={}, cwd="", label="x")
+    assert getattr(caught.value, "status_code", None) == 403
+    assert not (tmp_path / "ran").exists()
+    monkeypatch.setenv("AASI_ALLOW_REMOTE_TERMINAL", "true")
+    assert pipelines.plan(pipelines.PlanRequest(pipeline=spec, input=SV)).problems == []
+
+
+def test_a_run_passes_on_what_an_own_step_prints(tools, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    spec = own(
+        pipelines.StageSpec(tool="aa-sv"),
+        bash('tee -a sv.log; echo "logged $IN" >&2; ls / >/dev/null', label="Log"),
+        pipelines.StageSpec(
+            tool="python",
+            command=(
+                "import sys\nprint('looking')\n"
+                "print(sys.stdin.read().strip() + '-renamed')"
+            ),
+        ),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    status = wait(pipelines.start(pipelines.PlanRequest(pipeline=spec, input=ED)).id)
+    assert status.state == "succeeded", status.error
+    sv, log, py, graph = status.stages
+    assert log.output == sv.output and log.detail == "Passed its input on."
+    assert (tmp_path / "sv.log").read_text().strip() == sv.output
+    assert any("logged" in line for line in log.log)
+    assert py.output == sv.output + "-renamed"
+    assert "looking" in py.log
+    assert graph.command[1] == py.output
+
+
+def test_a_failed_own_step_stops_the_run(tools, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    spec = own(
+        pipelines.StageSpec(tool="aa-sv"),
+        bash("grep nothing-here; echo never"),
+        pipelines.StageSpec(tool="aa-graph"),
+    )
+    status = wait(pipelines.start(pipelines.PlanRequest(pipeline=spec, input=ED)).id)
+    assert status.state == "failed"
+    assert [s.state for s in status.stages] == ["succeeded", "failed", "skipped"]
+    assert "exit 1" in status.error
+    job = status.stages[1].jobId
+    with pytest.raises(Exception) as caught:
+        jobs.resume(job)
+    assert getattr(caught.value, "status_code", None) in (404, 409)

@@ -79,6 +79,7 @@ export const CalibrationPanel: FunctionComponent<IDockviewPanelProps> = () => {
       <Shell>
         <PanelPlaceholder
           icon={ScienceOutlined}
+          panelTitle="Calibration"
           title="No EchoData selected"
           description="Select an EchoData (or an Sv made from one) in Products to see the calibration echopype will use, change it, and save it as an ECS file."
         />

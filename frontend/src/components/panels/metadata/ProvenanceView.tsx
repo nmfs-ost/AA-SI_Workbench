@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Box, CircularProgress, Typography, alpha, useTheme } from '@mui/material';
-import { GppGoodOutlined, GppMaybeOutlined, ReportOutlined } from '@mui/icons-material';
+import { Box, CircularProgress, IconButton, Tooltip, Typography, alpha, useTheme } from '@mui/material';
+import {
+  ContentCopyOutlined,
+  DoneRounded,
+  FileDownloadOutlined,
+  GppGoodOutlined,
+  GppMaybeOutlined,
+  ReportOutlined,
+} from '@mui/icons-material';
 
 import type { ActiveSubject } from '../../../state/activeSubject';
-import type { Provenance } from '../../../services/baselineApi';
+import { setActiveArtifact } from '../../../state/activeSubject';
+import type { ProductCommands, Provenance } from '../../../services/baselineApi';
 import { provenanceApi } from '../../../services/baselineApi';
+import { pipelinesApi, type ProductInfo } from '../../../services/pipelinesApi';
+import { CLASS_LABEL, formatMoney, monthlyCost } from '../../../services/costsApi';
+import { useCosts } from '../../../state/costs';
+import { formatBytes } from '../rowFormat';
 
 /**
  * What a product *is*, from the provenance the console tools wrote into it.
@@ -41,14 +53,23 @@ export function ProvenanceView({ subject }: { subject: ActiveSubject }) {
   const c = theme.aa.color;
   const [result, setResult] = useState<Provenance | null>(null);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState<ProductInfo | null>(null);
+  const prices = useCosts().prices;
 
   useEffect(() => {
     let live = true;
     setResult(null);
     setError('');
+    setInfo(null);
     provenanceApi(subject.uri)
       .then((r) => live && setResult(r))
       .catch((e: Error) => live && setError(e.message));
+    if (subject.uri.startsWith('gs://')) {
+      pipelinesApi
+        .product(subject.uri)
+        .then((p) => live && setInfo(p))
+        .catch(() => undefined);
+    }
     return () => {
       live = false;
     };
@@ -96,6 +117,60 @@ export function ProvenanceView({ subject }: { subject: ActiveSubject }) {
             <Field label="By" value={[doc.created?.user, doc.created?.host].filter(Boolean).join(' on ')} />
           </Section>
 
+          {info?.found && (
+            <Section title="File">
+              <Field label="Size" value={info.sizeBytes ? `${formatBytes(info.sizeBytes)} (${info.sizeBytes.toLocaleString()} bytes)` : undefined} />
+              <Field label="Level" value={[info.level, info.kind].filter(Boolean).join(' · ')} />
+              <Field
+                label="Storage"
+                value={
+                  info.storageClass
+                    ? `${CLASS_LABEL[info.storageClass] ?? info.storageClass}` +
+                      (prices && info.sizeBytes
+                        ? ` · ${formatMoney(monthlyCost(info.sizeBytes, info.storageClass, prices), { exact: true })} a month`
+                        : '')
+                    : undefined
+                }
+              />
+              <Field
+                label="MD5"
+                value={info.md5 ? `${info.md5}${info.intact === true ? ' · as published' : info.intact === false ? ' · REWRITTEN after publishing' : ''}` : undefined}
+                mono
+              />
+              <Field label="Generation" value={info.generation} mono />
+            </Section>
+          )}
+
+          {doc.inputs && doc.inputs.length > 0 && (
+            <Section title={`Made from ${doc.inputs.length} ${doc.inputs.length === 1 ? 'input' : 'inputs'}`}>
+              {doc.inputs.map((input, i) => {
+                const local = !input.uri?.startsWith('gs://');
+                return (
+                  <Box key={`${input.uri}-${i}`} sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, py: 0.2, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 10, color: c.text.muted, width: 70, flexShrink: 0 }} noWrap title={input.role}>
+                      {roleLabel(input.role)}
+                    </Typography>
+                    <Typography
+                      title={local ? input.name : input.uri}
+                      onClick={local || !input.uri ? undefined : () => setActiveArtifact({ uri: input.uri!, label: input.name ?? input.uri!, origin: 'Derived' })}
+                      sx={{
+                        fontFamily: theme.aa.font.mono,
+                        fontSize: 10.5,
+                        color: local ? c.text.secondary : c.accent.main,
+                        cursor: local ? 'default' : 'pointer',
+                        minWidth: 0,
+                        wordBreak: 'break-all',
+                        '&:hover': local ? undefined : { textDecoration: 'underline' },
+                      }}
+                    >
+                      {input.name}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Section>
+          )}
+
           {doc.pipeline && doc.pipeline.length > 0 && (
             <Section title={`How it was made · ${doc.pipeline.length} ${doc.pipeline.length === 1 ? 'step' : 'steps'}`}>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
@@ -141,6 +216,12 @@ export function ProvenanceView({ subject }: { subject: ActiveSubject }) {
                   and {doc.sources.length - 6} more
                 </Typography>
               )}
+            </Section>
+          )}
+
+          {result?.commands && (result.commands.command || result.commands.script) && (
+            <Section title="Remake it">
+              <CommandsView commands={result.commands} name={subject.label} />
             </Section>
           )}
 
@@ -237,6 +318,131 @@ function Field({ label, value, mono = false, title }: { label: string; value?: s
       >
         {value}
       </Typography>
+    </Box>
+  );
+}
+
+function roleLabel(role?: string): string {
+  if (!role || role === 'source') return 'from';
+  if (role === 'echodata') return 'EchoData';
+  const [kind, dest] = role.split(':');
+  return dest ? `--${dest.replace(/_/g, '-')}` : kind;
+}
+
+/**
+ * The commands that made the product, to read, copy or run on another
+ * workstation: the last step from its inputs, and the whole chain from the raw
+ * files. No local paths: inputs by gs:// URI, raw files under $RAW, outputs to
+ * $DEST.
+ */
+function CommandsView({ commands, name }: { commands: ProductCommands; name: string }) {
+  const theme = useTheme();
+  const c = theme.aa.color;
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+      {commands.command && (
+        <CodeBlock
+          title="This file, from its inputs"
+          code={commands.command}
+          copyLabel="Copy the command"
+        />
+      )}
+      {commands.script && (
+        <CodeBlock
+          title="The whole chain, from the raw files"
+          code={commands.script}
+          copyLabel="Copy the script"
+          download={`remake_${name.replace(/\.[^.]+$/, '')}.sh`}
+          tall
+        />
+      )}
+      <Typography sx={{ fontSize: 10.5, color: c.text.muted, lineHeight: 1.5 }}>
+        Inputs in the bucket are named by their gs:// URI. Raw files are read from <code>$RAW</code> and
+        products written to <code>$DEST</code>: set both and run it on any workstation with the AA-SI
+        tools. The same inputs and settings make the same product hash.
+      </Typography>
+      {commands.notes.map((note) => (
+        <Typography key={note} sx={{ fontSize: 10.5, color: c.status.warning }}>
+          {note}
+        </Typography>
+      ))}
+    </Box>
+  );
+}
+
+function CodeBlock({
+  title,
+  code,
+  copyLabel,
+  download,
+  tall = false,
+}: {
+  title: string;
+  code: string;
+  copyLabel: string;
+  download?: string;
+  tall?: boolean;
+}) {
+  const theme = useTheme();
+  const c = theme.aa.color;
+  const [copied, setCopied] = useState(false);
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, mb: 0.4 }}>
+        <Typography sx={{ fontSize: 11, color: c.text.secondary, flex: 1 }}>{title}</Typography>
+        <Tooltip title={copied ? 'Copied' : copyLabel}>
+          <IconButton
+            size="small"
+            aria-label={copyLabel}
+            onClick={() =>
+              void navigator.clipboard?.writeText(code).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1400);
+              })
+            }
+          >
+            {copied ? <DoneRounded sx={{ fontSize: 14 }} /> : <ContentCopyOutlined sx={{ fontSize: 14 }} />}
+          </IconButton>
+        </Tooltip>
+        {download && (
+          <Tooltip title="Download as a script">
+            <IconButton
+              size="small"
+              aria-label="Download as a script"
+              onClick={() => {
+                const url = URL.createObjectURL(new Blob([code], { type: 'text/x-shellscript' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = download;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+            >
+              <FileDownloadOutlined sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+      <Box
+        component="pre"
+        sx={{
+          m: 0,
+          p: 1,
+          maxHeight: tall ? 320 : 140,
+          overflow: 'auto',
+          fontFamily: theme.aa.font.mono,
+          fontSize: 10.5,
+          lineHeight: 1.55,
+          color: c.text.primary,
+          backgroundColor: c.bg.editor,
+          border: `1px solid ${c.border.subtle}`,
+          borderRadius: `${theme.aa.radius.sm}px`,
+          whiteSpace: tall ? 'pre' : 'pre-wrap',
+          wordBreak: tall ? 'normal' : 'break-all',
+        }}
+      >
+        {code}
+      </Box>
     </Box>
   );
 }

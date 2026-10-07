@@ -27,7 +27,7 @@ import { setDest, setForce, startRuns } from '../../../state/pipelines';
 import { useLayout } from '../../../context/LayoutContext';
 import { Caption, LevelChip, Note, PathText } from '../prepare/ui';
 import { compactFieldSx } from '../panelStyles';
-import { describeValues, kindLabel, toolOf } from './chain';
+import { describeValues, isOwn, kindLabel, stageLabel, toolOf } from './chain';
 
 /**
  * The open pipeline's plan, as the server made it for the selected input:
@@ -133,11 +133,21 @@ export function PlanView({
                 <Box sx={{ minWidth: 0 }}>
                   <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 600, color: c.text.primary }}>
-                      {tool?.label ?? stage.tool}
+                      {stageLabel(stage, catalogue)}
                     </Typography>
-                    <Typography sx={{ fontSize: 11, color: c.text.muted }}>{stage.tool}</Typography>
+                    <Typography sx={{ fontSize: 11, color: c.text.muted }}>
+                      {isOwn(stage) ? (stage.tool === 'bash' ? 'your Bash command' : 'your Python') : stage.tool}
+                    </Typography>
                   </Box>
-                  <Typography sx={{ fontSize: 11, color: skip ? c.text.muted : c.text.secondary, lineHeight: 1.5 }}>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      color: skip ? c.text.muted : c.text.secondary,
+                      lineHeight: 1.5,
+                      fontFamily: isOwn(stage) && !skip ? theme.aa.font.mono : undefined,
+                      wordBreak: isOwn(stage) ? 'break-all' : undefined,
+                    }}
+                  >
                     {skip
                       ? planned?.reason
                       : changed
@@ -160,11 +170,11 @@ export function PlanView({
                     </Typography>
                   ))}
                 </Box>
-                {tool && (
+                {(tool || (isOwn(stage) && planned?.produces)) && (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: '1px' }}>
-                    <LevelChip level={tool.level} />
+                    <LevelChip level={planned?.level || tool?.level || ''} />
                     <Typography sx={{ fontSize: 10.5, color: c.text.muted }}>
-                      {kindLabel(planned?.produces || tool.produces, catalogue)}
+                      {kindLabel(planned?.produces || tool?.produces || '', catalogue)}
                     </Typography>
                   </Box>
                 )}

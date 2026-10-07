@@ -15,6 +15,10 @@ import type { ParamValue, ToolParam } from '../../../services/pipelinesApi';
 import { compactFieldSx } from '../panelStyles';
 import { sameValue } from './chain';
 import { ProductPicker } from './ProductPicker';
+import { MATPLOTLIB_COLORMAPS } from '../../../theme/colormaps.generated';
+import { colormapOf } from '../../../theme/tokens';
+import { useThemeMode } from '../../../state/theme';
+import { cssGradient } from '../echogram/colormaps';
 
 function show(value: ParamValue | undefined): string {
   if (value === undefined || value === null) return '';
@@ -182,7 +186,66 @@ export function ParamField({
           sx={{ ...compactFieldSx, mt: 0.4 }}
         />
       )}
+      {param.id === 'cmap' && (
+        <ColormapChoices value={value === undefined ? String(param.default ?? '') : String(value)} onChange={onChange} />
+      )}
       {help}
+    </Box>
+  );
+}
+
+/**
+ * A plotting tool's --cmap, chosen by sight: Matplotlib's colormaps as
+ * swatches, and the colormap theme's own when one is in force, so a pipeline's
+ * echograms can match the interface (and the viewer) exactly.
+ */
+function ColormapChoices({ value, onChange }: { value: string; onChange: (value: ParamValue | undefined) => void }) {
+  const theme = useTheme();
+  const c = theme.aa.color;
+  const themed = colormapOf(useThemeMode());
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5, mt: 0.6 }}>
+      {MATPLOTLIB_COLORMAPS.map(([name, label]) => (
+        <Tooltip key={name} disableInteractive title={name === themed ? `${label} (the theme's)` : label}>
+          <Box
+            component="button"
+            type="button"
+            aria-label={`Colormap ${label}`}
+            aria-pressed={value === name}
+            onClick={() => onChange(name)}
+            sx={{
+              width: 34,
+              height: 14,
+              p: 0,
+              cursor: 'pointer',
+              borderRadius: `${theme.aa.radius.sm}px`,
+              background: cssGradient(name),
+              border: `1px solid ${value === name ? c.text.primary : c.border.subtle}`,
+              outline: value === name ? `1px solid ${c.text.primary}` : 'none',
+              outlineOffset: 1,
+            }}
+          />
+        </Tooltip>
+      ))}
+      {themed && value !== themed && (
+        <Box
+          component="button"
+          type="button"
+          onClick={() => onChange(themed)}
+          sx={{
+            p: 0,
+            ml: 0.5,
+            border: 0,
+            background: 'none',
+            cursor: 'pointer',
+            color: c.accent.main,
+            fontSize: 10.5,
+            fontFamily: 'inherit',
+          }}
+        >
+          Use the theme’s ({themed})
+        </Box>
+      )}
     </Box>
   );
 }

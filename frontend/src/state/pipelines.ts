@@ -222,6 +222,19 @@ export function setStageParam(
   requestPlan();
 }
 
+/** A step of your own: its command, name or product kind changed. */
+export function setOwnStep(
+  pipelineId: string,
+  index: number,
+  patch: Partial<Pick<StageSpec, 'command' | 'label' | 'produces'>>,
+): void {
+  const spec = effective(state, pipelineId);
+  if (!spec) return;
+  const stages = spec.stages.map((stage, i) => (i === index ? { ...stage, ...patch } : stage));
+  set({ edits: { ...state.edits, [pipelineId]: stages } });
+  requestPlan();
+}
+
 export function resetStage(pipelineId: string, index: number): void {
   const spec = effective(state, pipelineId);
   if (!spec) return;

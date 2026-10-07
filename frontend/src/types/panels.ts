@@ -29,7 +29,6 @@ export type BuiltinPanelId =
   | 'prepare'
   | 'files'
   | 'derived'
-  | 'omao'
   | 'resources'
   | 'terminal'
   | 'log'

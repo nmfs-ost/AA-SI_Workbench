@@ -14,7 +14,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material';
-import { ExpandMoreRounded, TuneOutlined } from '@mui/icons-material';
+import { ExpandMoreRounded, TerminalRounded, TuneOutlined } from '@mui/icons-material';
 
 import type { Catalogue, PipelineSpec, Plan } from '../../../services/pipelinesApi';
 import {
@@ -23,6 +23,7 @@ import {
   isEdited,
   resetStage,
   saveEdits,
+  setOwnStep,
   setStageParam,
   usePipelines,
 } from '../../../state/pipelines';
@@ -31,8 +32,9 @@ import { PanelHeader } from '../PanelHeader';
 import { PanelPlaceholder } from '../PanelPlaceholder';
 import { RecipeConfiguration } from '../recipes/RecipeConfiguration';
 import { LevelChip, Note } from '../prepare/ui';
+import { OwnStepEditor } from './OwnStepEditor';
 import { ParamField } from './ParamField';
-import { kindLabel, toolOf } from './chain';
+import { isOwn, kindLabel, stageLabel, toolOf } from './chain';
 
 /**
  * The Configuration panel: the settings of the open pipeline's stages, or of
@@ -64,6 +66,7 @@ function PipelineConfiguration() {
     return (
       <PanelPlaceholder
         icon={TuneOutlined}
+        panelTitle="Configuration"
         title="Pipeline settings"
         description="Open a pipeline in Pipelines and its stages' settings appear here, read from the installed console tools."
       />
@@ -183,6 +186,47 @@ function StageSettings({
   const [more, setMore] = useState(false);
   const planned = plan && plan.pipelineId === spec.id ? plan.stages[index] : undefined;
   const changed = Object.keys(stage.params).length;
+
+  if (isOwn(stage)) {
+    return (
+      <Box
+        sx={{
+          mb: 1.25,
+          borderRadius: `${theme.aa.radius.md}px`,
+          border: `1px dashed ${c.border.strong}`,
+          backgroundColor: c.bg.editor,
+          opacity: planned?.action === 'skip' ? 0.7 : 1,
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.75,
+            px: 1.25,
+            height: 34,
+            borderBottom: `1px solid ${c.border.subtle}`,
+            backgroundColor: alpha(c.accent.main, 0.04),
+          }}
+        >
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: c.accent.main, width: 14 }}>{index + 1}</Typography>
+          <TerminalRounded sx={{ fontSize: 14, color: c.text.muted }} />
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: c.text.primary }} noWrap>
+            {stageLabel(stage, catalogue)}
+          </Typography>
+          <Typography sx={{ fontSize: 11, color: c.text.muted }}>
+            {stage.tool === 'bash' ? 'your Bash command' : 'your Python'}
+          </Typography>
+        </Box>
+        <Box sx={{ px: 1.25, py: 1.25 }}>
+          {planned?.action === 'skip' && (
+            <Typography sx={{ fontSize: 11, color: c.text.muted, mb: 1 }}>{planned.reason}</Typography>
+          )}
+          <OwnStepEditor stage={stage} catalogue={catalogue} onChange={(patch) => setOwnStep(spec.id, index, patch)} />
+        </Box>
+      </Box>
+    );
+  }
 
   if (!tool) {
     return (

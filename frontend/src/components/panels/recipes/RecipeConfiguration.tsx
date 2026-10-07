@@ -268,7 +268,8 @@ export function RecipeConfiguration() {
     return (
       <PanelPlaceholder
         icon={MenuBookOutlined}
-        title="Configuration"
+        panelTitle="Configuration"
+        title="Recipe settings"
         description="Select a recipe in the Recipes panel to configure it."
       />
     );
@@ -278,6 +279,7 @@ export function RecipeConfiguration() {
     return (
       <PanelPlaceholder
         icon={MenuBookOutlined}
+        panelTitle="Configuration"
         title={recipe.fileName}
         description={`This file could not be read as a recipe: ${recipe.error}`}
       />

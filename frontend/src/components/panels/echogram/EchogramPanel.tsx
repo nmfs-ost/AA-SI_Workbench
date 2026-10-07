@@ -42,7 +42,9 @@ import {
 import { PanelBar, PanelHeader } from '../PanelHeader';
 import { HashTag } from '../products/ProductBits';
 import { LevelChip } from '../prepare/ui';
-import { COLORMAPS, cssGradient, type ColormapId } from './colormaps';
+import { COLORMAPS, cssGradient, resolveColormap, type ColormapId } from './colormaps';
+import { colormapOf } from '../../../theme/tokens';
+import { useThemeMode } from '../../../state/theme';
 import { EchogramView, type Hover } from './EchogramView';
 import { LayersPanel, SectionTitle } from './LayersPanel';
 import { TrackMap } from './TrackMap';
@@ -72,6 +74,8 @@ export const EchogramPanel: FunctionComponent<IDockviewPanelProps> = () => {
   const theme = useTheme();
   const c = theme.aa.color;
   const s = useEchogram();
+  const themeColormap = colormapOf(useThemeMode());
+  const resolved = resolveColormap(s.colormap, themeColormap);
   const [hover, setHover] = useState<Hover | null>(null);
   const [typed, setTyped] = useState('');
   const [side, setSide] = useState(true);
@@ -196,13 +200,19 @@ export const EchogramPanel: FunctionComponent<IDockviewPanelProps> = () => {
           <Divider />
           <Select
             size="small"
-            value={s.colormap}
+            value={s.colormap === 'grey' ? 'gray' : s.colormap}
             onChange={(e) => setColours({ colormap: e.target.value as ColormapId })}
             variant="standard"
             disableUnderline
             inputProps={{ 'aria-label': 'Colour scheme' }}
+            renderValue={(v) =>
+              v === 'theme' ? `Theme (${labelOf(resolved)})` : labelOf(String(v))
+            }
             sx={{ fontSize: 11.5, minWidth: 74, flexShrink: 0 }}
           >
+            <MenuItem value="theme" dense sx={{ fontSize: 12 }}>
+              The theme’s ({labelOf(resolveColormap('theme', themeColormap))})
+            </MenuItem>
             {COLORMAPS.map((cm) => (
               <MenuItem key={cm.id} value={cm.id} dense sx={{ fontSize: 12 }}>
                 {cm.label}
@@ -218,7 +228,7 @@ export const EchogramPanel: FunctionComponent<IDockviewPanelProps> = () => {
               flexShrink: 0,
               borderRadius: 2,
               border: `1px solid ${c.border.subtle}`,
-              background: cssGradient(s.colormap),
+              background: cssGradient(resolved),
             }}
           />
           <Threshold label="Max" value={s.vmax} onChange={(v) => v > s.vmin && setColours({ vmax: v })} />
@@ -299,6 +309,11 @@ export const EchogramPanel: FunctionComponent<IDockviewPanelProps> = () => {
               <TrackMap
                 latitude={s.latitude}
                 longitude={s.longitude}
+                times={s.times}
+                uri={s.uri}
+                productName={m.product?.name}
+                channels={m.channels.map((ch) => ch.label)}
+                colormap={resolved === 'ek500' ? themeColormap || 'viridis' : resolved}
                 x0={s.view?.x0 ?? 0}
                 x1={s.view?.x1 ?? 0}
                 cursorPing={hover?.ping ?? null}
@@ -319,6 +334,10 @@ export const EchogramPanel: FunctionComponent<IDockviewPanelProps> = () => {
     </Box>
   );
 };
+
+function labelOf(id: string): string {
+  return COLORMAPS.find((cm) => cm.id === id)?.label ?? id;
+}
 
 function kindLevel(kind: string): string {
   return { sv: 'L2A', ts: 'L2A', mask: 'L2B', noise: 'L2B', mvbs: 'L3' }[kind] ?? '';
