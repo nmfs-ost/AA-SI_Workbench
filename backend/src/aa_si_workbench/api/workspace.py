@@ -16,6 +16,12 @@ before a run:
 * How much space will the range need, at most, and is it free?
 * How much memory will it need, given the tools that are installed?
 
+File by file (the card's switch): each raw file is fetched, converted to its
+own Zarr store in the bucket and deleted before the next, and the stores are
+combined bucket to bucket, read where they are. The folder then holds one raw
+file and its store at a time, whatever the length of the range; only Sv, if
+asked for, is still made here before it is uploaded.
+
 The estimates are per byte of raw data and deliberately a little generous;
 a run reports what it actually used, so they can be checked against reality.
 """
@@ -213,6 +219,32 @@ def space_needed(raw_bytes: int, *, single: bool, sv: bool, freeing: bool) -> in
     return int(peak * MARGIN)
 
 
+def space_needed_file_by_file(
+    raw_bytes: int,
+    largest_bytes: int,
+    files: int,
+    *,
+    sv: bool,
+    keep_raw: bool,
+    raw_here: bool = True,
+) -> int:
+    """The most working space a file-by-file run holds at once, in bytes.
+
+    Converting: one raw file and its store (staged here, then published), or,
+    keeping the raw files, all of them and the store of the last. A folder
+    archive's raw files are read where they are (``raw_here`` False): only
+    the store is here. Combining reads the stores in the bucket and writes
+    there: nothing here. Calibrating reads the combined store in place and
+    writes the Sv here before uploading it, so with Sv the peak is the Sv.
+    """
+    raw = float(max(0, raw_bytes))
+    largest = float(max(0, largest_bytes)) or (raw / max(1, files))
+    held = 0.0 if not raw_here else (raw if keep_raw else largest)
+    converting = held + ECHODATA_PER_RAW * largest
+    sv_bytes = SV_PER_RAW * raw if sv else 0.0
+    return int(max(converting, sv_bytes) * MARGIN)
+
+
 def memory_total() -> int:
     """This machine's memory, or the container's limit when that is lower."""
     total = 0
@@ -253,9 +285,16 @@ _PROBE = (
     "print(int(hasattr(c, '_set_read_cache') and hasattr(s, '_write_streaming') "
     "and hasattr(g, '_for_display')))"
 )
+#: File by file: aa-ed converts a list one file at a time, to Zarr, and the
+#: tools read gs:// stores where they are. Only modules every release has are
+#: imported: a release without these answers 0, not an import error.
+_FILE_BY_FILE_PROBE = (
+    "import aalibrary.console.aa_ed as e, aalibrary.console._core.uris as u\n"
+    "print(int(hasattr(e, '_run_list_mode') and hasattr(u, 'in_place')))"
+)
 _PROBE_SECONDS = 300
 _probe_lock = threading.Lock()
-_probed: dict[str, tuple[float, bool | None]] = {}
+_probed: dict[tuple[str, str], tuple[float, bool | None]] = {}
 
 
 def _interpreter(tool: str) -> str:
@@ -293,19 +332,31 @@ def tools_stream(tool: str) -> bool | None:
     be told from the script, the answer is None: a guess would risk refusing a
     run on the strength of some other environment's aalibrary.
     """
+    return _ask(tool, _PROBE)
+
+
+def tools_file_by_file(tool: str) -> bool | None:
+    """Whether the installed aalibrary can prepare a range file by file
+    (aa-ed with several files and --format zarr; stores read in place);
+    None when it cannot be told. Asked as tools_stream asks."""
+    return _ask(tool, _FILE_BY_FILE_PROBE)
+
+
+def _ask(tool: str, code: str) -> bool | None:
     now = time.monotonic()
+    key = (tool, code)
     with _probe_lock:
-        cached = _probed.get(tool)
+        cached = _probed.get(key)
         if cached and now - cached[0] < _PROBE_SECONDS:
             return cached[1]
     interpreter = _interpreter(tool)
     if not interpreter:
         with _probe_lock:
-            _probed[tool] = (now, None)
+            _probed[key] = (now, None)
         return None
     try:
         done = subprocess.run(
-            [interpreter, "-c", _PROBE],
+            [interpreter, "-c", code],
             capture_output=True,
             text=True,
             timeout=90,
@@ -319,7 +370,7 @@ def tools_stream(tool: str) -> bool | None:
     except (OSError, subprocess.SubprocessError):
         result = None
     with _probe_lock:
-        _probed[tool] = (now, result)
+        _probed[key] = (now, result)
     return result
 
 

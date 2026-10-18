@@ -136,3 +136,47 @@ def test_tree_bytes_counts_files_and_survives_a_missing_folder(tmp_path):
     (tmp_path / "y").write_bytes(b"123")
     assert workspace.tree_bytes(tmp_path) == 8
     assert workspace.tree_bytes(tmp_path / "gone") == 0
+
+
+def test_file_by_file_holds_one_raw_file_and_its_store():
+    m, e, s = workspace.MARGIN, workspace.ECHODATA_PER_RAW, workspace.SV_PER_RAW
+    raw, largest = 40 * 10**9, 200 * 10**6
+    need = workspace.space_needed_file_by_file(
+        raw, largest, 200, sv=False, keep_raw=False
+    )
+    assert need == int((1 + e) * largest * m)  # whatever the length of the range
+    # Not told the largest: the average file.
+    assert workspace.space_needed_file_by_file(
+        raw, 0, 200, sv=False, keep_raw=False
+    ) == int((1 + e) * (raw / 200) * m)
+    # Keeping the raw files: they accumulate. Sv: made here, the whole range.
+    kept = workspace.space_needed_file_by_file(
+        raw, largest, 200, sv=False, keep_raw=True
+    )
+    assert kept == int((raw + e * largest) * m)
+    with_sv = workspace.space_needed_file_by_file(
+        raw, largest, 200, sv=True, keep_raw=False
+    )
+    assert with_sv == int(s * raw * m)
+
+
+def test_file_by_file_support_is_asked_of_the_tools_own_python(tmp_path):
+    workspace._reset_for_tests()
+    exe = tmp_path / "python3"
+    exe.write_text(
+        '#!/bin/sh\ncase "$2" in *_run_list_mode*) echo 0;; *) echo 1;; esac\n'
+    )
+    exe.chmod(0o755)
+    script = tmp_path / "aa-ed"
+    script.write_text(f"#!{exe}\nimport sys\n")
+    assert workspace.tools_stream(str(script)) is True  # asked separately
+    assert workspace.tools_file_by_file(str(script)) is False
+    workspace._reset_for_tests()
+
+
+def test_a_folder_archive_s_raw_files_are_not_counted():
+    m, e = workspace.MARGIN, workspace.ECHODATA_PER_RAW
+    need = workspace.space_needed_file_by_file(
+        10**10, 10**8, 100, sv=False, keep_raw=True, raw_here=False
+    )
+    assert need == int(e * 10**8 * m)

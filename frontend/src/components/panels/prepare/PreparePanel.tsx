@@ -36,7 +36,7 @@ import { RangeStep } from './RangeStep';
 import { RunView } from './RunView';
 import { SourceStep } from './SourceStep';
 import { WorkspaceStep, formatSize, useWorkspace } from './WorkspaceStep';
-import { baseProblem, defaultBase, destinationUri, formatDuration, parseUtc } from './plan';
+import { baseProblem, defaultBase, destinationUri, filesUri, formatDuration, parseUtc, storeName } from './plan';
 import { Disclosure, Note, Step } from './ui';
 
 /**
@@ -92,11 +92,16 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
       : '';
   const single = plan?.files.length === 1;
   const sourceReady = Boolean(s.vessel && s.survey && s.sonar && s.files.length);
+  // File by file: one store per raw file in the survey's per_file folder.
+  const filesFolder =
+    s.streamed && !single && bucket && s.vessel && s.survey && s.sonar
+      ? filesUri(bucket, s.config?.user ?? '', s.vessel.id, s.survey.id, s.sonar.id)
+      : '';
 
   const planned: PlannedFile[] = base
     ? [
-        { name: `${base}.${single ? 'nc' : s.format}`, kind: 'echodata', level: 'L1',
-          what: 'The EchoData asset (aa-combine)' },
+        { name: `${base}.${s.streamed ? 'zarr' : single ? 'nc' : s.format}`, kind: 'echodata', level: 'L1',
+          what: s.streamed ? 'The EchoData asset (aa-combine, in the bucket)' : 'The EchoData asset (aa-combine)' },
         ...(single ? [] : [{ name: `${base}.qc.json`, kind: 'report' as const, level: '',
           what: "aa-combine's QC report: gaps, overlaps, calibration changes" }]),
         ...(s.sv ? [{ name: `${base}_‹recipe›.nc`, kind: 'sv' as const, level: 'L2A',
@@ -143,14 +148,23 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
           state: sourceReady ? 'ready' : 'idle',
           title: `Source: ${currentSource(s)?.description || 'where the raw files come from'}`,
         },
-        { label: 'Time range', level: 'L0', state: plan ? 'ready' : 'idle', title: 'Retrieve the raw files that cover the range' },
+        {
+          label: 'Time range',
+          level: 'L0',
+          state: plan ? 'ready' : 'idle',
+          title: s.streamed
+            ? 'Retrieve the raw files that cover the range, one at a time'
+            : 'Retrieve the raw files that cover the range',
+        },
         { label: 'EchoData', level: 'L1', state: plan ? 'ready' : 'idle', title: 'Convert and combine into one EchoData' },
         { label: 'Sv', level: 'L2A', state: !s.sv ? 'off' : plan ? 'ready' : 'idle', title: 'Calibrate: volume backscattering strength' },
         { label: 'Bucket', level: 'GCS', state: request && folder ? 'ready' : 'idle', title: 'Stored in the project bucket, provenance attached' },
       ];
 
-  // request, fetch, convert and record always; combine unless one file.
-  const toolCount = 4 + (single ? 0 : 1) + (s.sv ? 1 : 0) + (s.sv && s.echogram ? 1 : 0);
+  // request, fetch, convert and record always (no fetch file by file: aa-ed
+  // fetches each file); combine unless one file.
+  const toolCount =
+    (s.streamed ? 3 : 4) + (single ? 0 : 1) + (s.sv ? 1 : 0) + (s.sv && s.echogram ? 1 : 0);
   const products = ['EchoData', s.sv && 'Sv', s.sv && s.echogram && 'echogram'].filter(Boolean).join(' + ');
 
   return (
@@ -279,6 +293,7 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                   echogram={s.echogram}
                   format={s.format}
                   single={Boolean(single)}
+                  streamed={s.streamed}
                   onChange={update}
                 />
               </Step>
@@ -295,6 +310,8 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                     defaultBase={named}
                     baseError={baseError}
                     files={planned}
+                    filesFolder={filesFolder}
+                    stores={filesFolder && plan ? plan.files.map((f) => storeName(f.name)) : []}
                     onBase={(b) => update({ base: b })}
                     bucketNote={
                       s.bucket.trim()
@@ -354,6 +371,8 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
                     defaultRoot={ws?.defaultRoot || s.config?.runRoot || ''}
                     freeAsYouGo={s.freeAsYouGo}
                     keepLocal={s.keepLocal}
+                    streamed={s.streamed}
+                    sv={s.sv}
                     onChange={update}
                   />
                 ) : (
@@ -414,8 +433,8 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
             {blocker ||
               (plan && (
                 <>
-                  <b>{plan.files.length}</b> raw {plan.files.length === 1 ? 'file' : 'files'} →{' '}
-                  {products} → the bucket
+                  <b>{plan.files.length}</b> raw {plan.files.length === 1 ? 'file' : 'files'}
+                  {s.streamed && plan.files.length > 1 ? ', one at a time' : ''} → {products} → the bucket
                 </>
               ))}
           </Typography>
@@ -492,7 +511,8 @@ function runNodes(run: RunStatus): RouteNode[] {
     run.state === 'succeeded' ? 'done' : run.state === 'failed' ? 'idle' : toNode([st('record')]);
   return [
     { label: sourceName(run.request.source), level: '', state: toNode([st('request')]) },
-    { label: 'Time range', level: 'L0', state: toNode([st('fetch')]) },
+    // File by file there is no fetch stage: each file is fetched by the conversion.
+    { label: 'Time range', level: 'L0', state: toNode([st(run.request.streamed ? 'convert' : 'fetch')]) },
     { label: 'EchoData', level: 'L1', state: toNode([st('convert'), st('combine')]) },
     { label: 'Sv', level: 'L2A', state: toNode([st('sv'), st('echogram')]) },
     { label: 'Bucket', level: 'GCS', state: bucket },

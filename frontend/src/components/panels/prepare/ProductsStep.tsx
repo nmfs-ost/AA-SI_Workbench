@@ -10,6 +10,8 @@ interface Props {
   format: 'nc' | 'zarr';
   /** One file: nothing to merge, so the asset is always NetCDF. */
   single: boolean;
+  /** File by file into the bucket: the EchoData is always a Zarr store. */
+  streamed?: boolean;
   onChange: (patch: { sv?: boolean; echogram?: boolean; format?: 'nc' | 'zarr' }) => void;
 }
 
@@ -21,7 +23,7 @@ interface Props {
  * Sv and its echogram are the usual next step and on by default, and each row
  * says which tool makes it and at which level it sits.
  */
-export function ProductsStep({ sv, echogram, format, single, onChange }: Props) {
+export function ProductsStep({ sv, echogram, format, single, streamed = false, onChange }: Props) {
   const theme = useTheme();
   const c = theme.aa.color;
 
@@ -44,13 +46,24 @@ export function ProductsStep({ sv, echogram, format, single, onChange }: Props) 
         title="EchoData"
         level="L1"
         tool="aa-ed + aa-combine"
-        text={single
-          ? 'The one raw file, converted to echopype EchoData.'
-          : 'The raw files merged in time order into one echopype EchoData, with a QC report.'}
+        text={
+          streamed
+            ? single
+              ? 'The one raw file, converted straight to an EchoData store in the bucket.'
+              : 'Each raw file its own EchoData store in the bucket, merged there in time order into one, with a QC report.'
+            : single
+              ? 'The one raw file, converted to echopype EchoData.'
+              : 'The raw files merged in time order into one echopype EchoData, with a QC report.'
+        }
         extra={
           <FormatToggle
-            value={single ? 'nc' : format}
-            disabled={single}
+            value={streamed ? 'zarr' : single ? 'nc' : format}
+            disabled={single || streamed}
+            why={
+              streamed
+                ? 'File by file, the EchoData is a Zarr store, combined in the bucket'
+                : 'One file is converted straight to NetCDF'
+            }
             onChange={(f) => onChange({ format: f })}
           />
         }
@@ -69,7 +82,11 @@ export function ProductsStep({ sv, echogram, format, single, onChange }: Props) 
         title="Sv"
         level="L2A"
         tool="aa-sv"
-        text="Calibrated volume backscattering strength, beside the EchoData."
+        text={
+          streamed
+            ? 'Calibrated volume backscattering strength, beside the EchoData. Made on this workstation’s disk, then uploaded.'
+            : 'Calibrated volume backscattering strength, beside the EchoData.'
+        }
       />
       <Row
         control={
@@ -151,10 +168,13 @@ function Row({
 function FormatToggle({
   value,
   disabled,
+  why,
   onChange,
 }: {
   value: 'nc' | 'zarr';
   disabled: boolean;
+  /** Why it is fixed, when it is. */
+  why: string;
   onChange: (value: 'nc' | 'zarr') => void;
 }) {
   const theme = useTheme();
@@ -164,7 +184,7 @@ function FormatToggle({
     { id: 'zarr', label: '.zarr', tip: 'Zarr: a chunked store, for large ranges read in parts' },
   ];
   return (
-    <Tooltip title={disabled ? 'One file is converted straight to NetCDF' : ''}>
+    <Tooltip title={disabled ? why : ''}>
       <Box
         role="radiogroup"
         aria-label="Storage format"

@@ -36,8 +36,19 @@ TOOLS = {
         print(folder)
     """,
     "aa-ed": """
+        if "--dest" in args:                       # several files, one at a time
+            assert args[args.index("--format") + 1] == "zarr", args
+            dest = args[args.index("--dest") + 1]
+            for raw in args[:args.index("--dest")]:
+                if os.environ.get("FAKE_ED_REUSE"):
+                    store = dest + Path(raw).stem + ".zarr"
+                    print(f"aa-ed: reusing {store}", file=sys.stderr)
+                if os.environ.get("FAKE_ED_SHORT") and raw.endswith(FILES_LAST):
+                    continue
+                print(dest + Path(raw).stem + ".zarr", flush=True)
+            sys.exit(0)
         target = Path(args[0])
-        if target.is_file():                       # one file, -o straight to the bucket
+        if target.is_file() or "-o" in args:       # one file, -o straight to the bucket
             assert target.suffix == ".raw", target
             print(args[args.index("-o") + 1]); sys.exit(0)
         for raw in target.glob("*.raw"):
@@ -47,8 +58,14 @@ TOOLS = {
     "aa-combine": """
         if os.environ.get("FAKE_COMBINE_FAIL"):
             print("QC: transit gap between files", file=sys.stderr); sys.exit(4)
-        workdir = Path(args[args.index("--workdir") + 1])
         target = args[args.index("-o") + 1]
+        if "--workdir" not in args:                # file by file: the stores themselves
+            stores = args[:args.index("-o")]
+            assert stores and all(s.startswith("gs://") and s.endswith(".zarr")
+                                  for s in stores), stores
+            assert target.endswith(".zarr"), target
+            print(target); sys.exit(0)
+        workdir = Path(args[args.index("--workdir") + 1])
         if os.environ.get("FAKE_CHECK_FREED"):
             assert not list(workdir.glob("*.raw")), "raw files outlived the conversion"
             assert list(workdir.glob("*.nc")), "per-file EchoData freed too early"
@@ -94,7 +111,7 @@ def tools(tmp_path, monkeypatch):
         script = bin_dir / name
         script.write_text(
             f"#!{sys.executable}\nimport os, sys\nfrom pathlib import Path\n"
-            f"args = sys.argv[1:]\n{textwrap.dedent(body)}"
+            f"args = sys.argv[1:]\nFILES_LAST = {FILES[-1]!r}\n{textwrap.dedent(body)}"
         )
         script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(jobs, "_bin_dir", lambda: bin_dir)
@@ -105,6 +122,7 @@ def tools(tmp_path, monkeypatch):
     monkeypatch.setattr(baseline, "POLL_SECONDS", 0.05)
     # The stand-ins are not aalibrary; say the tools stream (see test_workspace).
     monkeypatch.setattr(baseline.workspace, "tools_stream", lambda tool: True)
+    monkeypatch.setattr(baseline.workspace, "tools_file_by_file", lambda tool: True)
     jobs._reset_for_tests()
     baseline._reset_for_tests()
     from aa_si_workbench.api import identity
@@ -541,3 +559,145 @@ def test_runs_going_in_the_same_place_count_against_the_free_space(
         baseline._runs["other"] = other
     response = client.post("/api/baseline/runs", json=request)
     assert response.status_code == 409 and "already going" in response.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# File by file into the bucket
+# --------------------------------------------------------------------------- #
+STREAMED = REQUEST | {"streamed": True}
+PER_FILE = "gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/per_file/EK60/"
+
+
+def test_file_by_file_preview_has_no_fetch_and_names_every_store(tools):
+    preview = (
+        TestClient(create_app()).post("/api/baseline/preview", json=STREAMED).json()
+    )
+    assert preview["filesDestination"] == PER_FILE
+    assert [s["id"] for s in preview["stages"]] == [
+        "request",
+        "convert",
+        "combine",
+        "sv",
+        "echogram",
+        "record",
+    ]
+    convert = next(s for s in preview["stages"] if s["id"] == "convert")["command"]
+    assert convert[0] == "aa-ed" and convert[1:4] == FILES  # NCEI: by name
+    assert convert[convert.index("--dest") + 1] == PER_FILE
+    assert convert[convert.index("--format") + 1] == "zarr"
+    # NCEI: aa-ed downloads each itself, no lookup, and deletes it once converted.
+    assert convert[convert.index("--ship_name") + 1] == "Henry_B._Bigelow"
+    assert convert[convert.index("--file_download_directory") + 1].endswith("/raw")
+    assert "--cleanup-raw" in convert and "--progress" in convert
+    combine = next(s for s in preview["stages"] if s["id"] == "combine")["command"]
+    assert combine[1:4] == [PER_FILE + f.replace(".raw", ".zarr") for f in FILES]
+    assert "--workdir" not in combine
+    assert (
+        combine[combine.index("-o") + 1]
+        == preview["destination"] + preview["base"] + ".zarr"
+    )
+    assert all(not s["frees"] for s in preview["stages"])
+    assets = {a["kind"]: a["uri"] for a in preview["assets"]}
+    assert assets["echodata"].endswith(".zarr")
+
+
+def test_file_by_file_run_combines_the_stores_aa_ed_made(tools, monkeypatch):
+    monkeypatch.setenv("FAKE_ED_REUSE", "1")
+    client = TestClient(create_app())
+    run = _wait(client, client.post("/api/baseline/runs", json=STREAMED).json()["id"])
+    assert run["state"] == "succeeded", run["error"]
+    assert run["filesDestination"] == PER_FILE
+    states = {s["id"]: s["state"] for s in run["stages"]}
+    assert states["fetch"] == "skipped" and states["combine"] == "done"
+    fetch = next(s for s in run["stages"] if s["id"] == "fetch")
+    assert "file by file" in fetch["detail"].lower()
+    convert = next(s for s in run["stages"] if s["id"] == "convert")
+    assert convert["output"] == PER_FILE
+    assert convert["detail"].startswith("3 files, one Zarr store each")
+    assert "3 already there" in convert["detail"]
+    combine = next(s for s in run["stages"] if s["id"] == "combine")
+    assert combine["command"][1:4] == [
+        PER_FILE + f.replace(".raw", ".zarr") for f in FILES
+    ]
+    kinds = {a["kind"]: a["uri"] for a in run["assets"]}
+    assert kinds["echodata"] == f"{run['destination']}{run['base']}.zarr"
+    assert len(client.get("/api/jobs").json()["jobs"]) == 6  # no fetch job
+    assert not Path(run["scratch"]).exists()
+
+
+def test_a_store_missing_from_aa_eds_list_stops_the_run(tools, monkeypatch):
+    monkeypatch.setenv("FAKE_ED_SHORT", "1")
+    client = TestClient(create_app())
+    run = _wait(client, client.post("/api/baseline/runs", json=STREAMED).json()["id"])
+    assert run["state"] == "failed"
+    assert "2 of the 3 per-file stores" in run["error"]
+    assert {s["id"]: s["state"] for s in run["stages"]}["combine"] == "pending"
+
+
+def test_one_file_file_by_file_goes_straight_to_a_store(tools, monkeypatch):
+    monkeypatch.setenv("FAKE_FILES", FILES[0])
+    request = STREAMED | {"expectedFiles": [FILES[0]]}
+    client = TestClient(create_app())
+    run = _wait(client, client.post("/api/baseline/runs", json=request).json()["id"])
+    assert run["state"] == "succeeded", run["error"]
+    convert = next(s for s in run["stages"] if s["id"] == "convert")
+    assert convert["command"][1] == FILES[0]
+    assert convert["command"][convert["command"].index("-o") + 1].endswith(".zarr")
+    combine = next(s for s in run["stages"] if s["id"] == "combine")
+    assert combine["state"] == "skipped" and "One file" in combine["detail"]
+    assert run["filesDestination"] == ""  # straight to the asset: no per-file folder
+
+
+def test_file_by_file_without_the_files_is_refused(tools):
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/baseline/preview", json=STREAMED | {"expectedFiles": []}
+    )
+    assert response.status_code == 400 and "names none" in response.json()["detail"]
+
+
+def test_keeping_the_raw_files_file_by_file_does_not_delete_them(tools):
+    preview = (
+        TestClient(create_app())
+        .post("/api/baseline/preview", json=STREAMED | {"keepLocal": True})
+        .json()
+    )
+    convert = next(s for s in preview["stages"] if s["id"] == "convert")["command"]
+    assert "--cleanup-raw" not in convert
+
+
+def test_file_by_file_needs_one_raw_file_of_space_not_the_range(tools, monkeypatch):
+    monkeypatch.setattr(
+        baseline.workspace, "disk_space", lambda path: (2 * 10**9, 10**11)
+    )
+    client = TestClient(create_app())
+    big = {"expectedBytes": 40 * 10**9, "largestBytes": 200 * 10**6, "sv": False}
+    whole = client.post("/api/baseline/workspace", json=REQUEST | big).json()
+    assert whole["problem"] and "file by file" in whole["problem"]
+    streamed = client.post("/api/baseline/workspace", json=STREAMED | big).json()
+    assert streamed["streamed"] and streamed["problem"] == ""
+    # One raw file and its store, with the margin: 200 MB * 3.2 * 1.15.
+    assert streamed["needBytes"] == int(200 * 10**6 * 3.2 * 1.15)
+    # Keeping the raw files, the range accumulates again.
+    kept = client.post(
+        "/api/baseline/workspace", json=STREAMED | big | {"keepLocal": True}
+    ).json()
+    assert kept["needBytes"] > 40 * 10**9 and "turn that off" in kept["problem"]
+    # Sv is still made here: the card says how much less it would need without.
+    with_sv = client.post(
+        "/api/baseline/workspace", json=STREAMED | big | {"sv": True}
+    ).json()
+    assert with_sv["needBytes"] >= 4.5 * 40 * 10**9
+    assert with_sv["needWithoutSvBytes"] == streamed["needBytes"]
+    response = client.post("/api/baseline/runs", json=STREAMED | big | {"sv": True})
+    assert response.status_code == 409
+
+
+def test_file_by_file_with_an_old_aalibrary_says_to_update(tools, monkeypatch):
+    monkeypatch.setattr(baseline.workspace, "tools_file_by_file", lambda tool: False)
+    client = TestClient(create_app())
+    report = client.post("/api/baseline/workspace", json=STREAMED).json()
+    assert report["problem"] == baseline.FILE_BY_FILE_UPDATE
+    assert client.post("/api/baseline/runs", json=STREAMED).status_code == 409
+    # The ordinary way still works with it.
+    assert client.post("/api/baseline/workspace", json=REQUEST).json()["problem"] == ""

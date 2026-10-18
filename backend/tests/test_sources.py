@@ -236,6 +236,48 @@ def test_prepare_downloads_a_bucket_archives_files(tools, tmp_path, monkeypatch)
     assert convert["command"][1] == fetch["output"]
 
 
+def test_file_by_file_reads_an_archive_where_it_is(tools, tmp_path, monkeypatch):  # noqa: F811
+    """No copy step: aa-ed is given the archive's files themselves. A bucket
+    archive's are fetched into the cache and evicted once converted; a folder
+    archive's are read in place and never deleted."""
+    fake = tmp_path / "gcs"
+    monkeypatch.setenv("AA_GCS_FAKE_ROOT", str(fake))
+    archive(fake / "omao-raw")
+    folder = archive(tmp_path / "noaa")
+    client = TestClient(create_app())
+    client.put("/api/sources/omao", json={"id": "omao", "root": "gs://omao-raw"})
+    request = REQUEST | {"source": "omao", "streamed": True}
+    run = _wait(client, client.post("/api/baseline/runs", json=request).json()["id"])
+    assert run["state"] == "succeeded", run["error"]
+    convert = next(s for s in run["stages"] if s["id"] == "convert")["command"]
+    assert convert[1] == f"gs://omao-raw/Henry_B._Bigelow/HB1603/EK60/{FILES[0]}"
+    assert "--cleanup-raw" in convert and "--ship_name" not in convert
+    assert {s["id"]: s["state"] for s in run["stages"]}["fetch"] == "skipped"
+
+    client.put("/api/sources/omao", json={"id": "omao", "root": str(tmp_path / "noaa")})
+    preview = client.post("/api/baseline/preview", json=request).json()
+    convert = next(s for s in preview["stages"] if s["id"] == "convert")["command"]
+    assert convert[1] == str(folder / FILES[0])
+    assert "--cleanup-raw" not in convert
+
+
+def test_file_by_file_from_a_folder_needs_no_room_for_raw_files(tools, tmp_path):  # noqa: F811
+    archive(tmp_path / "noaa")
+    client = TestClient(create_app())
+    client.put("/api/sources/omao", json={"id": "omao", "root": str(tmp_path / "noaa")})
+    sizes = {"expectedBytes": 30 * 10**9, "largestBytes": 10**9, "sv": False}
+    folder = REQUEST | sizes | {"source": "omao", "streamed": True}
+    ncei = REQUEST | sizes | {"streamed": True}
+    read_in_place = client.post("/api/baseline/workspace", json=folder).json()
+    downloaded = client.post("/api/baseline/workspace", json=ncei).json()
+    assert read_in_place["needBytes"] < downloaded["needBytes"]
+    # Keeping the raw files changes nothing when they are never copied here.
+    kept = client.post(
+        "/api/baseline/workspace", json=folder | {"keepLocal": True}
+    ).json()
+    assert kept["needBytes"] == read_in_place["needBytes"]
+
+
 def test_prepare_refuses_a_source_that_is_not_connected(tools):  # noqa: F811
     client = TestClient(create_app())
     got = client.post("/api/baseline/preview", json=REQUEST | {"source": "omao"})

@@ -60,6 +60,20 @@ that cannot fit is refused before it starts. *Free space as it goes* deletes
 each kind of working file as soon as no later stage reads it (``frees_after``
 names them, and the preview shows them, so the copied script does the same).
 Each run reports the working space it actually used.
+
+File by file into the bucket
+----------------------------
+``streamed``: the workstation only orchestrates. There is no fetch stage:
+one ``aa-ed`` is given every raw file of the range and converts them one at
+a time, each fetched (NCEI download, a copy from a gs:// archive, or read in
+place from a folder), written as its own Zarr store in the bucket
+(``FILES_TEMPLATE``: per survey and echosounder, so a longer range reuses the
+files a shorter one already converted), and deleted, before the next. Then
+``aa-combine`` reads those stores where they are and writes the combined
+store in the bucket. The working folder holds one raw file and its store at
+a time, whatever the length of the range; only Sv, if asked for, is still
+written here before it is uploaded. The combined EchoData is always Zarr
+(a NetCDF export would be written here whole).
 """
 
 from __future__ import annotations
@@ -101,6 +115,19 @@ REQUIRED_TOOLS = (
 #: Where products go, below the bucket. `{user}` is the signed-in account's
 #: local part; the rest comes from the request.
 PREFIX_TEMPLATE = "derived_products/{user}/{vessel}/{survey}/{base}/"
+
+#: File by file: where each raw file's own EchoData store goes. Per survey
+#: and echosounder rather than per range, so a run over a longer range finds
+#: the files a shorter one converted (aa-ed reuses an identical product).
+FILES_TEMPLATE = "derived_products/{user}/{vessel}/{survey}/per_file/{sonar}/"
+
+#: aalibrary that can prepare a range file by file (aa-ed with several files
+#: and --format zarr; stores read in place). Older installs say why not.
+FILE_BY_FILE_UPDATE = (
+    "The installed aalibrary cannot prepare file by file (aa-ed has no --format zarr "
+    "for a list of files). Update it (Tools ▸ Update Python Environment), then try "
+    "again."
+)
 
 POLL_SECONDS = 1.0
 _MAX_RUNS = 30
@@ -160,6 +187,12 @@ class BaselineRequest(BaseModel):
     freeAsYouGo: bool = True
     #: The raw files' total size as listed, for the working-space estimate.
     expectedBytes: int = Field(default=0, ge=0)
+    #: File by file into the bucket: each raw file fetched, converted to its
+    #: own Zarr store in the bucket and deleted before the next; the stores
+    #: combined bucket to bucket. One raw file on this disk at a time.
+    streamed: bool = False
+    #: The largest raw file's size as listed (the file-by-file estimate).
+    largestBytes: int = Field(default=0, ge=0)
 
 
 class ToolState(BaseModel):
@@ -198,6 +231,8 @@ class Preview(BaseModel):
     #: The source's name (NCEI, OMAO …).
     source: str = "NCEI"
     destination: str
+    #: File by file: where each raw file's EchoData store goes ('' otherwise).
+    filesDestination: str = ""
     stages: list[StagePreview]
     assets: list[dict]
     #: The folder the run's own folder is made in.
@@ -227,6 +262,10 @@ class Workspace(BaseModel):
     memoryNeedBytes: int
     #: Whether the installed aa-combine/aa-sv/aa-graph stream; None: unknown.
     streaming: bool | None
+    #: File by file: the estimate is for that (one raw file at a time).
+    streamed: bool = False
+    #: File by file, the same request without Sv (Sv is made here).
+    needWithoutSvBytes: int = 0
     #: Why a run cannot start here; '' when it can.
     problem: str = ""
     warnings: list[str] = Field(default_factory=list)
@@ -277,6 +316,8 @@ class RunStatus(BaseModel):
     #: running | succeeded | failed | cancelled
     state: str
     destination: str
+    #: File by file: where the per-file stores went ('' otherwise).
+    filesDestination: str = ""
     scratch: str
     stages: list[StageStatus]
     assets: list[Asset]
@@ -366,6 +407,15 @@ def work_root(req: BaselineRequest) -> Path:
 
 
 def destination(req: BaselineRequest, base: str, user: str) -> str:
+    return _folder(req, req.prefix.strip() or PREFIX_TEMPLATE, base, user)
+
+
+def files_destination(req: BaselineRequest, base: str, user: str) -> str:
+    """File by file: the folder each raw file's EchoData store goes to."""
+    return _folder(req, FILES_TEMPLATE, base, user)
+
+
+def _folder(req: BaselineRequest, template: str, base: str, user: str) -> str:
     bucket = (req.bucket or default_bucket()).strip().removeprefix("gs://").strip("/")
     if not bucket:
         raise HTTPException(
@@ -377,7 +427,6 @@ def destination(req: BaselineRequest, base: str, user: str) -> str:
         )
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]", bucket):
         raise HTTPException(status_code=400, detail=f"Not a bucket name: {bucket!r}")
-    template = req.prefix.strip() or PREFIX_TEMPLATE
     try:
         prefix = template.format(
             user=user or "unknown-user",
@@ -481,6 +530,34 @@ class Context:
     source: sources.DataSource = field(default_factory=lambda: sources.BUILTINS[0])
     #: Another source's raw files, where they are: gs:// URIs or paths.
     source_files: list[str] = field(default_factory=list)
+    #: File by file: where each raw file's store goes, and the stores made.
+    files_dest: str = ""
+    file_stores: list[str] = field(default_factory=list)
+
+    @property
+    def streamed(self) -> bool:
+        """File by file into the bucket (see the module docstring)."""
+        return self.req.streamed
+
+    @property
+    def stream_inputs(self) -> list[str]:
+        """What aa-ed is given, file by file: NCEI names (it downloads each
+        itself), or an archive's files where they are (gs:// URIs, paths)."""
+        if self.fetch_tool == "aa-fetch":
+            return list(self.req.expectedFiles)
+        return list(self.source_files)
+
+    @property
+    def planned_stores(self) -> list[str]:
+        """The per-file stores aa-ed will make, by the tools' naming rule."""
+        return [self.files_dest + store_name(n) for n in self.req.expectedFiles]
+
+    @property
+    def cleanup_raw(self) -> bool:
+        """File by file: each raw file deleted once converted (an NCEI
+        download, or a gs:// archive file's cached copy). A folder archive's
+        files are read where they are, and are not ours to delete."""
+        return not self.req.keepLocal and self.fetch_tool in ("aa-fetch", "aa-download")
 
     @property
     def fetch_tool(self) -> str:
@@ -520,11 +597,30 @@ class Context:
 
     @property
     def combined(self) -> str:
-        fmt = "nc" if self.single else self.req.format
+        if self.streamed:
+            fmt = "zarr"  # combined in the bucket: a .nc would be written here whole
+        else:
+            fmt = "nc" if self.single else self.req.format
         return f"{self.dest}{self.base}.{fmt}"
 
     def output(self, stage: str, placeholder: str) -> str:
         return self.outputs.get(stage) or placeholder
+
+
+def store_name(raw_name: str) -> str:
+    """The store aa-ed makes for a raw file in a folder: <base>.zarr, by the
+    console tools' own naming rule (their stem when aalibrary is absent)."""
+    try:
+        from aalibrary.console._core import naming
+
+        return naming.echodata_name(naming.base_of(raw_name), ".zarr")
+    except Exception:  # noqa: BLE001 - the tools name it; this is the preview
+        return f"{Path(raw_name).stem}.zarr"
+
+
+def is_store_uri(line: str) -> bool:
+    text = line.strip()
+    return text.startswith("gs://") and text.rstrip("/").endswith(".zarr")
 
 
 def is_ek80(sonar: str) -> bool:
@@ -533,6 +629,8 @@ def is_ek80(sonar: str) -> bool:
 
 
 def enabled(stage_id: str, req: BaselineRequest, single: bool = False) -> bool:
+    if stage_id == "fetch":
+        return not req.streamed  # file by file, aa-ed fetches each file itself
     if stage_id == "combine":
         return not single
     if stage_id == "sv":
@@ -591,6 +689,8 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
             ctx.raw_dir.name,
         ]
     if stage_id == "convert":
+        if ctx.streamed:
+            return _convert_file_by_file(ctx)
         if ctx.single:
             # Not --quiet: its "reusing" line is how the card tells a reused
             # product from a new one.
@@ -604,9 +704,13 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
             "--quiet",
         ]
     if stage_id == "combine":
+        if ctx.streamed:
+            # The stores themselves, in the bucket, read where they are.
+            inputs = list(ctx.file_stores or ctx.planned_stores)
+        else:
+            inputs = ["--workdir", ctx.output("convert", str(ctx.raw_dir))]
         args = [
-            "--workdir",
-            ctx.output("convert", str(ctx.raw_dir)),
+            *inputs,
             "-o",
             ctx.combined,
             "--sort",
@@ -661,9 +765,56 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
     raise ValueError(stage_id)
 
 
+def _convert_file_by_file(ctx: Context) -> list[str]:
+    """aa-ed given every raw file at once, converting one at a time: each
+    fetched, written as its own Zarr store in the bucket, and deleted here."""
+    req = ctx.req
+    flags = ["--format", "zarr", "--sonar_model", req.sonar]
+    if ctx.fetch_tool == "aa-fetch":
+        # NCEI, by name: aa-ed downloads each file itself, into the run's
+        # folder. Ship, survey and echosounder given: no metadata lookup.
+        flags += [
+            "--ship_name",
+            req.vessel,
+            "--survey_name",
+            req.survey,
+            "--file_download_directory",
+            str(ctx.raw_dir),
+        ]
+    if ctx.cleanup_raw:
+        flags.append("--cleanup-raw")
+    inputs = ctx.stream_inputs
+    if ctx.single:
+        # One file: straight to the asset's name; there is nothing to combine.
+        return [inputs[0] if inputs else "<file>.raw", "-o", ctx.combined, *flags]
+    return [*inputs, "--dest", ctx.files_dest, *flags, "--progress"]
+
+
+#: What the stages do file by file, where it differs.
+FILE_BY_FILE = {
+    "convert": "Each raw file in turn: fetched, converted to its own Zarr store in the "
+    "bucket, and deleted here.",
+    "combine": "Merge the per-file stores, read where they are in the bucket, into one "
+    "EchoData store beside them, with a QC report.",
+}
+
+
 def stage_view(stage: Stage, ctx: Context) -> tuple[str, str]:
     """(tool, description) of a stage for this request: the fetch is the
     source's own (aa-fetch from NCEI, a copy from an archive)."""
+    if ctx.streamed and stage.id == "fetch":
+        # Skipped: the conversion fetches each file, so it is aa-ed's to name.
+        return (
+            "aa-ed",
+            "File by file: each raw file is fetched by the conversion, in turn.",
+        )
+    if ctx.streamed and stage.id in FILE_BY_FILE:
+        if stage.id == "convert" and ctx.single:
+            return stage.tool, (
+                "Fetch the raw file and convert it straight to a Zarr store in the "
+                "bucket."
+            )
+        return stage.tool, FILE_BY_FILE[stage.id]
     if stage.id != "fetch" or ctx.fetch_tool == "aa-fetch":
         return stage.tool, stage.description
     return (
@@ -681,7 +832,9 @@ def frees_after(stage_id: str, ctx: Context) -> list[str]:
     cache, which is where aa-sv reads it) only by aa-sv. The Sv's own copy is
     what aa-graph reads, and goes with the folder at the end.
     """
-    if not ctx.freeing:
+    if not ctx.freeing or ctx.streamed:
+        # File by file, aa-ed deletes each download itself (--cleanup-raw),
+        # and the stores are read in the bucket: nothing else is kept here.
         return []
     if stage_id == "convert":
         return ["raw/*.raw"]
@@ -788,6 +941,7 @@ def _status(run: _Run) -> RunStatus:
             base=run.ctx.base,
             state=run.state,
             destination=run.ctx.dest,
+            filesDestination=run.ctx.files_dest,
             scratch=str(run.ctx.scratch),
             stages=[stage.model_copy() for stage in run.stages],
             assets=list(run.assets),
@@ -817,7 +971,7 @@ def _watch(stage: StageStatus, ctx: Context, total_raw: int) -> None:
             if stage.total
             else f"{stage.done} files"
         )
-    elif stage.id == "convert" and not ctx.single:
+    elif stage.id == "convert" and not ctx.single and not ctx.streamed:
         stage.total = _count(ctx.raw_dir, "*.raw")
         stage.done = _count(ctx.raw_dir, "*.nc")
         stage.detail = f"{stage.done} of {stage.total} files"
@@ -1041,6 +1195,31 @@ def _execute_stages(run: _Run) -> None:
                             if ctx.single
                             else ""
                         )
+        if stage.id == "convert" and ctx.streamed and not ctx.single:
+            # One store per raw file, printed as each was made, in order.
+            stores = [line.strip() for line in status.stdout if is_store_uri(line)]
+            expected = len(ctx.req.expectedFiles)
+            if len(stores) != expected:
+                error = (
+                    f"aa-ed made {len(stores)} of the {expected} per-file stores. Run "
+                    "again: the ones already in the bucket are reused, not remade."
+                )
+                with _lock:
+                    stage.state = "failed"
+                    stage.detail = error
+                _finish(run, "failed", error)
+                return
+            kept = sum(
+                1 for line in jobs.tail_of(job.id, 4000) if "aa-ed: reusing" in line
+            )
+            with _lock:
+                ctx.file_stores = stores
+                ctx.outputs["convert"] = ctx.files_dest
+                stage.output = ctx.files_dest
+                stage.detail = (
+                    f"{expected} files, one Zarr store each, in the bucket"
+                    + (f" ({kept} already there, reused)." if kept else ".")
+                )
         if stage.id == "convert" and ctx.single:
             with _lock:
                 ctx.outputs["combine"] = output
@@ -1093,6 +1272,11 @@ def _execute_stages(run: _Run) -> None:
         )
     with _lock:
         run.assets = assets
+        if ctx.file_stores:
+            run.notes.append(
+                f"{len(ctx.file_stores)} per-file EchoData stores in {ctx.files_dest}, "
+                "kept for the survey: a longer range reuses them."
+            )
         work = run.work
         line = f"Working space: {workspace.human(work.peakBytes)} at most"
         if work.needBytes:
@@ -1166,6 +1350,13 @@ def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
     source = sources.get(req.source)
     if not source.ready:
         raise HTTPException(status_code=409, detail=source.detail)
+    if req.streamed and not req.expectedFiles:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "File by file needs the raw files themselves: the request names none."
+            ),
+        )
     return Context(
         req=req,
         base=base,
@@ -1173,6 +1364,12 @@ def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
         scratch=scratch or run_root() / f"{base}-preview",
         source=source,
         source_files=_source_files(req, source),
+        # One file goes straight to the asset's name: no per-file folder.
+        files_dest=(
+            files_destination(req, base, user)
+            if req.streamed and len(req.expectedFiles) > 1
+            else ""
+        ),
     )
 
 
@@ -1182,8 +1379,33 @@ def workspace_report(req: BaselineRequest) -> Workspace:
     single = len(req.expectedFiles) == 1
     freeing = req.freeAsYouGo and not req.keepLocal
     raw = req.expectedBytes
-    need_keep = workspace.space_needed(raw, single=single, sv=req.sv, freeing=False)
-    need_free = workspace.space_needed(raw, single=single, sv=req.sv, freeing=True)
+    without_sv = 0
+    if req.streamed:
+        # One raw file and its store at a time; Sv, if asked for, made here.
+        files = len(req.expectedFiles)
+        freeing = not req.keepLocal
+        # A folder archive's files are read where they are, never copied here.
+        try:
+            raw_here = sources.get(req.source).fetch != "cp"
+        except HTTPException:
+            raw_here = True
+
+        def file_by_file(*, sv: bool, keep_raw: bool) -> int:
+            return workspace.space_needed_file_by_file(
+                raw,
+                req.largestBytes,
+                files,
+                sv=sv,
+                keep_raw=keep_raw,
+                raw_here=raw_here,
+            )
+
+        need_keep = file_by_file(sv=req.sv, keep_raw=True)
+        need_free = file_by_file(sv=req.sv, keep_raw=False)
+        without_sv = file_by_file(sv=False, keep_raw=req.keepLocal)
+    else:
+        need_keep = workspace.space_needed(raw, single=single, sv=req.sv, freeing=False)
+        need_free = workspace.space_needed(raw, single=single, sv=req.sv, freeing=True)
     need = need_free if freeing else need_keep
     mount = workspace.mount_of(root)
     free, total = workspace.disk_space(root)
@@ -1198,15 +1420,38 @@ def workspace_report(req: BaselineRequest) -> Workspace:
 
     problem = workspace.folder_problem(root, mount)
     warnings: list[str] = []
+    if not problem and req.streamed:
+        try:
+            converter = jobs.resolve_tool("aa-ed")
+        except HTTPException:
+            converter = ""
+        if converter and workspace.tools_file_by_file(converter) is False:
+            problem = FILE_BY_FILE_UPDATE
     if not problem and raw and free and need > free:
         problem = (
             f"This range needs about {H(need)} of working space at most, and "
             f"{root} has {H(free)} free."
         )
-        if not freeing and need_free <= free and not req.keepLocal:
+        if req.streamed and req.sv and without_sv <= free:
+            problem += (
+                f" Sv is made here before it goes to the bucket; without it the range "
+                f"needs about {H(without_sv)}. Turn Sv off (Products), or choose a "
+                "folder on a bigger disk."
+            )
+        elif req.streamed and req.keepLocal and need_free <= free < need_keep:
+            problem += (
+                f" Without keeping the raw files it needs about {H(need_free)}: turn "
+                "that off."
+            )
+        elif req.streamed:
+            problem += " Choose a folder on a bigger disk."
+        elif not freeing and need_free <= free and not req.keepLocal:
             problem += f" Free space as it goes needs about {H(need_free)}: turn it on."
         else:
-            problem += " Choose a folder on a bigger disk, or a shorter range."
+            problem += (
+                " Choose a folder on a bigger disk, or a shorter range, or prepare it "
+                "file by file into the bucket (one raw file here at a time)."
+            )
     if not problem and streaming is False and memory and memory_need:
         text = (
             f"The installed console tools hold the whole range in memory: about "
@@ -1237,6 +1482,8 @@ def workspace_report(req: BaselineRequest) -> Workspace:
         memoryBytes=memory,
         memoryNeedBytes=memory_need,
         streaming=streaming,
+        streamed=req.streamed,
+        needWithoutSvBytes=without_sv,
         problem=problem,
         warnings=warnings,
     )
@@ -1337,6 +1584,7 @@ def post_preview(req: BaselineRequest) -> Preview:
         source=ctx.source.name,
         scratch=str(ctx.scratch),
         destination=ctx.dest,
+        filesDestination=ctx.files_dest,
         stages=stages,
         assets=[a.model_dump() for a in planned_assets(ctx)],
         workRoot=str(root),
@@ -1396,6 +1644,7 @@ def post_run(req: BaselineRequest) -> RunStatus:
         scratch=scratch,
         source=base_ctx.source,
         source_files=base_ctx.source_files,
+        files_dest=base_ctx.files_dest,
     )
     stages = [
         StageStatus(
@@ -1405,6 +1654,13 @@ def post_run(req: BaselineRequest) -> RunStatus:
             level=s.level,
             description=stage_view(s, ctx)[1],
             state="pending" if enabled(s.id, req, ctx.single) else "skipped",
+            detail=(
+                "File by file: each raw file is fetched by the conversion, in turn."
+                if s.id == "fetch" and req.streamed
+                else "One file: converted straight to the bucket; nothing to merge."
+                if s.id == "combine" and req.streamed and ctx.single
+                else ""
+            ),
         )
         for s in STAGES
     ]

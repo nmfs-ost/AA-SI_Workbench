@@ -72,6 +72,12 @@ export interface PrepareState {
   workRoot: string;
   /** Delete each kind of working file once no later stage reads it. */
   freeAsYouGo: boolean;
+  /**
+   * File by file into the bucket: each raw file fetched, converted to its own
+   * Zarr store in the bucket and deleted before the next, then the stores
+   * combined bucket to bucket. The workstation only orchestrates.
+   */
+  streamed: boolean;
   echogramOptions: EchogramOptions;
   /** EK80 calibration (aa-sv --waveform_mode / --encode_mode); unused otherwise. */
   waveformMode: 'CW' | 'BB';
@@ -97,6 +103,7 @@ const DEFAULTS = {
   keepLocal: false,
   workRoot: '',
   freeAsYouGo: true,
+  streamed: false,
   /* cmap 'theme': the colormap theme's, else aa-graph's own default. */
   echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'theme' },
   waveformMode: 'CW' as const,
@@ -164,6 +171,7 @@ interface Saved {
   keepLocal?: boolean;
   workRoot?: string;
   freeAsYouGo?: boolean;
+  streamed?: boolean;
   echogramOptions?: EchogramOptions;
   waveformMode?: 'CW' | 'BB';
   encodeMode?: 'complex' | 'power';
@@ -189,6 +197,7 @@ function save(): void {
     keepLocal: state.keepLocal,
     workRoot: state.workRoot,
     freeAsYouGo: state.freeAsYouGo,
+    streamed: state.streamed,
     echogramOptions: state.echogramOptions,
     waveformMode: state.waveformMode,
     encodeMode: state.encodeMode,
@@ -388,7 +397,7 @@ export async function selectSonar(sonar: SonarModel | null): Promise<void> {
 
 export function update(patch: Partial<Pick<PrepareState,
   'start' | 'end' | 'sv' | 'echogram' | 'format' | 'base' | 'bucket' | 'gapSeconds' |
-  'gapFactor' | 'strict' | 'keepLocal' | 'workRoot' | 'freeAsYouGo' | 'echogramOptions' |
+  'gapFactor' | 'strict' | 'keepLocal' | 'workRoot' | 'freeAsYouGo' | 'streamed' | 'echogramOptions' |
   'waveformMode' | 'encodeMode'>>): void {
   set(patch);
 }
@@ -438,7 +447,8 @@ export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest 
     base: s.base.trim(),
     bucket: s.bucket.trim(),
     prefix: '',
-    format: s.format,
+    // File by file, the combined EchoData is a store in the bucket.
+    format: s.streamed ? 'zarr' : s.format,
     sv: s.sv,
     echogram: s.sv && s.echogram,
     gapSeconds: s.gapSeconds,
@@ -454,6 +464,12 @@ export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest 
     workRoot: s.workRoot.trim(),
     freeAsYouGo: s.freeAsYouGo,
     expectedBytes: Math.max(0, Math.round(plan.bytes)),
+    ...(s.streamed
+      ? {
+          streamed: true,
+          largestBytes: Math.max(0, ...plan.files.map((f) => Math.round(f.sizeBytes || 0))),
+        }
+      : {}),
   };
 }
 

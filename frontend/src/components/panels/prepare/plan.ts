@@ -280,6 +280,8 @@ export function baseProblem(base: string): string {
  * Where the products go: the Workbench's own rule for per-user prefixes,
  * filled in. Mirrors PREFIX_TEMPLATE and `_clean_segment` in the backend.
  */
+const cleanSegment = (s: string) => s.replace(/ /g, '_').replace(/[^A-Za-z0-9_.-]/g, '') || 'unknown';
+
 export function destinationUri(
   bucket: string,
   user: string,
@@ -287,9 +289,23 @@ export function destinationUri(
   survey: string,
   base: string,
 ): string {
-  const clean = (s: string) => s.replace(/ /g, '_').replace(/[^A-Za-z0-9_.-]/g, '') || 'unknown';
-  const who = user ? clean(user) : 'unknown-user';
-  return `gs://${bucket}/derived_products/${who}/${clean(vessel)}/${clean(survey)}/${base}/`;
+  const who = user ? cleanSegment(user) : 'unknown-user';
+  return `gs://${bucket}/derived_products/${who}/${cleanSegment(vessel)}/${cleanSegment(survey)}/${base}/`;
+}
+
+/**
+ * File by file: where each raw file's own EchoData store goes (baseline.py
+ * FILES_TEMPLATE). Per survey and echosounder, not per range, so a longer
+ * range finds the files a shorter one already converted.
+ */
+export function filesUri(bucket: string, user: string, vessel: string, survey: string, sonar: string): string {
+  const who = user ? cleanSegment(user) : 'unknown-user';
+  return `gs://${bucket}/derived_products/${who}/${cleanSegment(vessel)}/${cleanSegment(survey)}/per_file/${cleanSegment(sonar)}/`;
+}
+
+/** The store aa-ed makes for a raw file in that folder: its stem, .zarr. */
+export function storeName(rawName: string): string {
+  return `${rawName.replace(/\.[^./]*$/, '')}.zarr`;
 }
 
 /* ------------------------------------------------------------------ */

@@ -54,6 +54,14 @@ export interface BaselineRequest {
   freeAsYouGo: boolean;
   /** The raw files' total size as listed: what the working-space estimate scales. */
   expectedBytes: number;
+  /**
+   * File by file into the bucket: each raw file fetched, converted to its own
+   * Zarr store in the bucket and deleted before the next; the stores combined
+   * bucket to bucket. One raw file on the workstation's disk at a time.
+   */
+  streamed?: boolean;
+  /** The largest raw file's size as listed (the file-by-file estimate). */
+  largestBytes?: number;
 }
 
 /** Where a run would work, what it would need at most, and whether that fits. */
@@ -76,6 +84,10 @@ export interface Workspace {
   memoryNeedBytes: number;
   /** Whether the installed aa-combine/aa-sv/aa-graph stream; null when unknown. */
   streaming: boolean | null;
+  /** The estimate is for a file-by-file run. */
+  streamed?: boolean;
+  /** File by file: the same request without Sv (Sv is still made here). */
+  needWithoutSvBytes?: number;
   /** Why a run cannot start there; '' when it can. */
   problem: string;
   warnings: string[];
@@ -135,6 +147,8 @@ export interface Preview {
   /** The source's name (NCEI, OMAO …). */
   source?: string;
   destination: string;
+  /** File by file: where each raw file's EchoData store goes. */
+  filesDestination?: string;
   stages: StagePreview[];
   assets: Asset[];
   /** The folder the run's own folder is made in. */
@@ -169,6 +183,8 @@ export interface RunStatus {
   base: string;
   state: RunState;
   destination: string;
+  /** File by file: where the per-file stores went. */
+  filesDestination?: string;
   scratch: string;
   stages: StageStatus[];
   assets: Asset[];
@@ -261,6 +277,12 @@ const serverApi: BaselineApi = {
 /* The stand-in                                                        */
 /* ------------------------------------------------------------------ */
 
+/** What the stages do file by file, where it differs (baseline.py FILE_BY_FILE). */
+const FILE_BY_FILE: Record<string, string> = {
+  convert: 'Each raw file in turn: fetched, converted to its own Zarr store in the bucket, and deleted here.',
+  combine: 'Merge the per-file stores, read where they are in the bucket, into one EchoData store beside them, with a QC report.',
+};
+
 const STAGES: Omit<StagePreview, 'command'>[] = [
   { id: 'request', label: 'Request', tool: 'aa-request', level: 'L0',
     description: 'Write the request: vessel, survey, echosounder and time window.' },
@@ -290,11 +312,35 @@ function simDest(r: BaselineRequest, base: string): string {
   return `gs://${r.bucket || simulatedBucket() || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/${base}/`;
 }
 
+function simFilesDest(r: BaselineRequest): string {
+  // One file goes straight to the asset's name: no per-file folder.
+  return r.streamed && !single(r)
+    ? `gs://${r.bucket || simulatedBucket() || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/per_file/${r.sonar}/`
+    : '';
+}
+
+const simStores = (r: BaselineRequest) =>
+  r.expectedFiles.map((f) => `${simFilesDest(r)}${f.replace(/\.[^./]*$/, '')}.zarr`);
+
+function simStages(r: BaselineRequest): Omit<StagePreview, 'command'>[] {
+  return STAGES.map((s) => {
+    if (r.streamed && s.id === 'fetch') {
+      return { ...s, tool: 'aa-ed', description: 'File by file: each raw file is fetched by the conversion, in turn.' };
+    }
+    if (!r.streamed || !FILE_BY_FILE[s.id]) return s;
+    if (s.id === 'convert' && single(r)) {
+      return { ...s, description: 'Fetch the raw file and convert it straight to a Zarr store in the bucket.' };
+    }
+    return { ...s, description: FILE_BY_FILE[s.id] };
+  });
+}
+
 function single(r: BaselineRequest): boolean {
   return r.expectedFiles.length === 1;
 }
 
 function simEnabled(id: string, r: BaselineRequest): boolean {
+  if (id === 'fetch') return !r.streamed;
   if (id === 'combine') return !single(r);
   if (id === 'sv') return r.sv;
   if (id === 'echogram') return r.sv && r.echogram;
@@ -309,7 +355,20 @@ function simRoot(r: BaselineRequest): string {
 
 function simCommand(id: string, r: BaselineRequest, base: string, dest: string): string[] {
   const scratch = `${simRoot(r)}/${base}-<run>`;
-  const fmt = single(r) ? 'nc' : r.format;
+  const fmt = r.streamed ? 'zarr' : single(r) ? 'nc' : r.format;
+  if (r.streamed && id === 'convert') {
+    const flags = ['--format', 'zarr', '--sonar_model', r.sonar,
+      '--ship_name', r.vessel, '--survey_name', r.survey, '--file_download_directory', `${scratch}/raw`,
+      ...(r.keepLocal ? [] : ['--cleanup-raw'])];
+    return single(r)
+      ? ['aa-ed', r.expectedFiles[0], '-o', `${dest}${base}.zarr`, ...flags]
+      : ['aa-ed', ...r.expectedFiles, '--dest', simFilesDest(r), ...flags, '--progress'];
+  }
+  if (r.streamed && id === 'combine') {
+    return ['aa-combine', ...simStores(r), '-o', `${dest}${base}.zarr`, '--sort', 'time',
+      '--sonar_model', r.sonar, '--gap_seconds', String(r.gapSeconds), '--gap_factor', String(r.gapFactor),
+      '--report', '--progress', ...(r.strict ? ['--strict'] : [])];
+  }
   const o = r.echogramOptions;
   switch (id) {
     case 'request':
@@ -343,7 +402,7 @@ function simCommand(id: string, r: BaselineRequest, base: string, dest: string):
 
 /** What the server's frees_after names: freed as it goes, unless files are kept. */
 function simFrees(id: string, r: BaselineRequest, base: string): string[] {
-  if (!r.freeAsYouGo || r.keepLocal) return [];
+  if (!r.freeAsYouGo || r.keepLocal || r.streamed) return [];
   if (id === 'convert') return ['raw/*.raw'];
   if (id === 'combine' && !single(r)) return ['raw/*.nc'];
   if (id === 'sv') return [`cache/**/${base}.${single(r) ? 'nc' : r.format}`];
@@ -368,10 +427,24 @@ export function simSpaceNeeded(raw: number, oneFile: boolean, sv: boolean, freei
   return Math.floor(peak * 1.15);
 }
 
+/** workspace.space_needed_file_by_file, for the stand-in. */
+export function simFileByFile(raw: number, largest: number, files: number, sv: boolean, keepRaw: boolean): number {
+  const one = largest || raw / Math.max(1, files);
+  const converting = (keepRaw ? raw : one) + 2.2 * one;
+  return Math.floor(Math.max(converting, sv ? 4.5 * raw : 0) * 1.15);
+}
+
 function simWorkspace(r: BaselineRequest): Workspace {
-  const freeing = r.freeAsYouGo && !r.keepLocal;
-  const keep = simSpaceNeeded(r.expectedBytes, single(r), r.sv, false);
-  const free = simSpaceNeeded(r.expectedBytes, single(r), r.sv, true);
+  const streamed = Boolean(r.streamed);
+  const freeing = streamed ? !r.keepLocal : r.freeAsYouGo && !r.keepLocal;
+  const largest = r.largestBytes ?? 0;
+  const n = r.expectedFiles.length;
+  const keep = streamed
+    ? simFileByFile(r.expectedBytes, largest, n, r.sv, true)
+    : simSpaceNeeded(r.expectedBytes, single(r), r.sv, false);
+  const free = streamed
+    ? simFileByFile(r.expectedBytes, largest, n, r.sv, false)
+    : simSpaceNeeded(r.expectedBytes, single(r), r.sv, true);
   const need = freeing ? free : keep;
   const root = simRoot(r);
   let problem = '';
@@ -398,13 +471,15 @@ function simWorkspace(r: BaselineRequest): Workspace {
     memoryBytes: SIM_MEMORY,
     memoryNeedBytes: (1 << 30) + 8 * (1 << 20) * r.expectedFiles.length,
     streaming: true,
+    streamed,
+    needWithoutSvBytes: streamed ? simFileByFile(r.expectedBytes, largest, n, false, Boolean(r.keepLocal)) : 0,
     problem,
     warnings: [],
   };
 }
 
 function simAssets(r: BaselineRequest, base: string, dest: string, recipe = '<recipe>'): Asset[] {
-  const fmt = single(r) ? 'nc' : r.format;
+  const fmt = r.streamed ? 'zarr' : single(r) ? 'nc' : r.format;
   const out: Asset[] = [
     { kind: 'echodata', label: single(r) ? 'EchoData' : 'Combined EchoData',
       uri: `${dest}${base}.${fmt}`, level: 'L1' },
@@ -462,7 +537,12 @@ function advance(sim: SimRun): RunStatus {
         stage.startedAt ||= nowIso();
         const n = r.expectedFiles.length;
         if (stage.id === 'fetch') stage.detail = `${n} raw files fetched, as planned.`;
-        if (stage.id === 'convert') stage.detail = single(r) ? 'Written to the bucket.' : `${n} of ${n} files`;
+        if (stage.id === 'convert') {
+          stage.detail = single(r)
+            ? 'Written to the bucket.'
+            : r.streamed ? `${n} files, one Zarr store each, in the bucket.` : `${n} of ${n} files`;
+          if (r.streamed && !single(r)) stage.output = simFilesDest(r);
+        }
         if (stage.id === 'combine') stage.detail = 'Written to the bucket.';
         stage.done = stage.total;
       }
@@ -525,7 +605,8 @@ const simulatedApi: BaselineApi = {
     return {
       base,
       destination: dest,
-      stages: STAGES.filter((s) => simEnabled(s.id, r)).map((s) => ({
+      filesDestination: simFilesDest(r),
+      stages: simStages(r).filter((s) => simEnabled(s.id, r)).map((s) => ({
         ...s,
         command: simCommand(s.id, r, base, dest),
         frees: simFrees(s.id, r, base),
@@ -547,15 +628,18 @@ const simulatedApi: BaselineApi = {
       base,
       state: 'running',
       destination: simDest(r, base),
+      filesDestination: simFilesDest(r),
       scratch: `${simRoot(r)}/${base}-${id}`,
-      stages: STAGES.map((s) => ({
+      stages: simStages(r).map((s) => ({
         ...s,
         state: simEnabled(s.id, r) ? 'pending' : 'skipped',
         jobId: '',
         command: [],
         output: '',
         detail: s.id === 'combine' && single(r)
-          ? 'One file: converted straight to the bucket; nothing to merge.' : '',
+          ? 'One file: converted straight to the bucket; nothing to merge.'
+          : s.id === 'fetch' && r.streamed
+            ? 'File by file: each raw file is fetched by the conversion, in turn.' : '',
         done: 0,
         total: 0,
         startedAt: '',

@@ -108,6 +108,14 @@ export function RunView({ run, runError, onInspect, onReveal, onQueue, onDone, o
         >
           <PathText path={run.destination} />
         </Typography>
+        {run.filesDestination && (
+          <Typography sx={{ fontSize: 10.5, color: c.text.muted, overflowWrap: 'anywhere', mt: 0.4 }}>
+            File by file: one EchoData store per raw file in{' '}
+            <Box component="span" sx={{ fontFamily: theme.aa.font.mono }}>
+              <PathText path={run.filesDestination} />
+            </Box>
+          </Typography>
+        )}
       </Box>
 
       {run.state === 'succeeded' && (

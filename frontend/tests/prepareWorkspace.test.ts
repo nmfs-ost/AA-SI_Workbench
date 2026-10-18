@@ -5,7 +5,7 @@ import { formatSize } from '../src/components/panels/prepare/WorkspaceStep';
 import { planRange } from '../src/components/panels/prepare/plan';
 import type { PlanFile } from '../src/components/panels/prepare/plan';
 import type { Preview } from '../src/services/baselineApi';
-import { baselineApi, simSpaceNeeded } from '../src/services/baselineApi';
+import { baselineApi, simFileByFile, simSpaceNeeded } from '../src/services/baselineApi';
 import { buildRequest } from '../src/state/prepare';
 import { idFromName } from '../src/components/panels/prepare/SourcesDialog';
 
@@ -142,6 +142,52 @@ describe('buildRequest', () => {
     expect(r.workRoot).toBe('/data/runs');
     expect(r.freeAsYouGo).toBe(false);
     expect(r.expectedBytes).toBe(800);
+    // The ordinary way sends what it always sent.
+    expect('streamed' in r).toBe(false);
+    expect(r.format).toBe('nc');
+  });
+
+  it('file by file: a store in the bucket, and the largest file for the estimate', () => {
+    const files: PlanFile[] = [
+      { name: 'D20160703-T060000.raw', acquiredAt: '2016-07-03T06:00:00Z', sizeBytes: 300 },
+      { name: 'D20160703-T062000.raw', acquiredAt: '2016-07-03T06:20:00Z', sizeBytes: 500 },
+    ];
+    const plan = planRange(files, Date.parse('2016-07-03T06:00:00Z'), Date.parse('2016-07-03T06:30:00Z'), 900, 6)!;
+    const r = buildRequest(
+      { ...defaultState(), streamed: true, vessel: null, survey: null, sonar: null,
+        start: '2016-07-03 06:00:00', end: '2016-07-03 06:30:00' },
+      plan,
+    );
+    expect(r.streamed).toBe(true);
+    expect(r.format).toBe('zarr');
+    expect(r.largestBytes).toBe(500);
+  });
+});
+
+describe('file by file', () => {
+  it('needs one raw file and its store, whatever the length; Sv the whole range', () => {
+    expect(simFileByFile(40e9, 200e6, 200, false, false)).toBe(Math.floor(3.2 * 200e6 * 1.15));
+    expect(simFileByFile(40e9, 0, 200, false, false)).toBe(Math.floor(3.2 * 200e6 * 1.15));
+    expect(simFileByFile(40e9, 200e6, 200, true, false)).toBe(Math.floor(4.5 * 40e9 * 1.15));
+    expect(simFileByFile(40e9, 200e6, 200, false, true)).toBe(Math.floor((40e9 + 2.2 * 200e6) * 1.15));
+  });
+
+  it('has no fetch stage: aa-ed is given every file, and aa-combine the stores', async () => {
+    const r = request({ streamed: true, expectedFiles: ['D1.raw', 'D2.raw'] });
+    const preview = await baselineApi.preview(r);
+    expect(preview.stages.map((st) => st.id)).toEqual(['request', 'convert', 'combine', 'sv', 'echogram', 'record']);
+    const folder = preview.filesDestination!;
+    expect(folder).toMatch(/\/HB1603\/per_file\/EK60\/$/);
+    const convert = preview.stages.find((st) => st.id === 'convert')!.command;
+    expect(convert.slice(0, 3)).toEqual(['aa-ed', 'D1.raw', 'D2.raw']);
+    expect(convert[convert.indexOf('--dest') + 1]).toBe(folder);
+    expect(convert).toContain('--cleanup-raw');
+    const combine = preview.stages.find((st) => st.id === 'combine')!.command;
+    expect(combine.slice(1, 3)).toEqual([`${folder}D1.zarr`, `${folder}D2.zarr`]);
+    expect(combine[combine.indexOf('-o') + 1]).toMatch(/\.zarr$/);
+    const ws = await baselineApi.workspace({ ...r, expectedBytes: 400e9, largestBytes: 2e8, sv: false });
+    expect(ws.streamed).toBe(true);
+    expect(ws.problem).toBe('');
   });
 });
 
@@ -152,6 +198,7 @@ function defaultState() {
     loading: { vessels: false, surveys: false, sonars: false, files: false }, catalogError: '',
     start: '', end: '', sv: true, echogram: true, format: 'nc' as const, base: '', bucket: '',
     gapSeconds: 900, gapFactor: 6, strict: false, keepLocal: false, workRoot: '', freeAsYouGo: true,
+    streamed: false,
     echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'viridis' },
     waveformMode: 'CW' as const, encodeMode: 'complex' as const,
     config: null, configError: '', run: null, starting: false, runError: '',
@@ -171,5 +218,6 @@ function base() {
     echogramOptions: { vmin: -80, vmax: -30, decimate: 10, cmap: 'viridis' },
     waveformMode: 'CW' as const, encodeMode: 'complex' as const,
     workRoot: '', freeAsYouGo: true, expectedBytes: 0,
+    streamed: false as boolean, largestBytes: 0,
   };
 }

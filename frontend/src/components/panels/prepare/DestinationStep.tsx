@@ -31,6 +31,10 @@ interface Props {
   bucketNote?: string;
   /** Open the project and bucket picker. */
   onChangeBucket?: () => void;
+  /** File by file: the folder each raw file's EchoData store goes to. */
+  filesFolder?: string;
+  /** …and the stores the range makes there (or finds there already). */
+  stores?: string[];
 }
 
 export const KIND_ICON = {
@@ -63,6 +67,8 @@ export function DestinationStep({
   onBase,
   bucketNote = '',
   onChangeBucket,
+  filesFolder = '',
+  stores = [],
 }: Props) {
   const theme = useTheme();
   const c = theme.aa.color;
@@ -152,6 +158,59 @@ export function DestinationStep({
           );
         })}
       </Box>
+      {filesFolder && (
+        <Box
+          sx={{
+            mt: 0.75,
+            borderRadius: `${theme.aa.radius.md}px`,
+            border: `1px solid ${c.border.subtle}`,
+            overflow: 'hidden',
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 0.75,
+              px: 1,
+              py: 0.75,
+              backgroundColor: theme.aa.color.bg.editor,
+              borderBottom: `1px solid ${c.border.subtle}`,
+              '&:hover .aa-copy': { opacity: 1 },
+            }}
+          >
+            <FolderOutlined sx={{ fontSize: 14, color: c.syntax.entity, mt: '1px' }} />
+            <Typography
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                fontFamily: theme.aa.font.mono,
+                fontSize: 10.5,
+                lineHeight: 1.5,
+                color: c.text.secondary,
+                overflowWrap: 'anywhere',
+              }}
+            >
+              <PathText path={filesFolder} />
+            </Typography>
+            <CopyPathButton value={filesFolder} label="Copy gs:// folder" />
+          </Box>
+          {stores.slice(0, 2).map((name) => (
+            <Box key={name} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pl: 2.5, pr: 1, height: 23 }}>
+              <StorageOutlined sx={{ fontSize: 13, color: c.text.muted, flexShrink: 0 }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <FileName name={name} base="" />
+              </Box>
+              <LevelChip level="L1" />
+            </Box>
+          ))}
+          <Typography sx={{ fontSize: 10.5, color: c.text.muted, pl: 2.5, pr: 1, py: 0.5, lineHeight: 1.45 }}>
+            {stores.length > 2 ? `…and ${stores.length - 2} more: ` : ''}
+            one EchoData store per raw file, kept for the survey: a longer range later reuses the ones already
+            here.
+          </Typography>
+        </Box>
+      )}
       {(bucketNote || onChangeBucket) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.6 }}>
           <Typography sx={{ fontSize: 10.5, color: c.text.muted, flex: 1, minWidth: 0 }} noWrap>

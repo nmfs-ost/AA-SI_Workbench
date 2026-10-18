@@ -6,10 +6,12 @@ import {
   defaultBase,
   destinationUri,
   fetchEnd,
+  filesUri,
   formatDuration,
   formatUtc,
   parseUtc,
   planRange,
+  storeName,
   ticks,
 } from '../src/components/panels/prepare/plan';
 import type { PlanFile } from '../src/components/panels/prepare/plan';
@@ -126,6 +128,12 @@ describe('names and places', () => {
       .toBe('gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/X/');
     expect(destinationUri('bkt', '', 'Bell M. Shimada', 'SH1701', 'X'))
       .toBe('gs://bkt/derived_products/unknown-user/Bell_M._Shimada/SH1701/X/');
+  });
+
+  it('file by file, puts one store per raw file under the survey and echosounder', () => {
+    expect(filesUri('bkt', 'jane.doe', 'Henry_B._Bigelow', 'HB1603', 'EK60'))
+      .toBe('gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/per_file/EK60/');
+    expect(storeName('HB1603_L1-D20160703-T060000.raw')).toBe('HB1603_L1-D20160703-T060000.zarr');
   });
 
   it('says why a base name cannot be used', () => {

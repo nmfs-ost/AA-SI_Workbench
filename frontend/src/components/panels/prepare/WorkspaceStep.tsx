@@ -98,7 +98,16 @@ interface Props {
   defaultRoot: string;
   freeAsYouGo: boolean;
   keepLocal: boolean;
-  onChange: (patch: { workRoot?: string; freeAsYouGo?: boolean; keepLocal?: boolean }) => void;
+  /** File by file into the bucket (one raw file here at a time). */
+  streamed: boolean;
+  /** Sv is asked for: file by file, it is still made here. */
+  sv: boolean;
+  onChange: (patch: {
+    workRoot?: string;
+    freeAsYouGo?: boolean;
+    keepLocal?: boolean;
+    streamed?: boolean;
+  }) => void;
 }
 
 /**
@@ -111,6 +120,12 @@ interface Props {
  * kind of working file as soon as no later tool reads it. A folder on the
  * bucket's gcsfuse mount, or in memory, is refused by the server, which says
  * why; so is a range that cannot fit.
+ *
+ * "File by file into the bucket" takes the range out of this folder: each raw
+ * file is fetched, converted to its own Zarr store in the bucket and deleted
+ * before the next, and the stores are combined where they are. The folder
+ * then holds one raw file at a time, whatever the length of the range; only
+ * Sv, when asked for, is still made here.
  */
 export function WorkspaceStep({
   workspace: ws,
@@ -120,6 +135,8 @@ export function WorkspaceStep({
   defaultRoot,
   freeAsYouGo,
   keepLocal,
+  streamed,
+  sv,
   onChange,
 }: Props) {
   const theme = useTheme();
@@ -130,7 +147,7 @@ export function WorkspaceStep({
     if (draft.trim() !== workRoot) onChange({ workRoot: draft.trim() });
   };
 
-  const freeing = freeAsYouGo && !keepLocal;
+  const freeing = streamed ? !keepLocal : freeAsYouGo && !keepLocal;
   const over = Boolean(ws && ws.rawBytes && ws.freeBytes && ws.needBytes > ws.freeBytes);
   const share = ws && ws.freeBytes ? Math.min(1, ws.needBytes / ws.freeBytes) : 0;
   const barColor = over ? c.status.error : share > 0.8 ? c.status.warning : c.accent.main;
@@ -231,9 +248,17 @@ export function WorkspaceStep({
             />
           </Box>
           {hint(
-            freeing
-              ? `About ${formatSize(ws.needKeepingBytes)} if every working file were kept until the end.`
-              : `About ${formatSize(ws.needFreeingBytes)} with Free space as it goes.`,
+            streamed
+              ? keepLocal
+                ? 'Every raw file is kept here once converted, so the folder holds the whole range.'
+                : sv && ws.needWithoutSvBytes && ws.needWithoutSvBytes < ws.needBytes
+                  ? `Most of it is the Sv, made here before it goes to the bucket. Without Sv: about ${formatSize(
+                      ws.needWithoutSvBytes,
+                    )}.`
+                  : 'One raw file and its EchoData store at a time, whatever the length of the range.'
+              : freeing
+                ? `About ${formatSize(ws.needKeepingBytes)} if every working file were kept until the end.`
+                : `About ${formatSize(ws.needFreeingBytes)} with Free space as it goes.`,
           )}
         </Box>
       )}
@@ -244,22 +269,45 @@ export function WorkspaceStep({
             control={
               <Switch
                 size="small"
-                checked={freeing}
-                disabled={keepLocal}
-                onChange={(e) => onChange({ freeAsYouGo: e.target.checked })}
+                checked={streamed}
+                onChange={(e) => onChange({ streamed: e.target.checked })}
+                inputProps={{ 'aria-label': 'File by file into the bucket' }}
               />
             }
             label={
-              <Typography sx={{ fontSize: 11.5, color: c.text.primary }}>Free space as it goes</Typography>
+              <Typography sx={{ fontSize: 11.5, color: c.text.primary }}>File by file into the bucket</Typography>
             }
             sx={{ ml: -0.5, mr: 0 }}
           />
           {hint(
-            keepLocal
-              ? 'Off while the working files are kept.'
-              : 'Raw files are deleted once converted, the per-file EchoData once combined, and the local copy of the EchoData once Sv is made. The products are unaffected; a run that fails keeps only what was not yet deleted.',
+            streamed
+              ? 'Each raw file is fetched, converted to its own Zarr store in the bucket and deleted here before the next; the stores are then combined in the bucket, read where they are. This workstation only orchestrates: for long ranges. The EchoData is a Zarr store.'
+              : 'Off: the whole range is fetched and converted here, then combined into the bucket.',
           )}
         </Box>
+        {!streamed && (
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={freeing}
+                  disabled={keepLocal}
+                  onChange={(e) => onChange({ freeAsYouGo: e.target.checked })}
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: 11.5, color: c.text.primary }}>Free space as it goes</Typography>
+              }
+              sx={{ ml: -0.5, mr: 0 }}
+            />
+            {hint(
+              keepLocal
+                ? 'Off while the working files are kept.'
+                : 'Raw files are deleted once converted, the per-file EchoData once combined, and the local copy of the EchoData once Sv is made. The products are unaffected; a run that fails keeps only what was not yet deleted.',
+            )}
+          </Box>
+        )}
         <Box>
           <FormControlLabel
             control={
@@ -271,18 +319,20 @@ export function WorkspaceStep({
             }
             label={
               <Typography sx={{ fontSize: 11.5, color: c.text.primary }}>
-                Keep the raw files and per-file EchoData
+                {streamed ? 'Keep the raw files' : 'Keep the raw files and per-file EchoData'}
               </Typography>
             }
             sx={{ ml: -0.5, mr: 0 }}
           />
           {hint(
-            'Off: the run’s folder is removed once the products are in the bucket. After a failure it is kept, less anything already freed. On: freeing is off and everything is kept.',
+            streamed
+              ? 'Off: each raw file is deleted once it is converted (a folder archive’s files are read where they are, never deleted). On: they are kept in the run’s folder.'
+              : 'Off: the run’s folder is removed once the products are in the bucket. After a failure it is kept, less anything already freed. On: freeing is off and everything is kept.',
           )}
         </Box>
       </Box>
 
-      {ws && <MemoryLine ws={ws} />}
+      {ws && <MemoryLine ws={ws} streamed={streamed} />}
 
       {ws?.problem && (
         <Box sx={{ mt: 1 }}>
@@ -302,12 +352,14 @@ export function WorkspaceStep({
   );
 }
 
-function MemoryLine({ ws }: { ws: Workspace }) {
+function MemoryLine({ ws, streamed }: { ws: Workspace; streamed: boolean }) {
   const theme = useTheme();
   const c = theme.aa.color;
   const text =
     ws.streaming === true
-      ? `About ${formatSize(ws.memoryNeedBytes)} for any length of range: the tools stream it through this folder instead of holding it in memory.`
+      ? streamed
+        ? `About ${formatSize(ws.memoryNeedBytes)} for any length of range: one file is converted at a time, and the stores are combined in the bucket a slice at a time.`
+        : `About ${formatSize(ws.memoryNeedBytes)} for any length of range: the tools stream it through this folder instead of holding it in memory.`
       : ws.streaming === false
         ? `The installed tools hold the whole range in memory: about ${formatSize(ws.memoryNeedBytes)} here.`
         : 'Could not ask the installed aalibrary how it uses memory.';

@@ -39,7 +39,8 @@ convert to echopype EchoData, L2A calibrate.
    `HB1603_EK60_20160703T060000-20160703T120000`. Below it, the folder as it will
    look afterwards.
 5. **Working space.** Where the run works on this workstation, and whether the
-   range fits there (below).
+   range fits there (below). **File by file into the bucket** is the switch for
+   long ranges: the workstation then holds one raw file at a time (below).
 6. **Prepare EchoData.** One button. It says why when it cannot run yet.
 
 **Advanced settings** holds the few real choices most runs never touch: the gap
@@ -89,6 +90,60 @@ While a run goes, the card shows the working space it holds and the most so
 far; the finished run notes what it actually used against the estimate.
 `aa-workbench check` prints the folder's free space and the memory mode.
 
+## File by file into the bucket: ranges longer than the disk
+
+Zarr stores are indexed: each array is its own small objects, with the index
+beside them, so a store in the bucket can be read where it is, a slice at a
+time, without copying it here. Turned on, **File by file into the bucket**
+uses that, and the workstation only orchestrates:
+
+1. There is no fetch stage. One `aa-ed` is given every raw file of the range and
+   converts them **one at a time**: each is fetched (downloaded from NCEI, copied
+   from a bucket archive, or read where it is in a folder archive), written as its
+   **own Zarr store in the bucket**, and deleted here, before the next. Each runs
+   in a fresh process, so memory is given back between files.
+2. `aa-combine` then reads those stores **where they are** (their provenance from
+   the store's own metadata, their data lazily, through a gcsfuse mount or
+   gcsfs) and writes the combined EchoData as a store in the bucket, a slice at
+   a time. Nothing is copied to the workstation. The QC pass (gaps, overlaps,
+   sonar model, channels) runs exactly as before.
+3. Sv and the echogram, if asked for, are made as before, except that `aa-sv`
+   reads the combined store in place too.
+
+The working folder then holds **one raw file and its store at a time**, however
+long the range. Rehearsed on a 40-hour EK60 range (24 files, 540 MB raw, against
+the stand-in bucket): file by file peaked at 72 MB of working space, where the
+whole range on this disk peaked at 1.9 GB; the combined store held all 72,000
+pings, with the same values. It took a little longer (4 minutes against 3),
+because each file is converted by its own process and published on its own. Sv
+is still written here before it is uploaded (about 4.5 times the raw size: 2.4
+GB for that range), so with Sv on it is what sets the space a long range needs;
+the step says how much less the range needs without it. *Free space as it goes* does not apply (it is how
+this works); *Keep the raw files* keeps each raw file in the run's folder, so
+the folder holds the whole range again.
+
+Where things go:
+
+- **Per-file stores**: `derived_products/<you>/<vessel>/<survey>/per_file/<echosounder>/<raw file>.zarr`,
+  each with a `.aa.json` provenance record beside it. They belong to the survey,
+  not to one range: a longer range later, or the same range again, reuses every
+  store already there (aa-ed finds it from the raw file's MD5, or for NCEI from
+  the recorded NCEI object, without downloading anything). A run that stops
+  part-way leaves the files it finished; running again picks up from there.
+- **The asset**: `<asset>.zarr` in the usual folder (always Zarr: a NetCDF would
+  be written here whole before upload), with its QC report.
+
+`aa-workbench` needs the aalibrary that can do this (`aa-ed` with several files
+and `--format zarr`); with an older one the step says to update it (**Tools ▸
+Update Python Environment**). The same chain on the command line:
+
+```bash
+aa-ed RAW1 RAW2 … --format zarr --dest gs://BUCKET/…/per_file/EK60/ \
+      --sonar_model EK60 --cleanup-raw --progress
+aa-combine gs://BUCKET/…/per_file/EK60/RAW1.zarr gs://BUCKET/…/per_file/EK60/RAW2.zarr … \
+      -o gs://BUCKET/…/ASSET/ASSET.zarr --sort time --report
+```
+
 ## While it runs, and after
 
 The run happens on the server, one ordinary job per tool, so it survives
@@ -116,6 +171,7 @@ identity is checked against them.
 | Fetch | `aa-fetch` | L0 | Downloads those raw files from NCEI into a scratch folder. From another source: `aa-download` (an archive in a bucket) or `cp` (a folder on the workstation) copies exactly the planned files. The card then checks that exactly the planned files arrived; missing files stop the run and are named; extra ones are set aside, not combined. |
 | Convert | `aa-ed` | L1 | Each raw file to EchoData. With a single file, it writes the asset directly (there is nothing to combine). |
 | Combine | `aa-combine` | L1 | The files, in time order, into one EchoData written to the bucket, with a QC report beside it. |
+| *(file by file)* | `aa-ed`, `aa-combine` | L1 | No fetch stage: `aa-ed` fetches, converts and uploads each raw file in turn as its own Zarr store; `aa-combine` combines those stores where they are, into a store in the bucket. |
 | Calibrate | `aa-sv` | L2A | Sv beside it, named `<asset>_<recipe8>.nc`. |
 | Echogram | `aa-graph` | L2A | A PNG of that Sv, named after it. |
 | Record | `aa-upload` | | The request document, kept with the products. |
@@ -153,8 +209,13 @@ so a file the cache does not know can never be promised.
 
 - **"aa-fetch delivered 3 of the 5 files…"** — the BigQuery cache does not list
   them (yet). Use `--source cache` so the card plans from the same list.
-- **"This range needs about … of working space"** — choose a folder on a bigger
-  disk, turn on *Free space as it goes*, or choose a shorter range.
+- **"This range needs about … of working space"** — turn on *File by file into
+  the bucket* (one raw file here at a time), choose a folder on a bigger disk,
+  turn on *Free space as it goes*, or choose a shorter range. File by file with
+  Sv, it is the Sv: turn Sv off and calibrate later, or use a bigger disk.
+- **"aa-ed made 22 of the 24 per-file stores"** — some files failed to convert;
+  the convert stage's log names them. Run again: the stores already in the
+  bucket are reused.
 - **"… is on the gcsfuse mount of a bucket"** — choose a folder on the
   workstation's own disk; the products still go to the bucket.
 - **A gap warning** — the combine bridges it and records it in the QC report.
