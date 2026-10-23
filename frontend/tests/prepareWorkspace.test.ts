@@ -142,9 +142,11 @@ describe('buildRequest', () => {
     expect(r.workRoot).toBe('/data/runs');
     expect(r.freeAsYouGo).toBe(false);
     expect(r.expectedBytes).toBe(800);
-    // The ordinary way sends what it always sent.
+    // The ordinary way is not file by file; the largest file is always sent
+    // (it sets the memory a conversion needs).
     expect('streamed' in r).toBe(false);
     expect(r.format).toBe('nc');
+    expect(r.largestBytes).toBe(500);
   });
 
   it('file by file: a store in the bucket, and the largest file for the estimate', () => {
@@ -166,10 +168,12 @@ describe('buildRequest', () => {
 
 describe('file by file', () => {
   it('needs one raw file and its store, whatever the length; Sv the whole range', () => {
-    expect(simFileByFile(40e9, 200e6, 200, false, false)).toBe(Math.floor(3.2 * 200e6 * 1.15));
-    expect(simFileByFile(40e9, 0, 200, false, false)).toBe(Math.floor(3.2 * 200e6 * 1.15));
-    expect(simFileByFile(40e9, 200e6, 200, true, false)).toBe(Math.floor(4.5 * 40e9 * 1.15));
-    expect(simFileByFile(40e9, 200e6, 200, false, true)).toBe(Math.floor((40e9 + 2.2 * 200e6) * 1.15));
+    expect(simFileByFile(40e9, 150e6, 200, false, false)).toBe(Math.floor(3.2 * 150e6 * 1.15));
+    expect(simFileByFile(30e9, 0, 200, false, false)).toBe(Math.floor(3.2 * 150e6 * 1.15));
+    expect(simFileByFile(40e9, 150e6, 200, true, false)).toBe(Math.floor(4.5 * 40e9 * 1.15));
+    expect(simFileByFile(40e9, 150e6, 200, false, true)).toBe(Math.floor((40e9 + 2.2 * 150e6) * 1.15));
+    // A large file is expanded on disk while it converts.
+    expect(simFileByFile(47e9, 1e9, 47, false, false)).toBe(Math.floor((1 + 2.2 + 2.0) * 1e9 * 1.15));
   });
 
   it('has no fetch stage: aa-ed is given every file, and aa-combine the stores', async () => {

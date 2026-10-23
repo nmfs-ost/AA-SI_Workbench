@@ -123,6 +123,7 @@ def tools(tmp_path, monkeypatch):
     # The stand-ins are not aalibrary; say the tools stream (see test_workspace).
     monkeypatch.setattr(baseline.workspace, "tools_stream", lambda tool: True)
     monkeypatch.setattr(baseline.workspace, "tools_file_by_file", lambda tool: True)
+    monkeypatch.setattr(baseline.workspace, "tools_swap", lambda tool: True)
     jobs._reset_for_tests()
     baseline._reset_for_tests()
     from aa_si_workbench.api import identity
@@ -676,8 +677,8 @@ def test_file_by_file_needs_one_raw_file_of_space_not_the_range(tools, monkeypat
     assert whole["problem"] and "file by file" in whole["problem"]
     streamed = client.post("/api/baseline/workspace", json=STREAMED | big).json()
     assert streamed["streamed"] and streamed["problem"] == ""
-    # One raw file and its store, with the margin: 200 MB * 3.2 * 1.15.
-    assert streamed["needBytes"] == int(200 * 10**6 * 3.2 * 1.15)
+    # One raw file, its store and (200 MB or more) its swap, with the margin.
+    assert streamed["needBytes"] == int(200 * 10**6 * (1 + 2.2 + 2.0) * 1.15)
     # Keeping the raw files, the range accumulates again.
     kept = client.post(
         "/api/baseline/workspace", json=STREAMED | big | {"keepLocal": True}
@@ -701,3 +702,21 @@ def test_file_by_file_with_an_old_aalibrary_says_to_update(tools, monkeypatch):
     assert client.post("/api/baseline/runs", json=STREAMED).status_code == 409
     # The ordinary way still works with it.
     assert client.post("/api/baseline/workspace", json=REQUEST).json()["problem"] == ""
+
+
+def test_the_largest_file_s_conversion_is_counted_in_memory(tools, monkeypatch):
+    monkeypatch.setattr(baseline.workspace, "memory_total", lambda: 2 * 10**9)
+    client = TestClient(create_app())
+    big = STREAMED | {"expectedBytes": 47 * 10**9, "largestBytes": 10**9, "sv": False}
+    report = client.post("/api/baseline/workspace", json=big).json()
+    assert report["memoryNeedBytes"] == 3 * 10**9
+    assert report["problem"] == "" and "may stop it" in report["warnings"][0]
+    # An aalibrary that holds the expansion in memory: say to update it.
+    monkeypatch.setattr(baseline.workspace, "tools_swap", lambda tool: False)
+    old = client.post("/api/baseline/workspace", json=big).json()
+    assert old["memoryNeedBytes"] == 7 * 10**9 and "Update aalibrary" in old["problem"]
+    # Small files: combining sets it, as before.
+    small = client.post(
+        "/api/baseline/workspace", json=STREAMED | {"largestBytes": 10**6}
+    ).json()
+    assert small["memoryNeedBytes"] < 2 * 10**9

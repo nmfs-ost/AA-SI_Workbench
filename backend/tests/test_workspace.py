@@ -140,15 +140,18 @@ def test_tree_bytes_counts_files_and_survives_a_missing_folder(tmp_path):
 
 def test_file_by_file_holds_one_raw_file_and_its_store():
     m, e, s = workspace.MARGIN, workspace.ECHODATA_PER_RAW, workspace.SV_PER_RAW
-    raw, largest = 40 * 10**9, 200 * 10**6
+    raw, largest = 40 * 10**9, 150 * 10**6
     need = workspace.space_needed_file_by_file(
         raw, largest, 200, sv=False, keep_raw=False
     )
     assert need == int((1 + e) * largest * m)  # whatever the length of the range
+    # 200 MB or more: expanded on disk while it converts (the swap).
+    big = workspace.space_needed_file_by_file(raw, 10**9, 40, sv=False, keep_raw=False)
+    assert big == int((1 + e + workspace.SWAP_PER_RAW) * 10**9 * m)
     # Not told the largest: the average file.
     assert workspace.space_needed_file_by_file(
-        raw, 0, 200, sv=False, keep_raw=False
-    ) == int((1 + e) * (raw / 200) * m)
+        raw, 0, 400, sv=False, keep_raw=False
+    ) == int((1 + e) * (raw / 400) * m)
     # Keeping the raw files: they accumulate. Sv: made here, the whole range.
     kept = workspace.space_needed_file_by_file(
         raw, largest, 200, sv=False, keep_raw=True
@@ -180,3 +183,11 @@ def test_a_folder_archive_s_raw_files_are_not_counted():
         10**10, 10**8, 100, sv=False, keep_raw=True, raw_here=False
     )
     assert need == int(e * 10**8 * m)
+
+
+def test_memory_counts_the_largest_file_s_conversion():
+    assert workspace.memory_needed(10**9, 4, True, largest_bytes=10**9) == 3 * 10**9
+    assert workspace.memory_needed(10**9, 4, True, 10**9, swaps=False) == 7 * 10**9
+    small = workspace.memory_needed(10**9, 4, True, largest_bytes=10**6)
+    base = workspace.STREAMING_MEMORY_BASE + 4 * workspace.STREAMING_MEMORY_PER_FILE
+    assert small == base

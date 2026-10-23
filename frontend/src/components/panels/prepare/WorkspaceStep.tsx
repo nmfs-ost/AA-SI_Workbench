@@ -358,8 +358,8 @@ function MemoryLine({ ws, streamed }: { ws: Workspace; streamed: boolean }) {
   const text =
     ws.streaming === true
       ? streamed
-        ? `About ${formatSize(ws.memoryNeedBytes)} for any length of range: one file is converted at a time, and the stores are combined in the bucket a slice at a time.`
-        : `About ${formatSize(ws.memoryNeedBytes)} for any length of range: the tools stream it through this folder instead of holding it in memory.`
+        ? `About ${formatSize(ws.memoryNeedBytes)}, whatever the length of the range: one file is converted at a time (the largest sets it; a large one is expanded on disk), and the stores are combined in the bucket a slice at a time.`
+        : `About ${formatSize(ws.memoryNeedBytes)}, whatever the length of the range: the largest file’s conversion sets it (a large one is expanded on disk), and the tools stream the rest through this folder.`
       : ws.streaming === false
         ? `The installed tools hold the whole range in memory: about ${formatSize(ws.memoryNeedBytes)} here.`
         : 'Could not ask the installed aalibrary how it uses memory.';

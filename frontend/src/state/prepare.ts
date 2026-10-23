@@ -464,12 +464,10 @@ export function buildRequest(s: PrepareState, plan: RangePlan): BaselineRequest 
     workRoot: s.workRoot.trim(),
     freeAsYouGo: s.freeAsYouGo,
     expectedBytes: Math.max(0, Math.round(plan.bytes)),
-    ...(s.streamed
-      ? {
-          streamed: true,
-          largestBytes: Math.max(0, ...plan.files.map((f) => Math.round(f.sizeBytes || 0))),
-        }
-      : {}),
+    // The largest file sets the memory a conversion needs (and, file by
+    // file, the working space).
+    largestBytes: Math.max(0, ...plan.files.map((f) => Math.round(f.sizeBytes || 0))),
+    ...(s.streamed ? { streamed: true } : {}),
   };
 }
 

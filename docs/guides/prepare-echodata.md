@@ -90,6 +90,24 @@ While a run goes, the card shows the working space it holds and the most so
 far; the finished run notes what it actually used against the estimate.
 `aa-workbench check` prints the folder's free space and the memory mode.
 
+### Large raw files: memory
+
+Converting one raw file takes far more memory than the file: echopype parses
+its pings and then expands them into rectangular float64 arrays, every ping
+padded to the longest. Held in memory, a 1 GB EK80 file needs more than a 7 GB
+workstation has, and the system stops the process without an error of its own
+(*exit -9*). aalibrary therefore expands any file of **200 MB or more on disk**
+instead, a block of pings at a time, in a temporary store inside the run's
+working folder that is deleted as soon as the file is written (`aa-ed --swap
+on|off` overrides; the values are the same either way).
+
+That caps a conversion at about **3 times the largest file** in memory, and
+needs about **2 times the largest file** of extra working space while it runs;
+the step counts both (the *Memory* line names the largest file when it sets the
+figure). Measured on a 1 GB file: 2.75 GB of memory at most and 2.1 GB of swap,
+2½ minutes, to Zarr. With an aalibrary older than this, the step says the
+largest file may need about 7 times its size in memory and to update aalibrary.
+
 ## File by file into the bucket: ranges longer than the disk
 
 Zarr stores are indexed: each array is its own small objects, with the index
@@ -216,6 +234,11 @@ so a file the cache does not know can never be promised.
 - **"aa-ed made 22 of the 24 per-file stores"** — some files failed to convert;
   the convert stage's log names them. Run again: the stores already in the
   bucket are reused.
+- **"… failed (exit -9)"** or **"… was killed by the system (signal 9)"** — the
+  system stopped the conversion for running out of memory (see *Large raw
+  files* above). Update aalibrary (**Tools ▸ Update Python Environment**), close
+  other memory-hungry work, and run again: finished stores are reused. The
+  failed run's working folder can be deleted.
 - **"… is on the gcsfuse mount of a bucket"** — choose a folder on the
   workstation's own disk; the products still go to the bucket.
 - **A gap warning** — the combine bridges it and records it in the QC report.

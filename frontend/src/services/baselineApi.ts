@@ -430,7 +430,9 @@ export function simSpaceNeeded(raw: number, oneFile: boolean, sv: boolean, freei
 /** workspace.space_needed_file_by_file, for the stand-in. */
 export function simFileByFile(raw: number, largest: number, files: number, sv: boolean, keepRaw: boolean): number {
   const one = largest || raw / Math.max(1, files);
-  const converting = (keepRaw ? raw : one) + 2.2 * one;
+  // 200 MB or more: expanded on disk while it converts (the swap).
+  const swap = one >= 200e6 ? 2.0 * one : 0;
+  const converting = (keepRaw ? raw : one) + 2.2 * one + swap;
   return Math.floor(Math.max(converting, sv ? 4.5 * raw : 0) * 1.15);
 }
 
@@ -469,7 +471,8 @@ function simWorkspace(r: BaselineRequest): Workspace {
     needFreeingBytes: free,
     freeing,
     memoryBytes: SIM_MEMORY,
-    memoryNeedBytes: (1 << 30) + 8 * (1 << 20) * r.expectedFiles.length,
+    // workspace.memory_needed: combining, or converting the largest file.
+    memoryNeedBytes: Math.max((1 << 30) + 8 * (1 << 20) * r.expectedFiles.length, 3 * largest),
     streaming: true,
     streamed,
     needWithoutSvBytes: streamed ? simFileByFile(r.expectedBytes, largest, n, false, Boolean(r.keepLocal)) : 0,

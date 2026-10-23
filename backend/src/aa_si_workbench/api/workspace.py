@@ -58,6 +58,18 @@ STREAMING_MEMORY_PER_FILE = 8 << 20
 #: Refuse a whole-range run that needs more than this share of the memory.
 MEMORY_HEADROOM = 0.85
 
+#: Converting one raw file. echopype expands the pings into float64 arrays
+#: several times the file's size; held in memory, a 1 GB EK60 file passed
+#: 5.5 GB and was killed (exit -9). aalibrary since catch-up 14 expands a file
+#: of SWAP_ABOVE_BYTES or more on disk, a block of pings at a time: 2.75 GB
+#: of memory and under 1 GB of swap for that file (EK80's complex samples
+#: expand to about twice their size, hence the allowance).
+SWAP_ABOVE_BYTES = 200 * 1000 * 1000
+SWAP_PER_RAW = 2.0
+CONVERT_MEMORY_PER_RAW = 3.0
+#: The same, with an aalibrary that holds the expansion in memory.
+CONVERT_MEMORY_PER_RAW_IN_MEMORY = 7.0
+
 #: File systems that are not a local disk for this purpose.
 BUCKET_MOUNTS = ("fuse.gcsfuse", "gcsfuse")
 MEMORY_FILESYSTEMS = ("tmpfs", "ramfs")
@@ -240,7 +252,9 @@ def space_needed_file_by_file(
     raw = float(max(0, raw_bytes))
     largest = float(max(0, largest_bytes)) or (raw / max(1, files))
     held = 0.0 if not raw_here else (raw if keep_raw else largest)
-    converting = held + ECHODATA_PER_RAW * largest
+    # A large file is expanded on disk while it converts (the swap).
+    swap = SWAP_PER_RAW * largest if largest >= SWAP_ABOVE_BYTES else 0.0
+    converting = held + ECHODATA_PER_RAW * largest + swap
     sv_bytes = SV_PER_RAW * raw if sv else 0.0
     return int(max(converting, sv_bytes) * MARGIN)
 
@@ -265,12 +279,33 @@ def memory_total() -> int:
     return int(total)
 
 
-def memory_needed(raw_bytes: int, files: int, streaming: bool | None) -> int:
-    """Peak memory of the heaviest stage, or 0 when it cannot be said."""
+def memory_needed(
+    raw_bytes: int,
+    files: int,
+    streaming: bool | None,
+    largest_bytes: int = 0,
+    swaps: bool | None = True,
+) -> int:
+    """Peak memory of the heaviest stage, or 0 when it cannot be said.
+
+    With tools that stream, the heavier of combining (about 1 GB whatever the
+    length) and converting the largest file (``largest_bytes``; ``swaps``:
+    whether the installed aalibrary expands a large file on disk).
+    """
     if streaming is None:
         return 0
     if streaming:
-        return STREAMING_MEMORY_BASE + STREAMING_MEMORY_PER_FILE * max(0, files)
+        per_raw = (
+            CONVERT_MEMORY_PER_RAW
+            if swaps is not False
+            else (CONVERT_MEMORY_PER_RAW_IN_MEMORY)
+        )
+        return int(
+            max(
+                STREAMING_MEMORY_BASE + STREAMING_MEMORY_PER_FILE * max(0, files),
+                per_raw * max(0, largest_bytes),
+            )
+        )
     return WHOLE_RANGE_MEMORY_PER_RAW * max(0, raw_bytes)
 
 
@@ -285,6 +320,8 @@ _PROBE = (
     "print(int(hasattr(c, '_set_read_cache') and hasattr(s, '_write_streaming') "
     "and hasattr(g, '_for_display')))"
 )
+#: A large raw file is expanded on disk while it converts (_core.rawio).
+_SWAP_PROBE = "import aalibrary.console._core as c\nprint(int(hasattr(c, 'rawio')))"
 #: File by file: aa-ed converts a list one file at a time, to Zarr, and the
 #: tools read gs:// stores where they are. Only modules every release has are
 #: imported: a release without these answers 0, not an import error.
@@ -340,6 +377,12 @@ def tools_file_by_file(tool: str) -> bool | None:
     (aa-ed with several files and --format zarr; stores read in place);
     None when it cannot be told. Asked as tools_stream asks."""
     return _ask(tool, _FILE_BY_FILE_PROBE)
+
+
+def tools_swap(tool: str) -> bool | None:
+    """Whether the installed aalibrary expands a large raw file on disk
+    while converting it; None when it cannot be told."""
+    return _ask(tool, _SWAP_PROBE)
 
 
 def _ask(tool: str, code: str) -> bool | None:

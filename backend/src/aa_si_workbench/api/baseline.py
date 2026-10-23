@@ -1414,17 +1414,21 @@ def workspace_report(req: BaselineRequest) -> Workspace:
     except HTTPException:
         tool = ""
     streaming = workspace.tools_stream(tool) if tool else None
+    try:
+        converter = jobs.resolve_tool("aa-ed")
+    except HTTPException:
+        converter = ""
+    swaps = workspace.tools_swap(converter) if converter else None
     memory = workspace.memory_total()
-    memory_need = workspace.memory_needed(raw, len(req.expectedFiles), streaming)
+    largest = req.largestBytes or (raw // max(1, len(req.expectedFiles)))
+    memory_need = workspace.memory_needed(
+        raw, len(req.expectedFiles), streaming, largest_bytes=largest, swaps=swaps
+    )
     H = workspace.human
 
     problem = workspace.folder_problem(root, mount)
     warnings: list[str] = []
     if not problem and req.streamed:
-        try:
-            converter = jobs.resolve_tool("aa-ed")
-        except HTTPException:
-            converter = ""
         if converter and workspace.tools_file_by_file(converter) is False:
             problem = FILE_BY_FILE_UPDATE
     if not problem and raw and free and need > free:
@@ -1463,6 +1467,26 @@ def workspace_report(req: BaselineRequest) -> Workspace:
             problem = text + " Update aalibrary, or choose a shorter range."
         else:
             warnings.append(text)
+    if (
+        not problem
+        and streaming
+        and memory
+        and memory_need > workspace.MEMORY_HEADROOM * memory
+    ):
+        # One file's conversion: the system stops a process that runs out of
+        # memory (exit -9) without a word of its own.
+        text = (
+            f"Converting the largest file ({H(largest)}) takes about "
+            f"{H(memory_need)} of memory, and this machine has {H(memory)}: the "
+            "system may stop it."
+        )
+        if swaps is False:
+            problem = (
+                text + " Update aalibrary (Tools ▸ Update Python Environment): it "
+                "expands large files on disk instead."
+            )
+        else:
+            warnings.append(text + " Close other memory-hungry work while it runs.")
     caution = workspace.folder_warning(root, mount)
     if caution and not problem:
         warnings.append(caution)
