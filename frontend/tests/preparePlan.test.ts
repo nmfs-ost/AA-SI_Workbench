@@ -132,7 +132,7 @@ describe('names and places', () => {
 
   it('file by file, puts one store per raw file under the survey and echosounder', () => {
     expect(filesUri('bkt', 'jane.doe', 'Henry_B._Bigelow', 'HB1603', 'EK60'))
-      .toBe('gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/per_file/EK60/');
+      .toBe('gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/EK60/');
     expect(storeName('HB1603_L1-D20160703-T060000.raw')).toBe('HB1603_L1-D20160703-T060000.zarr');
   });
 

@@ -58,6 +58,13 @@ TOOLS = {
     "aa-combine": """
         if os.environ.get("FAKE_COMBINE_FAIL"):
             print("QC: transit gap between files", file=sys.stderr); sys.exit(4)
+        if "-o" not in args:                       # file by file: Sv joined
+            inputs = args[:args.index("--dest")]
+            assert inputs and all(s.startswith("gs://") and s.endswith("_1a2b3c4d.zarr")
+                                  for s in inputs), inputs
+            assert "--no-report" in args
+            dest = args[args.index("--dest") + 1]
+            print(dest + args[args.index("--base") + 1] + "_5e6f7a8b.zarr"); sys.exit(0)
         target = args[args.index("-o") + 1]
         if "--workdir" not in args:                # file by file: the stores themselves
             stores = args[:args.index("-o")]
@@ -77,13 +84,25 @@ TOOLS = {
     """,
     "aa-sv": """
         dest = args[args.index("--dest") + 1]
+        fmt = args[args.index("--format") + 1] if "--format" in args else "nc"
+        ext = "." + fmt
+        inputs = [a for a in args[:args.index("--dest")]
+                  if a.startswith(("gs://", "/"))]
+        if len(inputs) > 1:                        # several files, one at a time
+            assert ext == ".zarr" and "--progress" in args, args
+            for store in inputs:
+                stem = store.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                if os.environ.get("FAKE_SV_SHORT") and stem + ".raw" == FILES_LAST:
+                    continue
+                print(f"{dest}{stem}_1a2b3c4d.zarr", flush=True)
+            sys.exit(0)
         name = args[0].rsplit("/", 1)[-1]
         base = name.rsplit(".", 1)[0]
         if os.environ.get("FAKE_CHECK_FREED"):
             cache = Path(os.environ["AA_CACHE_DIR"])
             assert not list(Path("raw").glob("*.nc")), "per-file outlived the combine"
             assert list(cache.rglob(name)), "combined freed too early"
-        print(f"{dest}{base}_1a2b3c4d.nc")
+        print(f"{dest}{base}_1a2b3c4d{ext}")
     """,
     "aa-graph": """
         dest = args[args.index("--dest") + 1]
@@ -91,7 +110,8 @@ TOOLS = {
             combined = args[0].rsplit("/", 1)[-1].replace("_1a2b3c4d", "")
             assert not list(Path(os.environ["AA_CACHE_DIR"]).rglob(combined)), \
                 "the local combined copy outlived aa-sv"
-        print(dest + args[0].rsplit("/", 1)[-1].replace(".nc", ".png"))
+        name = args[0].rsplit("/", 1)[-1]
+        print(dest + name.replace(".nc", ".png").replace(".zarr", ".png"))
     """,
     "aa-upload": """
         print(args[1] + Path(args[0]).name)
@@ -124,6 +144,7 @@ def tools(tmp_path, monkeypatch):
     monkeypatch.setattr(baseline.workspace, "tools_stream", lambda tool: True)
     monkeypatch.setattr(baseline.workspace, "tools_file_by_file", lambda tool: True)
     monkeypatch.setattr(baseline.workspace, "tools_swap", lambda tool: True)
+    monkeypatch.setattr(baseline.workspace, "tools_sv_by_file", lambda tool: True)
     jobs._reset_for_tests()
     baseline._reset_for_tests()
     from aa_si_workbench.api import identity
@@ -200,7 +221,9 @@ def test_full_run_chains_outputs_and_cleans_scratch(tools):
     run = client.post("/api/baseline/runs", json=REQUEST).json()
     run = _wait(client, run["id"])
     assert run["state"] == "succeeded", run["error"]
-    assert [s["state"] for s in run["stages"]] == ["done"] * 7
+    states = {s["id"]: s["state"] for s in run["stages"]}
+    assert states.pop("filesv") == "skipped"  # only file by file
+    assert list(states.values()) == ["done"] * 7
     dest = run["destination"]
     kinds = {a["kind"]: a["uri"] for a in run["assets"]}
     assert kinds["echodata"] == f"{dest}{run['base']}.nc"
@@ -566,7 +589,7 @@ def test_runs_going_in_the_same_place_count_against_the_free_space(
 # File by file into the bucket
 # --------------------------------------------------------------------------- #
 STREAMED = REQUEST | {"streamed": True}
-PER_FILE = "gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/per_file/EK60/"
+PER_FILE = "gs://bkt/derived_products/jane.doe/Henry_B._Bigelow/HB1603/EK60/"
 
 
 def test_file_by_file_preview_has_no_fetch_and_names_every_store(tools):
@@ -577,6 +600,7 @@ def test_file_by_file_preview_has_no_fetch_and_names_every_store(tools):
     assert [s["id"] for s in preview["stages"]] == [
         "request",
         "convert",
+        "filesv",
         "combine",
         "sv",
         "echogram",
@@ -599,7 +623,20 @@ def test_file_by_file_preview_has_no_fetch_and_names_every_store(tools):
     )
     assert all(not s["frees"] for s in preview["stages"])
     assets = {a["kind"]: a["uri"] for a in preview["assets"]}
-    assert assets["echodata"].endswith(".zarr")
+    assert assets["echodata"].endswith(".zarr") and assets["sv"].endswith(".zarr")
+    # Sv file by file: each file's store calibrated where it is, its Sv beside
+    # it; then the range's Sv joined from those, in the bucket.
+    filesv = next(s for s in preview["stages"] if s["id"] == "filesv")
+    assert filesv["tool"] == "aa-sv"
+    command = filesv["command"]
+    assert command[1:4] == [PER_FILE + f.replace(".raw", ".zarr") for f in FILES]
+    assert command[command.index("--dest") + 1] == PER_FILE
+    assert command[command.index("--format") + 1] == "zarr"
+    sv = next(s for s in preview["stages"] if s["id"] == "sv")
+    assert sv["tool"] == "aa-combine" and sv["command"][0] == "aa-combine"
+    assert sv["command"][1] == baseline.EACH_FILE_SV
+    assert sv["command"][sv["command"].index("--dest") + 1] == preview["destination"]
+    assert sv["command"][sv["command"].index("--base") + 1] == preview["base"]
 
 
 def test_file_by_file_run_combines_the_stores_aa_ed_made(tools, monkeypatch):
@@ -620,10 +657,39 @@ def test_file_by_file_run_combines_the_stores_aa_ed_made(tools, monkeypatch):
     assert combine["command"][1:4] == [
         PER_FILE + f.replace(".raw", ".zarr") for f in FILES
     ]
+    filesv = next(s for s in run["stages"] if s["id"] == "filesv")
+    assert filesv["state"] == "done" and filesv["detail"].startswith("3 files, Sv for")
+    sv = next(s for s in run["stages"] if s["id"] == "sv")
+    assert (
+        sv["tool"] == "aa-combine"
+        and sv["detail"] == "3 files' Sv joined, in the bucket."
+    )
+    assert sv["command"][1:4] == [
+        PER_FILE + f.replace(".raw", "_1a2b3c4d.zarr") for f in FILES
+    ]
     kinds = {a["kind"]: a["uri"] for a in run["assets"]}
     assert kinds["echodata"] == f"{run['destination']}{run['base']}.zarr"
-    assert len(client.get("/api/jobs").json()["jobs"]) == 6  # no fetch job
+    assert kinds["sv"] == f"{run['destination']}{run['base']}_5e6f7a8b.zarr"
+    assert kinds["echogram"] == f"{run['destination']}{run['base']}_5e6f7a8b.png"
+    assert len(client.get("/api/jobs").json()["jobs"]) == 7  # no fetch job
+    assert "and their Sv" in " ".join(run["notes"])
     assert not Path(run["scratch"]).exists()
+
+
+def test_a_file_s_sv_missing_from_aa_svs_list_stops_the_run(tools, monkeypatch):
+    monkeypatch.setenv("FAKE_SV_SHORT", "1")
+    client = TestClient(create_app())
+    run = _wait(client, client.post("/api/baseline/runs", json=STREAMED).json()["id"])
+    assert run["state"] == "failed"
+    assert "2 of the 3 per-file Sv" in run["error"]
+    assert {s["id"]: s["state"] for s in run["stages"]}["sv"] == "pending"
+
+
+def test_the_base_cannot_be_the_echosounder_s_folder(tools):
+    response = TestClient(create_app()).post(
+        "/api/baseline/preview", json=STREAMED | {"base": "EK60"}
+    )
+    assert response.status_code == 400 and "echosounder" in response.json()["detail"]
 
 
 def test_a_store_missing_from_aa_eds_list_stops_the_run(tools, monkeypatch):
@@ -647,6 +713,14 @@ def test_one_file_file_by_file_goes_straight_to_a_store(tools, monkeypatch):
     combine = next(s for s in run["stages"] if s["id"] == "combine")
     assert combine["state"] == "skipped" and "One file" in combine["detail"]
     assert run["filesDestination"] == ""  # straight to the asset: no per-file folder
+    # Its Sv: the asset's, as a Zarr store in the bucket; nothing to join.
+    states = {s["id"]: s["state"] for s in run["stages"]}
+    assert states["filesv"] == "skipped"
+    sv = next(s for s in run["stages"] if s["id"] == "sv")
+    assert (
+        sv["tool"] == "aa-sv"
+        and sv["command"][sv["command"].index("--format") + 1] == "zarr"
+    )
 
 
 def test_file_by_file_without_the_files_is_refused(tools):
@@ -684,12 +758,19 @@ def test_file_by_file_needs_one_raw_file_of_space_not_the_range(tools, monkeypat
         "/api/baseline/workspace", json=STREAMED | big | {"keepLocal": True}
     ).json()
     assert kept["needBytes"] > 40 * 10**9 and "turn that off" in kept["problem"]
-    # Sv is still made here: the card says how much less it would need without.
+    # Sv file by file: one file's Sv here at a time, so no more than converting.
     with_sv = client.post(
         "/api/baseline/workspace", json=STREAMED | big | {"sv": True}
     ).json()
-    assert with_sv["needBytes"] >= 4.5 * 40 * 10**9
-    assert with_sv["needWithoutSvBytes"] == streamed["needBytes"]
+    assert with_sv["problem"] == ""
+    assert with_sv["needBytes"] == streamed["needBytes"]
+    # An aalibrary that makes the whole range's Sv here: say to update it.
+    monkeypatch.setattr(baseline.workspace, "tools_sv_by_file", lambda tool: False)
+    old = client.post(
+        "/api/baseline/workspace", json=STREAMED | big | {"sv": True}
+    ).json()
+    assert old["needBytes"] >= 4.5 * 40 * 10**9
+    assert old["problem"] == baseline.SV_BY_FILE_UPDATE
     response = client.post("/api/baseline/runs", json=STREAMED | big | {"sv": True})
     assert response.status_code == 409
 

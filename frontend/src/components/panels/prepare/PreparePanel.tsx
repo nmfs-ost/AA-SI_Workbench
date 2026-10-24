@@ -92,7 +92,7 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
       : '';
   const single = plan?.files.length === 1;
   const sourceReady = Boolean(s.vessel && s.survey && s.sonar && s.files.length);
-  // File by file: one store per raw file in the survey's per_file folder.
+  // File by file: one store (and Sv) per raw file in the survey's echosounder folder.
   const filesFolder =
     s.streamed && !single && bucket && s.vessel && s.survey && s.sonar
       ? filesUri(bucket, s.config?.user ?? '', s.vessel.id, s.survey.id, s.sonar.id)
@@ -104,8 +104,11 @@ export const PreparePanel: FunctionComponent<IDockviewPanelProps> = () => {
           what: s.streamed ? 'The EchoData asset (aa-combine, in the bucket)' : 'The EchoData asset (aa-combine)' },
         ...(single ? [] : [{ name: `${base}.qc.json`, kind: 'report' as const, level: '',
           what: "aa-combine's QC report: gaps, overlaps, calibration changes" }]),
-        ...(s.sv ? [{ name: `${base}_‹recipe›.nc`, kind: 'sv' as const, level: 'L2A',
-          what: 'Sv (aa-sv); ‹recipe› names the processing' }] : []),
+        ...(s.sv ? [{ name: `${base}_‹recipe›.${s.streamed ? 'zarr' : 'nc'}`, kind: 'sv' as const,
+          level: 'L2A',
+          what: s.streamed && !single
+            ? "Sv: each file's (aa-sv), joined in the bucket (aa-combine); ‹recipe› names the processing"
+            : 'Sv (aa-sv); ‹recipe› names the processing' }] : []),
         ...(s.sv && s.echogram ? [{ name: `${base}_‹recipe›.png`, kind: 'echogram' as const,
           level: 'L2A', what: 'Echogram of that Sv (aa-graph)' }] : []),
         { name: `${base}.yaml`, kind: 'request', level: '',
@@ -514,7 +517,7 @@ function runNodes(run: RunStatus): RouteNode[] {
     // File by file there is no fetch stage: each file is fetched by the conversion.
     { label: 'Time range', level: 'L0', state: toNode([st(run.request.streamed ? 'convert' : 'fetch')]) },
     { label: 'EchoData', level: 'L1', state: toNode([st('convert'), st('combine')]) },
-    { label: 'Sv', level: 'L2A', state: toNode([st('sv'), st('echogram')]) },
+    { label: 'Sv', level: 'L2A', state: toNode([st('filesv'), st('sv'), st('echogram')]) },
     { label: 'Bucket', level: 'GCS', state: bucket },
   ];
 }

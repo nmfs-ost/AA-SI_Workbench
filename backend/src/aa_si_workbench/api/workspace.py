@@ -239,6 +239,7 @@ def space_needed_file_by_file(
     sv: bool,
     keep_raw: bool,
     raw_here: bool = True,
+    sv_by_file: bool = False,
 ) -> int:
     """The most working space a file-by-file run holds at once, in bytes.
 
@@ -246,8 +247,10 @@ def space_needed_file_by_file(
     keeping the raw files, all of them and the store of the last. A folder
     archive's raw files are read where they are (``raw_here`` False): only
     the store is here. Combining reads the stores in the bucket and writes
-    there: nothing here. Calibrating reads the combined store in place and
-    writes the Sv here before uploading it, so with Sv the peak is the Sv.
+    there: nothing here. Calibrating file by file (``sv_by_file``) writes one
+    file's Sv here at a time before uploading it, and the join and the
+    echogram read and write in the bucket; otherwise (one file, or an older
+    aalibrary) the whole range's Sv is written here, and is the peak.
     """
     raw = float(max(0, raw_bytes))
     largest = float(max(0, largest_bytes)) or (raw / max(1, files))
@@ -255,7 +258,13 @@ def space_needed_file_by_file(
     # A large file is expanded on disk while it converts (the swap).
     swap = SWAP_PER_RAW * largest if largest >= SWAP_ABOVE_BYTES else 0.0
     converting = held + ECHODATA_PER_RAW * largest + swap
-    sv_bytes = SV_PER_RAW * raw if sv else 0.0
+    if not sv:
+        sv_bytes = 0.0
+    elif sv_by_file:
+        # One file's Sv, and the raw files still kept beside it.
+        sv_bytes = SV_PER_RAW * largest + (raw if keep_raw and raw_here else 0.0)
+    else:
+        sv_bytes = SV_PER_RAW * raw
     return int(max(converting, sv_bytes) * MARGIN)
 
 
@@ -329,6 +338,12 @@ _FILE_BY_FILE_PROBE = (
     "import aalibrary.console.aa_ed as e, aalibrary.console._core.uris as u\n"
     "print(int(hasattr(e, '_run_list_mode') and hasattr(u, 'in_place')))"
 )
+#: Sv file by file: aa-sv calibrates a list one file at a time, to Zarr, and
+#: aa-combine joins Sv stores.
+_SV_BY_FILE_PROBE = (
+    "import aalibrary.console.aa_sv as s, aalibrary.console.aa_combine as c\n"
+    "print(int(hasattr(s, '_run_list_mode') and hasattr(c, 'join_sv')))"
+)
 _PROBE_SECONDS = 300
 _probe_lock = threading.Lock()
 _probed: dict[tuple[str, str], tuple[float, bool | None]] = {}
@@ -383,6 +398,12 @@ def tools_swap(tool: str) -> bool | None:
     """Whether the installed aalibrary expands a large raw file on disk
     while converting it; None when it cannot be told."""
     return _ask(tool, _SWAP_PROBE)
+
+
+def tools_sv_by_file(tool: str) -> bool | None:
+    """Whether the installed aalibrary makes Sv file by file (aa-sv with a
+    list; aa-combine joining Sv); None when it cannot be told."""
+    return _ask(tool, _SV_BY_FILE_PROBE)
 
 
 def _ask(tool: str, code: str) -> bool | None:

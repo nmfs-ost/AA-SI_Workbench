@@ -5,7 +5,7 @@ import { CheckRounded, ContentCopyOutlined } from '@mui/icons-material';
 import { copyText } from '../CopyPathButton';
 import { quote } from '../shellQuote';
 import type { BaselineRequest, Preview } from '../../../services/baselineApi';
-import { baselineApi } from '../../../services/baselineApi';
+import { baselineApi, EACH_FILE_SV } from '../../../services/baselineApi';
 import { LevelChip } from './ui';
 
 /**
@@ -177,8 +177,9 @@ export function freeLine(pattern: string): string {
  * The preview as a script that runs on its own: the scratch folder becomes
  * $RUN (made in the card's working folder), the Sv path aa-sv prints (its name
  * carries the recipe hash, so it is not known in advance) is captured and
- * handed to aa-graph, and the working files the card frees as it goes are
- * deleted at the same points, as the card's runner does.
+ * handed to aa-graph — file by file, each file's Sv is captured too and handed
+ * to the join — and the working files the card frees as it goes are deleted at
+ * the same points, as the card's runner does.
  */
 export function toScript(preview: Preview): string {
   const fetch = preview.stages.find((s) => s.id === 'fetch');
@@ -205,7 +206,9 @@ export function toScript(preview: Preview): string {
   for (const stage of preview.stages) {
     const args = stage.command.map(local);
     if (stage.id === 'echogram') args[1] = '$SV';
-    let line = args.map(quote).join(' ');
+    // The per-file Sv, one per line, word-split into the join's arguments.
+    let line = args.map((a) => (a === EACH_FILE_SV ? '$SVFILES' : quote(a))).join(' ');
+    if (stage.id === 'filesv') line = `SVFILES=$(${line})`;
     if (stage.id === 'sv') line = `SV=$(${line})`;
     lines.push(`# ${stage.label}${stage.level ? ` (${stage.level})` : ''}: ${stage.description}`);
     // A copy from a folder archive needs its folder; aa-fetch makes its own.

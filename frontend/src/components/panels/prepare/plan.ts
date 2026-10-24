@@ -294,13 +294,14 @@ export function destinationUri(
 }
 
 /**
- * File by file: where each raw file's own EchoData store goes (baseline.py
- * FILES_TEMPLATE). Per survey and echosounder, not per range, so a longer
- * range finds the files a shorter one already converted.
+ * File by file: where each raw file's own EchoData store (and its Sv) goes
+ * (baseline.py FILES_TEMPLATE). Per survey and echosounder, not per range, so
+ * a longer range finds the files a shorter one already converted; the same
+ * shape as NCEI's raw/<ship>/<survey>/<echosounder>/.
  */
 export function filesUri(bucket: string, user: string, vessel: string, survey: string, sonar: string): string {
   const who = user ? cleanSegment(user) : 'unknown-user';
-  return `gs://${bucket}/derived_products/${who}/${cleanSegment(vessel)}/${cleanSegment(survey)}/per_file/${cleanSegment(sonar)}/`;
+  return `gs://${bucket}/derived_products/${who}/${cleanSegment(vessel)}/${cleanSegment(survey)}/${cleanSegment(sonar)}/`;
 }
 
 /** The store aa-ed makes for a raw file in that folder: its stem, .zarr. */

@@ -100,7 +100,7 @@ interface Props {
   keepLocal: boolean;
   /** File by file into the bucket (one raw file here at a time). */
   streamed: boolean;
-  /** Sv is asked for: file by file, it is still made here. */
+  /** Sv is asked for: file by file, each file's is made here in turn. */
   sv: boolean;
   onChange: (patch: {
     workRoot?: string;
@@ -123,9 +123,10 @@ interface Props {
  *
  * "File by file into the bucket" takes the range out of this folder: each raw
  * file is fetched, converted to its own Zarr store in the bucket and deleted
- * before the next, and the stores are combined where they are. The folder
- * then holds one raw file at a time, whatever the length of the range; only
- * Sv, when asked for, is still made here.
+ * before the next, and the stores are combined where they are; Sv, when asked
+ * for, is made the same way, one file at a time, and joined in the bucket. The
+ * folder then holds one raw file (or one file's Sv) at a time, whatever the
+ * length of the range.
  */
 export function WorkspaceStep({
   workspace: ws,
@@ -252,10 +253,12 @@ export function WorkspaceStep({
               ? keepLocal
                 ? 'Every raw file is kept here once converted, so the folder holds the whole range.'
                 : sv && ws.needWithoutSvBytes && ws.needWithoutSvBytes < ws.needBytes
-                  ? `Most of it is the Sv, made here before it goes to the bucket. Without Sv: about ${formatSize(
+                  ? `Most of it is Sv, made here before it goes to the bucket. Without Sv: about ${formatSize(
                       ws.needWithoutSvBytes,
                     )}.`
-                  : 'One raw file and its EchoData store at a time, whatever the length of the range.'
+                  : sv
+                    ? "One raw file and its EchoData store, or one file's Sv, at a time, whatever the length of the range."
+                    : 'One raw file and its EchoData store at a time, whatever the length of the range.'
               : freeing
                 ? `About ${formatSize(ws.needKeepingBytes)} if every working file were kept until the end.`
                 : `About ${formatSize(ws.needFreeingBytes)} with Free space as it goes.`,

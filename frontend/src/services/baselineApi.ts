@@ -280,8 +280,13 @@ const serverApi: BaselineApi = {
 /** What the stages do file by file, where it differs (baseline.py FILE_BY_FILE). */
 const FILE_BY_FILE: Record<string, string> = {
   convert: 'Each raw file in turn: fetched, converted to its own Zarr store in the bucket, and deleted here.',
+  filesv: "Each file's store in turn, read where it is: its Sv computed, uploaded beside it, and deleted here.",
   combine: 'Merge the per-file stores, read where they are in the bucket, into one EchoData store beside them, with a QC report.',
+  sv: "Join each file's Sv, read where they are, in time order, into the range's Sv in the bucket.",
 };
+
+/** The Sv join's input before aa-sv has run (baseline.py EACH_FILE_SV). */
+export const EACH_FILE_SV = "<each file's Sv from aa-sv>";
 
 const STAGES: Omit<StagePreview, 'command'>[] = [
   { id: 'request', label: 'Request', tool: 'aa-request', level: 'L0',
@@ -290,6 +295,8 @@ const STAGES: Omit<StagePreview, 'command'>[] = [
     description: 'Download the raw files from NCEI into a scratch folder.' },
   { id: 'convert', label: 'Convert', tool: 'aa-ed', level: 'L1',
     description: 'Convert each raw file to EchoData (echopype NetCDF).' },
+  { id: 'filesv', label: 'Calibrate each file', tool: 'aa-sv', level: 'L2A',
+    description: "Compute each raw file's Sv beside its EchoData in the bucket, one file at a time." },
   { id: 'combine', label: 'Combine', tool: 'aa-combine', level: 'L1',
     description: 'Merge the files in time order into one EchoData asset, with a QC report, written to the bucket.' },
   { id: 'sv', label: 'Calibrate', tool: 'aa-sv', level: 'L2A',
@@ -315,7 +322,7 @@ function simDest(r: BaselineRequest, base: string): string {
 function simFilesDest(r: BaselineRequest): string {
   // One file goes straight to the asset's name: no per-file folder.
   return r.streamed && !single(r)
-    ? `gs://${r.bucket || simulatedBucket() || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/per_file/${r.sonar}/`
+    ? `gs://${r.bucket || simulatedBucket() || SIM_BUCKET}/derived_products/${SIM_USER}/${r.vessel}/${r.survey}/${r.sonar}/`
     : '';
 }
 
@@ -331,6 +338,11 @@ function simStages(r: BaselineRequest): Omit<StagePreview, 'command'>[] {
     if (s.id === 'convert' && single(r)) {
       return { ...s, description: 'Fetch the raw file and convert it straight to a Zarr store in the bucket.' };
     }
+    if (s.id === 'sv') {
+      return single(r)
+        ? { ...s, description: 'Compute Sv beside it, as a Zarr store in the bucket.' }
+        : { ...s, tool: 'aa-combine', description: FILE_BY_FILE.sv };
+    }
     return { ...s, description: FILE_BY_FILE[s.id] };
   });
 }
@@ -341,6 +353,7 @@ function single(r: BaselineRequest): boolean {
 
 function simEnabled(id: string, r: BaselineRequest): boolean {
   if (id === 'fetch') return !r.streamed;
+  if (id === 'filesv') return Boolean(r.streamed) && r.sv && !single(r);
   if (id === 'combine') return !single(r);
   if (id === 'sv') return r.sv;
   if (id === 'echogram') return r.sv && r.echogram;
@@ -363,6 +376,16 @@ function simCommand(id: string, r: BaselineRequest, base: string, dest: string):
     return single(r)
       ? ['aa-ed', r.expectedFiles[0], '-o', `${dest}${base}.zarr`, ...flags]
       : ['aa-ed', ...r.expectedFiles, '--dest', simFilesDest(r), ...flags, '--progress'];
+  }
+  const ek80 = r.sonar.toUpperCase().includes('EK80')
+    ? ['--waveform_mode', r.waveformMode, '--encode_mode', r.encodeMode] : [];
+  if (r.streamed && id === 'filesv') {
+    return ['aa-sv', ...simStores(r), '--format', 'zarr', '--dest', simFilesDest(r), ...ek80, '--progress'];
+  }
+  if (r.streamed && id === 'sv' && !single(r)) {
+    return ['aa-combine', EACH_FILE_SV, '--dest', dest, '--base', base, '--sort', 'time',
+      '--sonar_model', r.sonar, '--gap_seconds', String(r.gapSeconds), '--gap_factor', String(r.gapFactor),
+      '--no-report', '--progress'];
   }
   if (r.streamed && id === 'combine') {
     return ['aa-combine', ...simStores(r), '-o', `${dest}${base}.zarr`, '--sort', 'time',
@@ -388,11 +411,10 @@ function simCommand(id: string, r: BaselineRequest, base: string, dest: string):
         '--gap_factor', String(r.gapFactor), '--report', '--progress',
         ...(r.strict ? ['--strict'] : [])];
     case 'sv':
-      return ['aa-sv', `${dest}${base}.${fmt}`, '--dest', dest,
-        ...(r.sonar.toUpperCase().includes('EK80')
-          ? ['--waveform_mode', r.waveformMode, '--encode_mode', r.encodeMode] : [])];
+      return ['aa-sv', `${dest}${base}.${fmt}`, ...(r.streamed ? ['--format', 'zarr'] : []),
+        '--dest', dest, ...ek80];
     case 'echogram':
-      return ['aa-graph', `${dest}${base}_<recipe>.nc`, '--dest', dest, '--var', 'Sv',
+      return ['aa-graph', `${dest}${base}_<recipe>.${r.streamed ? 'zarr' : 'nc'}`, '--dest', dest, '--var', 'Sv',
         '--decimate', String(o.decimate), '--vmin', String(o.vmin), '--vmax', String(o.vmax),
         '--cmap', o.cmap, '--figwidth', '14', '--rowheight', '3', '--dpi', '150'];
     default:
@@ -433,7 +455,9 @@ export function simFileByFile(raw: number, largest: number, files: number, sv: b
   // 200 MB or more: expanded on disk while it converts (the swap).
   const swap = one >= 200e6 ? 2.0 * one : 0;
   const converting = (keepRaw ? raw : one) + 2.2 * one + swap;
-  return Math.floor(Math.max(converting, sv ? 4.5 * raw : 0) * 1.15);
+  // Sv: one file's at a time (joined in the bucket); one file: its own.
+  const svHere = !sv ? 0 : files > 1 ? 4.5 * one + (keepRaw ? raw : 0) : 4.5 * raw;
+  return Math.floor(Math.max(converting, svHere) * 1.15);
 }
 
 function simWorkspace(r: BaselineRequest): Workspace {

@@ -161,6 +161,15 @@ def test_file_by_file_holds_one_raw_file_and_its_store():
         raw, largest, 200, sv=True, keep_raw=False
     )
     assert with_sv == int(s * raw * m)
+    # Sv file by file: one file's Sv here at a time, joined in the bucket.
+    by_file = workspace.space_needed_file_by_file(
+        raw, largest, 200, sv=True, keep_raw=False, sv_by_file=True
+    )
+    assert by_file == int(max(1 + e, s) * largest * m)
+    # Keeping the raw files, they are still here beside it.
+    assert workspace.space_needed_file_by_file(
+        raw, largest, 200, sv=True, keep_raw=True, sv_by_file=True
+    ) == int((raw + s * largest) * m)
 
 
 def test_file_by_file_support_is_asked_of_the_tools_own_python(tmp_path):

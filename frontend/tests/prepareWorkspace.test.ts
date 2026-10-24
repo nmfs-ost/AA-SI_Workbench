@@ -5,7 +5,7 @@ import { formatSize } from '../src/components/panels/prepare/WorkspaceStep';
 import { planRange } from '../src/components/panels/prepare/plan';
 import type { PlanFile } from '../src/components/panels/prepare/plan';
 import type { Preview } from '../src/services/baselineApi';
-import { baselineApi, simFileByFile, simSpaceNeeded } from '../src/services/baselineApi';
+import { baselineApi, EACH_FILE_SV, simFileByFile, simSpaceNeeded } from '../src/services/baselineApi';
 import { buildRequest } from '../src/state/prepare';
 import { idFromName } from '../src/components/panels/prepare/SourcesDialog';
 
@@ -117,6 +117,27 @@ describe('toScript', () => {
   it('falls back to a temporary folder when no working folder is named', () => {
     expect(toScript({ ...preview, workRoot: undefined })).toContain('RUN=$(mktemp -d)');
   });
+
+  it("file by file, hands each file's Sv to the join and the joined Sv to aa-graph", () => {
+    const script = toScript({
+      ...preview,
+      stages: [
+        { id: 'filesv', label: 'Calibrate each file', tool: 'aa-sv', level: 'L2A', description: 'd',
+          command: ['aa-sv', 'gs://b/S/EK60/D1.zarr', 'gs://b/S/EK60/D2.zarr', '--format', 'zarr',
+            '--dest', 'gs://b/S/EK60/', '--progress'], frees: [] },
+        { id: 'sv', label: 'Calibrate', tool: 'aa-combine', level: 'L2A', description: 'd',
+          command: ['aa-combine', EACH_FILE_SV, '--dest', 'gs://b/S/HB/', '--base', 'HB'], frees: [] },
+        { id: 'echogram', label: 'Echogram', tool: 'aa-graph', level: 'L2A', description: 'd',
+          command: ['aa-graph', 'gs://b/S/HB/HB_<recipe>.zarr', '--dest', 'gs://b/S/HB/'], frees: [] },
+      ],
+    });
+    const lines = script.split('\n');
+    expect(lines).toContain(
+      'SVFILES=$(aa-sv gs://b/S/EK60/D1.zarr gs://b/S/EK60/D2.zarr --format zarr --dest gs://b/S/EK60/ --progress)',
+    );
+    expect(lines).toContain('SV=$(aa-combine $SVFILES --dest gs://b/S/HB/ --base HB)');
+    expect(lines).toContain('aa-graph "$SV" --dest gs://b/S/HB/');
+  });
 });
 
 describe('sources', () => {
@@ -167,10 +188,12 @@ describe('buildRequest', () => {
 });
 
 describe('file by file', () => {
-  it('needs one raw file and its store, whatever the length; Sv the whole range', () => {
+  it("needs one raw file and its store, or one file's Sv, whatever the length", () => {
     expect(simFileByFile(40e9, 150e6, 200, false, false)).toBe(Math.floor(3.2 * 150e6 * 1.15));
     expect(simFileByFile(30e9, 0, 200, false, false)).toBe(Math.floor(3.2 * 150e6 * 1.15));
-    expect(simFileByFile(40e9, 150e6, 200, true, false)).toBe(Math.floor(4.5 * 40e9 * 1.15));
+    expect(simFileByFile(40e9, 150e6, 200, true, false)).toBe(Math.floor(4.5 * 150e6 * 1.15));
+    // One file: its own Sv, as before.
+    expect(simFileByFile(1e9, 1e9, 1, true, false)).toBe(Math.floor(5.2 * 1e9 * 1.15));
     expect(simFileByFile(40e9, 150e6, 200, false, true)).toBe(Math.floor((40e9 + 2.2 * 150e6) * 1.15));
     // A large file is expanded on disk while it converts.
     expect(simFileByFile(47e9, 1e9, 47, false, false)).toBe(Math.floor((1 + 2.2 + 2.0) * 1e9 * 1.15));
@@ -179,9 +202,16 @@ describe('file by file', () => {
   it('has no fetch stage: aa-ed is given every file, and aa-combine the stores', async () => {
     const r = request({ streamed: true, expectedFiles: ['D1.raw', 'D2.raw'] });
     const preview = await baselineApi.preview(r);
-    expect(preview.stages.map((st) => st.id)).toEqual(['request', 'convert', 'combine', 'sv', 'echogram', 'record']);
+    expect(preview.stages.map((st) => st.id)).toEqual(
+      ['request', 'convert', 'filesv', 'combine', 'sv', 'echogram', 'record'],
+    );
     const folder = preview.filesDestination!;
-    expect(folder).toMatch(/\/HB1603\/per_file\/EK60\/$/);
+    expect(folder).toMatch(/\/HB1603\/EK60\/$/);
+    const filesv = preview.stages.find((st) => st.id === 'filesv')!.command;
+    expect(filesv.slice(0, 3)).toEqual(['aa-sv', `${folder}D1.zarr`, `${folder}D2.zarr`]);
+    const sv = preview.stages.find((st) => st.id === 'sv')!;
+    expect(sv.tool).toBe('aa-combine');
+    expect(sv.command[1]).toBe(EACH_FILE_SV);
     const convert = preview.stages.find((st) => st.id === 'convert')!.command;
     expect(convert.slice(0, 3)).toEqual(['aa-ed', 'D1.raw', 'D2.raw']);
     expect(convert[convert.indexOf('--dest') + 1]).toBe(folder);

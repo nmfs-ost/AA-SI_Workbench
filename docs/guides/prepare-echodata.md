@@ -125,41 +125,68 @@ uses that, and the workstation only orchestrates:
    gcsfs) and writes the combined EchoData as a store in the bucket, a slice at
    a time. Nothing is copied to the workstation. The QC pass (gaps, overlaps,
    sonar model, channels) runs exactly as before.
-3. Sv and the echogram, if asked for, are made as before, except that `aa-sv`
-   reads the combined store in place too.
+3. Sv, if asked for, is made **file by file too** (*Calibrate each file*, right
+   after the conversion): one `aa-sv` is given every file's store and
+   calibrates them one at a time, each read where it is, its Sv written here,
+   uploaded beside its store and deleted here before the next.
+4. *Calibrate* then **joins** those, read where they are, into the range's Sv:
+   `aa-combine` appends each file's Sv in time order, a chunk at a time, into a
+   store written straight to the bucket. `aa-graph` draws the echogram from it
+   where it is.
 
-The working folder then holds **one raw file and its store at a time**, however
-long the range. Rehearsed on a 40-hour EK60 range (24 files, 540 MB raw, against
-the stand-in bucket): file by file peaked at 72 MB of working space, where the
-whole range on this disk peaked at 1.9 GB; the combined store held all 72,000
-pings, with the same values. It took a little longer (4 minutes against 3),
-because each file is converted by its own process and published on its own. Sv
-is still written here before it is uploaded (about 4.5 times the raw size: 2.4
-GB for that range), so with Sv on it is what sets the space a long range needs;
-the step says how much less the range needs without it. *Free space as it goes* does not apply (it is how
-this works); *Keep the raw files* keeps each raw file in the run's folder, so
-the folder holds the whole range again.
+The working folder then holds **one raw file and its store, or one file's Sv, at
+a time**, however long the range; memory stays at about 3 times the largest
+file while it converts and about 1.3 GB otherwise. Measured on a 1 GB file:
+converting 2.8 GB of memory and 4.7 GB of working space; its Sv 0.9 GB and 2
+GB; the join and the echogram nothing here. Rehearsed on a 40-hour EK60 range
+(24 files, 540 MB raw, against the stand-in bucket): file by file peaked at 72
+MB of working space, where the whole range on this disk peaked at 1.9 GB; the
+combined store held all 72,000 pings, with the same values. *Free space as it
+goes* does not apply (it is how this works); *Keep the raw files* keeps each raw
+file in the run's folder, so the folder holds the whole range again.
+
+The range's Sv is a product of its own: each file calibrated, then joined.
+For EK60 its values are exactly those of calibrating the combined EchoData. For
+EK80, where sound speed and absorption are recorded once per file, each file is
+calibrated with its own, while calibrating a combined EchoData interpolates them
+between files; they differ only where those values changed between files. The
+provenance records which way it was made (`aa-sv ×N → aa-combine`), and its
+name carries its own recipe.
 
 Where things go:
 
-- **Per-file stores**: `derived_products/<you>/<vessel>/<survey>/per_file/<echosounder>/<raw file>.zarr`,
-  each with a `.aa.json` provenance record beside it. They belong to the survey,
-  not to one range: a longer range later, or the same range again, reuses every
-  store already there (aa-ed finds it from the raw file's MD5, or for NCEI from
-  the recorded NCEI object, without downloading anything). A run that stops
-  part-way leaves the files it finished; running again picks up from there.
+- **Per-file stores**: `derived_products/<you>/<vessel>/<survey>/<echosounder>/<raw file>.zarr`
+  (the same shape as NCEI's `raw/<ship>/<survey>/<echosounder>/`), and each
+  file's Sv beside it, `<raw file>_<recipe>.zarr`, each with a `.aa.json`
+  provenance record beside it. They belong to the survey, not to one range: a
+  longer range later, or the same range again, reuses every store already there
+  (aa-ed finds it from the raw file's MD5, or for NCEI from the recorded NCEI
+  object, without downloading anything; aa-sv from the store's own hash). A run
+  that stops part-way leaves the files it finished; running again picks up from
+  there.
 - **The asset**: `<asset>.zarr` in the usual folder (always Zarr: a NetCDF would
-  be written here whole before upload), with its QC report.
+  be written here whole before upload), with its QC report; the range's Sv
+  `<asset>_<recipe>.zarr` and its echogram `<asset>_<recipe>.png` beside it.
+- **Stores made before catch-up 15** went to a `per_file/` folder
+  (`<survey>/per_file/<echosounder>/`). The tools no longer look there: move
+  them with `scripts/move_per_file_stores.sh` (it lists what it would move and changes
+  nothing until run with `--apply`; it copies inside the bucket, checks every
+  object and each store's hash arrived, and only then deletes the old copy), or
+  they are made again.
 
 `aa-workbench` needs the aalibrary that can do this (`aa-ed` with several files
-and `--format zarr`); with an older one the step says to update it (**Tools ▸
-Update Python Environment**). The same chain on the command line:
+and `--format zarr`; for Sv, `aa-sv` with several files and `aa-combine`
+joining Sv); with an older one the step says to update it (**Tools ▸ Update
+Python Environment**). The same chain on the command line (*Console commands*
+copies it as a script):
 
 ```bash
-aa-ed RAW1 RAW2 … --format zarr --dest gs://BUCKET/…/per_file/EK60/ \
-      --sonar_model EK60 --cleanup-raw --progress
-aa-combine gs://BUCKET/…/per_file/EK60/RAW1.zarr gs://BUCKET/…/per_file/EK60/RAW2.zarr … \
-      -o gs://BUCKET/…/ASSET/ASSET.zarr --sort time --report
+F=gs://BUCKET/…/HB1603/EK60/
+aa-ed RAW1 RAW2 … --format zarr --dest $F --sonar_model EK60 --cleanup-raw --progress
+SVFILES=$(aa-sv ${F}RAW1.zarr ${F}RAW2.zarr … --format zarr --dest $F --progress)
+aa-combine ${F}RAW1.zarr ${F}RAW2.zarr … -o gs://BUCKET/…/ASSET/ASSET.zarr --sort time --report
+SV=$(aa-combine $SVFILES --dest gs://BUCKET/…/ASSET/ --base ASSET --sort time --no-report)
+aa-graph "$SV" --dest gs://BUCKET/…/ASSET/ --var Sv
 ```
 
 ## While it runs, and after
@@ -231,9 +258,12 @@ so a file the cache does not know can never be promised.
   the bucket* (one raw file here at a time), choose a folder on a bigger disk,
   turn on *Free space as it goes*, or choose a shorter range. File by file with
   Sv, it is the Sv: turn Sv off and calibrate later, or use a bigger disk.
-- **"aa-ed made 22 of the 24 per-file stores"** — some files failed to convert;
-  the convert stage's log names them. Run again: the stores already in the
-  bucket are reused.
+- **"aa-ed made 22 of the 24 per-file stores"** (or **"aa-sv made … per-file Sv
+  stores"**) — some files failed to convert (or calibrate); that stage's log
+  names them. Run again: what is already in the bucket is reused.
+- **"The installed aalibrary makes Sv for the whole range here"** — update it
+  (**Tools ▸ Update Python Environment**): file by file, each file's Sv is made
+  in turn and joined in the bucket.
 - **"… failed (exit -9)"** or **"… was killed by the system (signal 9)"** — the
   system stopped the conversion for running out of memory (see *Large raw
   files* above). Update aalibrary (**Tools ▸ Update Python Environment**), close

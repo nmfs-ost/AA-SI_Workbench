@@ -5,9 +5,11 @@ This is the first bookmark of the data lifecycle (Data Roadmap levels 0-2A):
     L0   aa-request   what to retrieve: vessel, survey, echosounder, time window
     L0   aa-fetch     retrieve those raw files from NCEI into a scratch folder
     L1   aa-ed        convert each .raw to EchoData (echopype NetCDF)
+    L2A  aa-sv        file by file: each file's Sv, beside its EchoData (optional)
     L1   aa-combine   merge them, in time order, into ONE EchoData asset, with a
                       QC report, written straight to the bucket
     L2A  aa-sv        calibrate: Sv, beside it in the bucket          (optional)
+                      (file by file: aa-combine joins each file's Sv instead)
     L2A  aa-graph     an echogram of that Sv                          (optional)
          aa-upload    the request document, kept with the products
 
@@ -70,10 +72,14 @@ place from a folder), written as its own Zarr store in the bucket
 (``FILES_TEMPLATE``: per survey and echosounder, so a longer range reuses the
 files a shorter one already converted), and deleted, before the next. Then
 ``aa-combine`` reads those stores where they are and writes the combined
-store in the bucket. The working folder holds one raw file and its store at
-a time, whatever the length of the range; only Sv, if asked for, is still
-written here before it is uploaded. The combined EchoData is always Zarr
-(a NetCDF export would be written here whole).
+store in the bucket. Sv, if asked for, is made the same way: ``aa-sv`` gives
+each file's store its own Sv, one file at a time (written here, then
+uploaded beside it), and ``aa-combine`` joins those, read where they are,
+into the range's Sv in the bucket, a chunk at a time; ``aa-graph`` draws the
+echogram from it where it is. The working folder holds one raw file and its
+store, or one file's Sv, at a time, whatever the length of the range. The
+combined EchoData and the Sv are always Zarr (a NetCDF would be written here
+whole).
 """
 
 from __future__ import annotations
@@ -116,10 +122,11 @@ REQUIRED_TOOLS = (
 #: local part; the rest comes from the request.
 PREFIX_TEMPLATE = "derived_products/{user}/{vessel}/{survey}/{base}/"
 
-#: File by file: where each raw file's own EchoData store goes. Per survey
-#: and echosounder rather than per range, so a run over a longer range finds
-#: the files a shorter one converted (aa-ed reuses an identical product).
-FILES_TEMPLATE = "derived_products/{user}/{vessel}/{survey}/per_file/{sonar}/"
+#: File by file: where each raw file's own EchoData store (and Sv) goes. Per
+#: survey and echosounder rather than per range, so a run over a longer range
+#: finds the files a shorter one converted (aa-ed and aa-sv reuse an identical
+#: product). The same shape as NCEI's raw/<ship>/<survey>/<echosounder>/.
+FILES_TEMPLATE = "derived_products/{user}/{vessel}/{survey}/{sonar}/"
 
 #: aalibrary that can prepare a range file by file (aa-ed with several files
 #: and --format zarr; stores read in place). Older installs say why not.
@@ -128,6 +135,19 @@ FILE_BY_FILE_UPDATE = (
     "for a list of files). Update it (Tools ▸ Update Python Environment), then try "
     "again."
 )
+
+#: aalibrary that makes Sv file by file (aa-sv with several files and
+#: --format zarr; aa-combine joining Sv). Older installs say why not.
+SV_BY_FILE_UPDATE = (
+    "The installed aalibrary makes Sv for the whole range here, not file by file in "
+    "the bucket. Update it (Tools ▸ Update Python Environment), then try again; or "
+    "turn Sv off (Products)."
+)
+
+#: The argument the Sv join is given before the per-file Sv exist (their names
+#: carry the recipe hash, known once aa-sv has run); the copied script puts
+#: what aa-sv printed there.
+EACH_FILE_SV = "<each file's Sv from aa-sv>"
 
 POLL_SECONDS = 1.0
 _MAX_RUNS = 30
@@ -481,6 +501,14 @@ STAGES: tuple[Stage, ...] = (
         "Convert each raw file to EchoData (echopype NetCDF).",
     ),
     Stage(
+        "filesv",
+        "Calibrate each file",
+        "aa-sv",
+        "L2A",
+        "Compute each raw file's Sv beside its EchoData in the bucket, one file at "
+        "a time.",
+    ),
+    Stage(
         "combine",
         "Combine",
         "aa-combine",
@@ -530,9 +558,11 @@ class Context:
     source: sources.DataSource = field(default_factory=lambda: sources.BUILTINS[0])
     #: Another source's raw files, where they are: gs:// URIs or paths.
     source_files: list[str] = field(default_factory=list)
-    #: File by file: where each raw file's store goes, and the stores made.
+    #: File by file: where each raw file's store goes, and the stores made;
+    #: and each file's Sv, when Sv is asked for.
     files_dest: str = ""
     file_stores: list[str] = field(default_factory=list)
+    file_sv: list[str] = field(default_factory=list)
 
     @property
     def streamed(self) -> bool:
@@ -596,6 +626,11 @@ class Context:
         return self.scratch / "raw"
 
     @property
+    def sv_by_file(self) -> bool:
+        """File by file with several files: each file's Sv, then joined."""
+        return self.streamed and not self.single
+
+    @property
     def combined(self) -> str:
         if self.streamed:
             fmt = "zarr"  # combined in the bucket: a .nc would be written here whole
@@ -631,6 +666,8 @@ def is_ek80(sonar: str) -> bool:
 def enabled(stage_id: str, req: BaselineRequest, single: bool = False) -> bool:
     if stage_id == "fetch":
         return not req.streamed  # file by file, aa-ed fetches each file itself
+    if stage_id == "filesv":
+        return req.streamed and req.sv and not single
     if stage_id == "combine":
         return not single
     if stage_id == "sv":
@@ -727,16 +764,43 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
         if req.strict:
             args.append("--strict")
         return args
+    if stage_id == "filesv":
+        # Each file's store, in the bucket, read where it is; its Sv beside it.
+        args = [
+            *(ctx.file_stores or ctx.planned_stores),
+            "--format",
+            "zarr",
+            "--dest",
+            ctx.files_dest,
+        ]
+        return [*args, *_ek80_modes(req), "--progress"]
     if stage_id == "sv":
-        args = [ctx.output("combine", ctx.combined), "--dest", ctx.dest]
-        if is_ek80(req.sonar):
-            args += [
-                "--waveform_mode",
-                req.waveformMode,
-                "--encode_mode",
-                req.encodeMode,
+        if ctx.sv_by_file:
+            # The range's Sv: each file's, joined in time order, in the bucket.
+            args = [
+                *(ctx.file_sv or [EACH_FILE_SV]),
+                "--dest",
+                ctx.dest,
+                "--base",
+                ctx.base,
+                "--sort",
+                "time",
+                "--sonar_model",
+                req.sonar,
+                "--gap_seconds",
+                f"{req.gapSeconds:g}",
+                "--gap_factor",
+                f"{req.gapFactor:g}",
+                # The EchoData's QC report already judges these files.
+                "--no-report",
+                "--progress",
             ]
-        return args
+            return args
+        args = [ctx.output("combine", ctx.combined), "--dest", ctx.dest]
+        if ctx.streamed:
+            # A Zarr store in the bucket: a NetCDF would be written here whole.
+            args[1:1] = ["--format", "zarr"]
+        return [*args, *_ek80_modes(req)]
     if stage_id == "echogram":
         opts = req.echogramOptions
         return [
@@ -763,6 +827,13 @@ def stage_args(stage_id: str, ctx: Context) -> list[str]:
     if stage_id == "record":
         return [ctx.output("request", str(ctx.request_doc)), ctx.dest]
     raise ValueError(stage_id)
+
+
+def _ek80_modes(req: BaselineRequest) -> list[str]:
+    """aa-sv's EK80 waveform and encoding; nothing for EK60."""
+    if not is_ek80(req.sonar):
+        return []
+    return ["--waveform_mode", req.waveformMode, "--encode_mode", req.encodeMode]
 
 
 def _convert_file_by_file(ctx: Context) -> list[str]:
@@ -794,8 +865,12 @@ def _convert_file_by_file(ctx: Context) -> list[str]:
 FILE_BY_FILE = {
     "convert": "Each raw file in turn: fetched, converted to its own Zarr store in the "
     "bucket, and deleted here.",
+    "filesv": "Each file's store in turn, read where it is: its Sv computed, uploaded "
+    "beside it, and deleted here.",
     "combine": "Merge the per-file stores, read where they are in the bucket, into one "
     "EchoData store beside them, with a QC report.",
+    "sv": "Join each file's Sv, read where they are, in time order, into the range's "
+    "Sv in the bucket.",
 }
 
 
@@ -814,6 +889,10 @@ def stage_view(stage: Stage, ctx: Context) -> tuple[str, str]:
                 "Fetch the raw file and convert it straight to a Zarr store in the "
                 "bucket."
             )
+        if stage.id == "sv":
+            if not ctx.single:
+                return "aa-combine", FILE_BY_FILE["sv"]
+            return stage.tool, "Compute Sv beside it, as a Zarr store in the bucket."
         return stage.tool, FILE_BY_FILE[stage.id]
     if stage.id != "fetch" or ctx.fetch_tool == "aa-fetch":
         return stage.tool, stage.description
@@ -890,7 +969,7 @@ def planned_assets(ctx: Context) -> list[Asset]:
             Asset(
                 kind="sv",
                 label="Sv (calibrated)",
-                uri=f"{ctx.dest}{ctx.base}_<recipe>.nc",
+                uri=f"{ctx.dest}{ctx.base}_<recipe>.{'zarr' if ctx.streamed else 'nc'}",
                 level="L2A",
             )
         )
@@ -1220,6 +1299,30 @@ def _execute_stages(run: _Run) -> None:
                     f"{expected} files, one Zarr store each, in the bucket"
                     + (f" ({kept} already there, reused)." if kept else ".")
                 )
+        if stage.id == "filesv":
+            # Each file's Sv, printed as each was made, in order.
+            made = [line.strip() for line in status.stdout if is_store_uri(line)]
+            expected = len(ctx.file_stores or ctx.req.expectedFiles)
+            if len(made) != expected:
+                error = (
+                    f"aa-sv made {len(made)} of the {expected} per-file Sv stores. Run "
+                    "again: the ones already in the bucket are reused, not remade."
+                )
+                with _lock:
+                    stage.state = "failed"
+                    stage.detail = error
+                _finish(run, "failed", error)
+                return
+            kept = sum(
+                1 for line in jobs.tail_of(job.id, 4000) if "aa-sv: reusing" in line
+            )
+            with _lock:
+                ctx.file_sv = made
+                ctx.outputs["filesv"] = ctx.files_dest
+                stage.output = ctx.files_dest
+                stage.detail = f"{expected} files, Sv for each, in the bucket" + (
+                    f" ({kept} already there, reused)." if kept else "."
+                )
         if stage.id == "convert" and ctx.single:
             with _lock:
                 ctx.outputs["combine"] = output
@@ -1231,6 +1334,9 @@ def _execute_stages(run: _Run) -> None:
         if stage.id == "combine" and not reused:
             with _lock:
                 stage.detail = "Written to the bucket."
+        if stage.id == "sv" and ctx.sv_by_file and not reused:
+            with _lock:
+                stage.detail = f"{len(ctx.file_sv)} files' Sv joined, in the bucket."
         patterns = frees_after(stage.id, ctx)
         if patterns:
             freed = _free(ctx, patterns)
@@ -1274,8 +1380,10 @@ def _execute_stages(run: _Run) -> None:
         run.assets = assets
         if ctx.file_stores:
             run.notes.append(
-                f"{len(ctx.file_stores)} per-file EchoData stores in {ctx.files_dest}, "
-                "kept for the survey: a longer range reuses them."
+                f"{len(ctx.file_stores)} per-file EchoData stores"
+                + (" and their Sv" if ctx.file_sv else "")
+                + f" in {ctx.files_dest}, kept for the survey: a longer range reuses "
+                "them."
             )
         work = run.work
         line = f"Working space: {workspace.human(work.peakBytes)} at most"
@@ -1346,6 +1454,12 @@ def _context(req: BaselineRequest, scratch: Path | None = None) -> Context:
     if base.startswith(".") or not re.fullmatch(r"[A-Za-z0-9_.+-]+", base):
         raise HTTPException(status_code=400, detail=f"Not a usable base name: {base!r}")
     user = detect_user()
+    if req.streamed and base == _clean_segment(req.sonar):
+        raise HTTPException(
+            status_code=400,
+            detail=f"The base name {base!r} is the echosounder's: file by file, that "
+            "folder holds each raw file's stores. Choose another base name.",
+        )
     dest = destination(req, base, user)
     source = sources.get(req.source)
     if not source.ready:
@@ -1380,6 +1494,7 @@ def workspace_report(req: BaselineRequest) -> Workspace:
     freeing = req.freeAsYouGo and not req.keepLocal
     raw = req.expectedBytes
     without_sv = 0
+    sv_by_file: bool | None = None
     if req.streamed:
         # One raw file and its store at a time; Sv, if asked for, made here.
         files = len(req.expectedFiles)
@@ -1390,6 +1505,16 @@ def workspace_report(req: BaselineRequest) -> Workspace:
         except HTTPException:
             raw_here = True
 
+        try:
+            calibrator = jobs.resolve_tool("aa-sv")
+        except HTTPException:
+            calibrator = ""
+        sv_by_file = (
+            workspace.tools_sv_by_file(calibrator)
+            if calibrator and req.sv and not single
+            else None
+        )
+
         def file_by_file(*, sv: bool, keep_raw: bool) -> int:
             return workspace.space_needed_file_by_file(
                 raw,
@@ -1398,6 +1523,7 @@ def workspace_report(req: BaselineRequest) -> Workspace:
                 sv=sv,
                 keep_raw=keep_raw,
                 raw_here=raw_here,
+                sv_by_file=not single and sv_by_file is not False,
             )
 
         need_keep = file_by_file(sv=req.sv, keep_raw=True)
@@ -1431,6 +1557,8 @@ def workspace_report(req: BaselineRequest) -> Workspace:
     if not problem and req.streamed:
         if converter and workspace.tools_file_by_file(converter) is False:
             problem = FILE_BY_FILE_UPDATE
+        elif sv_by_file is False:
+            problem = SV_BY_FILE_UPDATE
     if not problem and raw and free and need > free:
         problem = (
             f"This range needs about {H(need)} of working space at most, and "
@@ -1438,9 +1566,9 @@ def workspace_report(req: BaselineRequest) -> Workspace:
         )
         if req.streamed and req.sv and without_sv <= free:
             problem += (
-                f" Sv is made here before it goes to the bucket; without it the range "
-                f"needs about {H(without_sv)}. Turn Sv off (Products), or choose a "
-                "folder on a bigger disk."
+                f" Each file's Sv is made here before it goes to the bucket; without "
+                f"Sv the range needs about {H(without_sv)}. Turn Sv off (Products), or "
+                "choose a folder on a bigger disk."
             )
         elif req.streamed and req.keepLocal and need_free <= free < need_keep:
             problem += (
