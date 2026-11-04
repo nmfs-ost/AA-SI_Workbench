@@ -355,6 +355,40 @@ def cmd_dev(args: argparse.Namespace) -> None:
                 proc.kill()
 
 
+def _serve_options(p: argparse.ArgumentParser, given_only: bool = False) -> None:
+    """serve's options. given_only: set only when given (the defaults come
+    from set_defaults), so they never override a subcommand's own."""
+
+    def default(value):
+        return argparse.SUPPRESS if given_only else value
+
+    p.add_argument(
+        "--host", default=default("127.0.0.1"), help="Bind host (default 127.0.0.1)."
+    )
+    p.add_argument(
+        "--port", type=int, default=default(8000), help="Bind port (default 8000)."
+    )
+    p.add_argument(
+        "--source",
+        choices=["s3", "cache"],
+        default=default("s3"),
+        help="NCEI backend: s3 (no creds, default) or cache (BigQuery).",
+    )
+    p.add_argument(
+        "--open",
+        dest="open_browser",
+        action="store_true",
+        default=default(False),
+        help="Open a browser.",
+    )
+    p.add_argument(
+        "--no-build",
+        action="store_true",
+        default=default(False),
+        help="Fail instead of building the UI.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aa-workbench",
@@ -363,7 +397,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version", action="version", version=f"aa-workbench {__version__}"
     )
-    # Bare `aa-workbench` == `serve` with defaults.
+    # Bare `aa-workbench` == `serve`, with serve's options too (aa-setup's
+    # instructions say `aa-workbench --open`).
     parser.set_defaults(
         func=cmd_serve,
         host="127.0.0.1",
@@ -372,28 +407,14 @@ def build_parser() -> argparse.ArgumentParser:
         open_browser=False,
         no_build=False,
     )
+    _serve_options(parser, given_only=True)
 
     sub = parser.add_subparsers()
 
     p_serve = sub.add_parser(
         "serve", help="Build the UI if needed, then serve UI + API on one port."
     )
-    p_serve.add_argument(
-        "--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)."
-    )
-    p_serve.add_argument(
-        "--port", type=int, default=8000, help="Bind port (default 8000)."
-    )
-    p_serve.add_argument(
-        "--source", choices=["s3", "cache"], default="s3",
-        help="NCEI backend: s3 (no creds, default) or cache (BigQuery).",
-    )
-    p_serve.add_argument(
-        "--open", dest="open_browser", action="store_true", help="Open a browser."
-    )
-    p_serve.add_argument(
-        "--no-build", action="store_true", help="Fail instead of building the UI."
-    )
+    _serve_options(p_serve)
     p_serve.set_defaults(func=cmd_serve)
 
     p_dev = sub.add_parser(

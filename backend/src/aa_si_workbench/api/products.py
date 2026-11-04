@@ -17,8 +17,10 @@ Workbench shows all of them, because each answers a different question:
 
 These come from the object's metadata (no download). The provenance record
 (the small ``<product>.aa.json`` the tools publish beside each product) adds
-the history: the steps, the inputs, when. A Zarr store keeps the same fields
-in its root attributes.
+the history: the steps, the inputs, when. A Zarr store keeps the same fields,
+and its whole record, in its root attributes, and only there: a
+``<store>.aa.json`` beside a store, written by older tools, may describe a
+store that has since been replaced, so it is not read.
 
 Read through aalibrary's own object layer, so the Workbench reads the bucket
 exactly as the tools do (including the stand-in bucket tests use).
@@ -178,6 +180,35 @@ def _store_attributes(bucket: str, key: str) -> dict:
     return dict(_read_json(bucket, f"{key}/.zattrs") or {})
 
 
+def _store_record(attributes: dict) -> dict | None:
+    """The provenance record a store keeps in its root attributes
+    (``aa_provenance``: JSON text, or an object in older stores)."""
+    record = attributes.get("aa_provenance")
+    if isinstance(record, str):
+        try:
+            record = json.loads(record)
+        except ValueError:
+            return None
+    return record if isinstance(record, dict) else None
+
+
+def _is_store_name(key: str) -> bool:
+    return key.rstrip("/").lower().endswith(".zarr")
+
+
+def _record(bucket: str, key: str, attributes: dict | None = None) -> dict | None:
+    """A product's provenance record: a store's from its root attributes, any
+    other object's from the <product>.aa.json beside it."""
+    key = key.rstrip("/")
+    if attributes is None and _is_store_name(key):
+        attributes = _store_attributes(bucket, key)
+    if attributes:
+        return _store_record(attributes)
+    if _is_store_name(key):
+        return None
+    return _read_json(bucket, key + SIDECAR)
+
+
 #: What a file is from its extension alone, for files the tools did not
 #: publish (an Echoview line or region file copied into the bucket).
 EXTENSION_KIND = {
@@ -235,6 +266,7 @@ def info(uri: str, *, history: bool = True) -> ProductInfo:
         return out
 
     metadata: dict = {}
+    attributes: dict = {}
     if stat is not None:
         out.found = True
         out.sizeBytes = int(stat.size or 0)
@@ -269,7 +301,7 @@ def info(uri: str, *, history: bool = True) -> ProductInfo:
     out.kind = out.kind or str(metadata.get(META_KIND, "") or "")
 
     if history:
-        doc = _read_json(bucket, key + SIDECAR)
+        doc = _record(bucket, key, attributes if out.store else None)
         if doc is not None:
             _add_history(out, doc)
     out.kind = kind_of(out.tool, name, out.kind)
@@ -339,7 +371,7 @@ def find_echodata(start: ProductInfo) -> str:
         except HTTPException:
             return ""
         bucket, key = parse(source.uri)
-        doc = _read_json(bucket, key + SIDECAR)
+        doc = _record(bucket, key)
         if doc is not None:
             _add_history(parent, doc)
         parent.kind = kind_of(parent.tool, parent.name, parent.kind)
@@ -379,9 +411,10 @@ def folder_entries(folder_uri: str, limit: int = 1000) -> list:
 
 
 def read_record(uri: str) -> dict | None:
-    """A product's provenance record (its <product>.aa.json), or None."""
+    """A product's provenance record (a store's root attributes, else its
+    <product>.aa.json), or None."""
     bucket, key = parse(uri)
-    return _read_json(bucket, key + SIDECAR)
+    return _record(bucket, key)
 
 
 class Table(BaseModel):

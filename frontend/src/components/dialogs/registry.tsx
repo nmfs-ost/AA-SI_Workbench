@@ -8,6 +8,7 @@ import { EnvironmentDialog } from './EnvironmentDialog';
 import { FeedbackDialog } from './FeedbackDialog';
 import { GcpDialog } from './GcpDialog';
 import { NewFileDialog } from './NewFileDialog';
+import { RemoteDialog } from './RemoteDialog';
 import { RenameDialog } from './RenameDialog';
 
 /**
@@ -37,6 +38,7 @@ export const dialogDefinitions: readonly DialogDefinition[] = [
   { id: 'feedback', component: FeedbackDialog },
   { id: 'gcp', component: GcpDialog },
   { id: 'new-file', component: NewFileDialog },
+  { id: 'remote', component: RemoteDialog },
   { id: 'rename', component: RenameDialog },
 ] as const;
 

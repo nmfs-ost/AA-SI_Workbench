@@ -14,4 +14,5 @@ export type DialogId =
   | 'feedback'
   | 'gcp'
   | 'new-file'
+  | 'remote'
   | 'rename';

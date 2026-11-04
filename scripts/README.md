@@ -47,6 +47,27 @@ aalibrary would not recognise the new seal and would make those products
 again), and run it when no Prepare is running. Running it again does what is
 left.
 
+## clear_store_sidecars.py
+
+Deletes the `X.zarr.aa.json` files the console tools wrote beside Zarr stores
+until catch-up 19. A store keeps its record in its own root metadata, and the
+tools and the Workbench now read it from there. A copy beside a store adds
+nothing, and once the store is replaced it describes the wrong one; a listing
+of `X.zarr` without a trailing slash also picks it up.
+
+```bash
+~/venv313/bin/python scripts/clear_store_sidecars.py gs://BUCKET/derived_products/YOU/            # lists, changes nothing
+~/venv313/bin/python scripts/clear_store_sidecars.py gs://BUCKET/derived_products/YOU/ --apply    # deletes
+```
+
+A copy is deleted only when its store holds a record the current tools
+accept as its own. It's left where it is when the store has no record of its
+own, when the store still needs `reseal_stores.py` (which checks stores
+against the copy beside them, so run that first), or when there's no store
+beside it. Each copy is deleted only if it hasn't changed since it was read.
+Update aalibrary first (Tools > Update Python Environment, or aa-setup), or
+the old tools write the copies again.
+
 ## check_prepare_run.py
 
 Checks a finished Prepare EchoData run (file by file with Sv) from what is in

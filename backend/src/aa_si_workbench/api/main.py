@@ -36,6 +36,7 @@ from .ncei import router as ncei_router
 from .pipelines import router as pipelines_router
 from .products import router as products_router
 from .recipes import router as recipes_router
+from .remote import router as remote_router
 from .sources import router as sources_router
 from .store import router as store_router
 from .terminal import router as terminal_router
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     # The baseline operation: survey + time range -> EchoData asset in the
     # bucket, run as a chain of ordinary jobs.
     app.include_router(baseline_router)
+    app.include_router(remote_router)
     # Which GCP project and bucket this user works in, and which they could.
     app.include_router(gcp_router)
 

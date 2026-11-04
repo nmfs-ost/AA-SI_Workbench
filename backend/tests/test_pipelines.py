@@ -722,3 +722,94 @@ def test_a_failed_own_step_stops_the_run(tools, tmp_path, monkeypatch):
     with pytest.raises(Exception) as caught:
         jobs.resume(job)
     assert getattr(caught.value, "status_code", None) in (404, 409)
+
+
+# --------------------------------------------------------------------------- #
+# A store's record is in the store, never beside it
+# --------------------------------------------------------------------------- #
+STORE_ED = f"gs://{BUCKET}/{FOLDER}/HB1603_L1.zarr"
+STORE_SV = f"gs://{BUCKET}/{FOLDER}/HB1603_L1_097eda86.zarr"
+
+
+def put_store(root, uri, *, record: dict, stale_sidecar: bool) -> None:
+    """A Zarr v3 store whose root attributes hold its record (as JSON text,
+    as the tools write it), with, optionally, an older record beside it."""
+    bucket, key = uri[len("gs://") :].split("/", 1)
+    store = root / bucket / key
+    store.mkdir(parents=True, exist_ok=True)
+    attrs = {
+        "aa_provenance": json.dumps(record),
+        "aa_product_hash": record["product"]["hash"],
+        "aa_base": record["base"],
+        "aa_tool": record["pipeline"][-1]["tool"],
+        "aa_product_kind": record["product"]["kind"],
+    }
+    (store / "zarr.json").write_text(
+        json.dumps({"zarr_format": 3, "node_type": "group", "attributes": attrs})
+    )
+    if stale_sidecar:
+        (root / bucket / (key + ".aa.json")).write_text(
+            json.dumps(
+                {
+                    "base": "SOMETHING_ELSE",
+                    "product": {"hash": "0" * 64, "kind": "sv"},
+                    "inputs": [],
+                    "pipeline": [{"tool": "aa-old", "product": "x", "params": {}}],
+                }
+            )
+        )
+
+
+def _store_record(hash_, kind, tool, inputs=()):
+    return {
+        "base": "HB1603_L1",
+        "product": {"hash": hash_, "kind": kind},
+        "inputs": list(inputs),
+        "pipeline": [{"tool": tool, "product": "p", "params": {}}],
+        "created": {"at": "2026-11-04T12:00:00Z", "user": "jane"},
+    }
+
+
+def test_a_store_is_described_by_its_own_record_not_a_sidecar_beside_it(bucket):
+    put_store(
+        bucket,
+        STORE_ED,
+        record=_store_record("e" * 64, "echodata", "aa-combine"),
+        stale_sidecar=False,
+    )
+    put_store(
+        bucket,
+        STORE_SV,
+        record=_store_record(
+            "5" * 64,
+            "sv",
+            "aa-sv",
+            [
+                {
+                    "role": "source",
+                    "uri": STORE_ED,
+                    "name": "HB1603_L1.zarr",
+                    "id": "aa:e",
+                }
+            ],
+        ),
+        stale_sidecar=True,
+    )
+    info = products.info(STORE_SV)
+    assert info.store and info.productHash == "5" * 64
+    assert [s.tool for s in info.steps] == ["aa-sv"]  # not aa-old
+    assert info.base == "HB1603_L1" and info.createdBy == "jane"
+    assert info.echodata == STORE_ED  # found through the store
+    record = products.read_record(STORE_SV + "/")
+    assert record["product"]["hash"] == "5" * 64
+
+
+def test_a_store_without_a_record_has_none_even_with_a_sidecar_beside_it(bucket):
+    bucket_name, key = STORE_SV[len("gs://") :].split("/", 1)
+    store = bucket / bucket_name / key
+    store.mkdir(parents=True)
+    (store / "zarr.json").write_text(
+        json.dumps({"zarr_format": 3, "node_type": "group", "attributes": {}})
+    )
+    (bucket / bucket_name / (key + ".aa.json")).write_text(json.dumps({"base": "OLD"}))
+    assert products.read_record(STORE_SV) is None

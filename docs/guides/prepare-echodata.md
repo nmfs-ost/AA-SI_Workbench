@@ -278,3 +278,9 @@ so a file the cache does not know can never be promised.
 - **Anything else** — the error names the stage and quotes the tool. *Jobs and
   logs* opens the Processing Queue with the full output, and the scratch folder
   is kept.
+
+## Started by another app
+
+Another Google Cloud app can start the same run on your workstation, for a
+survey and time range it names, if you allow it: Tools ▸ Remote Requests. See
+[remote-requests.md](remote-requests.md).

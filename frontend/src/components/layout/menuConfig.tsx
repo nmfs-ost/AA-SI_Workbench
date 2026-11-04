@@ -146,6 +146,12 @@ export const menus: MenuDefinition[] = [
         action: 'open-dialog',
         dialogId: 'gcp',
       },
+      {
+        id: 'tools-remote',
+        label: 'Remote Requests…',
+        action: 'open-dialog',
+        dialogId: 'remote',
+      },
       { id: 'tools-div-1', divider: true },
       { id: 'tools-settings', label: 'Settings…', shortcut: 'Ctrl+,', action: 'noop' },
       { id: 'tools-extensions', label: 'Extensions', disabled: true },
