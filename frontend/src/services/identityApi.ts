@@ -32,8 +32,9 @@ export interface Capabilities {
 
 export interface Identity {
   principal: string;
-  /** How the principal was found: env | gcloud | metadata | unknown. */
-  source: 'env' | 'gcloud' | 'metadata' | 'unknown';
+  /** How the principal was found: env | gcloud | adc (the application-default
+      credentials' account) | metadata | unknown. */
+  source: 'env' | 'gcloud' | 'adc' | 'metadata' | 'unknown';
   project: string;
   /** Matches the configured allowlist. True when none is configured. */
   member: boolean;
@@ -88,6 +89,40 @@ async function request<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** ok | warn | fail, or unknown when it couldn't be answered (no network). */
+export type CheckState = 'ok' | 'warn' | 'fail' | 'unknown';
+
+/** One line of the account check. */
+export interface AccountCheckItem {
+  /** account | uploads | bucket */
+  id: string;
+  label: string;
+  state: CheckState;
+  /** Already phrased for a person; shown verbatim. */
+  detail: string;
+  /** The command that fixes it ("" if none), to copy or run in the terminal. */
+  fix: string;
+  /** What running `fix` does, in a few words. */
+  fixNote: string;
+}
+
+/**
+ * GET /api/identity/check — who the Workbench names your folder after, who
+ * the aa-* tools actually upload as, and what the chosen bucket allows.
+ * Read-only on the server: gcloud and Google are asked, nothing is written.
+ */
+export interface AccountCheck {
+  /** The worst of the checks. */
+  state: CheckState;
+  principal: string;
+  /** The account the aa-* tools upload with ("" if unknown). */
+  uploader: string;
+  /** gs://BUCKET/derived_products/NAME/ ("" without an account or a bucket). */
+  folder: string;
+  checks: AccountCheckItem[];
+}
+
 export const identityApi = {
   get: (refresh = false) => request<Identity>(`/api/identity?refresh=${refresh}`),
+  check: (refresh = true) => request<AccountCheck>(`/api/identity/check?refresh=${refresh}`),
 };

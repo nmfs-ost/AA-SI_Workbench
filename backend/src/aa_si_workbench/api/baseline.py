@@ -1692,6 +1692,11 @@ def get_config() -> BaselineConfig:
     if others:
         problems.append(f"Not installed in this environment: {', '.join(others)}.")
     user = detect_user()
+    if not user:
+        problems.append(
+            "No Google account was found to name your folder after. Click the "
+            "account in the status bar for the account check and its fix."
+        )
     context = gcp_current()
     pinned = os.getenv("AASI_BASELINE_BUCKET", "").strip()
     return BaselineConfig(
@@ -1755,6 +1760,17 @@ def post_run(req: BaselineRequest) -> RunStatus:
     if missing:
         raise HTTPException(
             status_code=409, detail=f"Missing console tools: {', '.join(missing)}."
+        )
+    if not detect_user():
+        # Without an account the folder would be derived_products/unknown-user/:
+        # products in nobody's folder, found by nobody's next run.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No Google account to name your folder after, so nothing was "
+                "started. Click the account in the status bar: the account check "
+                "says what is wrong and the command that fixes it."
+            ),
         )
     run_id = uuid.uuid4().hex[:10]
     base_ctx = _context(req)

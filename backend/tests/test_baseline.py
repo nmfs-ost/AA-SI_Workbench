@@ -801,3 +801,30 @@ def test_the_largest_file_s_conversion_is_counted_in_memory(tools, monkeypatch):
         "/api/baseline/workspace", json=STREAMED | {"largestBytes": 10**6}
     ).json()
     assert small["memoryNeedBytes"] < 2 * 10**9
+
+
+def test_without_an_account_prepare_says_why_and_starts_nothing(tools, monkeypatch):
+    """No folder named unknown-user: the run is refused, and the card lists why."""
+    from aa_si_workbench.api import identity
+
+    monkeypatch.delenv("AASI_PRINCIPAL", raising=False)
+    monkeypatch.delenv("CLOUDSDK_CORE_ACCOUNT", raising=False)
+    for name in ("_from_gcloud", "_from_gcloud_auth_list", "_from_adc"):
+        monkeypatch.setattr(identity, name, lambda: "")
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: "")
+    monkeypatch.setattr(identity, "_from_metadata", lambda path="": "")
+    monkeypatch.setattr(identity, "_credentialed_accounts", lambda: [])
+    # Registered before detection, so teardown puts back what was cached before
+    # this test (not the empty answer it is about to cache).
+    monkeypatch.setattr(identity, "_cached", None)
+    monkeypatch.setattr(identity, "_passed_over", [])
+    monkeypatch.setattr(identity, "_chosen_note", "")
+    identity.detect_principal(refresh=True)
+    client = TestClient(create_app())
+    before = len(client.get("/api/baseline/runs").json())
+    refused = client.post("/api/baseline/runs", json=REQUEST)
+    assert refused.status_code == 409 and "account" in refused.json()["detail"]
+    config = client.get("/api/baseline/config").json()
+    assert config["ready"] is False
+    assert any("Google account" in problem for problem in config["problems"])
+    assert len(client.get("/api/baseline/runs").json()) == before

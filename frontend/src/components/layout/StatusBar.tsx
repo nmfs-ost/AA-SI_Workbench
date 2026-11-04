@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { Box, CircularProgress, Tooltip, Typography, useTheme } from '@mui/material';
-import { AccountCircleOutlined, CloudOutlined } from '@mui/icons-material';
+import {
+  AccountCircleOutlined,
+  CloudOutlined,
+  ErrorOutlineRounded,
+  WarningAmberRounded,
+} from '@mui/icons-material';
 
-import { useLayout } from '../../context/LayoutContext';
 import { openDialog } from '../../state/dialogs';
 import { useUpdateJobState } from '../../state/environment';
 import { getEditorsState, isDirty, openFile, useUnsavedCount } from '../../state/editors';
 import { initGcp, useGcp } from '../../state/gcp';
+import { accountSummary, loadAccountCheck, useAccountCheck } from '../../state/accountCheck';
 import { loadIdentity, useIdentity } from '../../state/identity';
 
 /**
@@ -34,13 +39,18 @@ import { loadIdentity, useIdentity } from '../../state/identity';
  *
  * Reported, never enforced — see `services/identityApi.ts`. Naming the account
  * is not a claim about what it may do.
+ *
+ * The account check (state/accountCheck.ts) colours it: amber or red when the
+ * account the folder is named after is a placeholder or missing, when uploads
+ * go out as a different account, or when the bucket won't take them. Clicking
+ * opens the check, which names the fix.
  */
 export function StatusBar() {
   const theme = useTheme();
   const jobState = useUpdateJobState();
   const unsavedCount = useUnsavedCount();
   const { identity, loaded } = useIdentity();
-  const { openPanel } = useLayout();
+  const { check } = useAccountCheck();
   const gcp = useGcp();
 
   /* Shared with every other consumer — the store fetches once per session, so
@@ -49,8 +59,22 @@ export function StatusBar() {
      finds out which project and bucket this user works in. */
   useEffect(() => {
     void loadIdentity();
+    void loadAccountCheck();
     initGcp();
   }, []);
+  const summary = accountSummary(identity.principal, identity.detail, check);
+  const accountColor = {
+    ok: theme.aa.color.text.muted,
+    unknown: theme.aa.color.text.muted,
+    warn: theme.aa.color.status.warning,
+    fail: theme.aa.color.status.error,
+  }[summary.tone];
+  const AccountIcon =
+    summary.tone === 'fail'
+      ? ErrorOutlineRounded
+      : summary.tone === 'warn'
+        ? WarningAmberRounded
+        : AccountCircleOutlined;
   const gcpContext = gcp.context;
 
   const labelSx = {
@@ -101,20 +125,14 @@ export function StatusBar() {
         already carries the sentence telling them how.
       */}
       {loaded && (
-        <Tooltip
-          title={
-            identity.detail ||
-            (identity.principal ? `Signed in as ${identity.principal}` : '')
-          }
-          placement="top-end"
-        >
+        <Tooltip title={summary.tooltip} placement="top-end">
           <Box
             component="button"
-            onClick={() => openPanel('resources')}
+            onClick={() => openDialog('account')}
             aria-label={
               identity.principal
-                ? `Signed in as ${identity.principal}. Open the Project panel.`
-                : 'No Google account detected. Open the Project panel.'
+                ? `Signed in as ${identity.principal}. Open the account check.`
+                : 'No Google account detected. Open the account check.'
             }
             sx={{
               display: 'flex',
@@ -126,9 +144,7 @@ export function StatusBar() {
               p: 0,
               font: 'inherit',
               cursor: 'pointer',
-              color: identity.principal
-                ? theme.aa.color.text.muted
-                : theme.aa.color.status.warning,
+              color: accountColor,
               '&:hover': { color: theme.aa.color.text.primary },
               '&:focus-visible': {
                 outline: `1px solid ${theme.aa.color.accent.main}`,
@@ -136,7 +152,7 @@ export function StatusBar() {
               },
             }}
           >
-            <AccountCircleOutlined sx={{ fontSize: 13, flexShrink: 0 }} />
+            <AccountIcon sx={{ fontSize: 13, flexShrink: 0 }} />
             <Typography
               component="span"
               sx={{
@@ -148,7 +164,7 @@ export function StatusBar() {
                 whiteSpace: 'nowrap',
               }}
             >
-              {identity.principal || 'No account'}
+              {summary.text}
             </Typography>
           </Box>
         </Tooltip>

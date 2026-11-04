@@ -73,6 +73,24 @@ user is signed in and the Workbench said "No account detected":
 Step 5 reports its source as ``gcloud`` rather than inventing a name for
 itself: the file *is* gcloud's configuration, and the source field answers
 "which account is this" — not "which syscall found it".
+
+Only an email address is an account. gcloud's ``account`` setting can hold
+anything, and Google's own instructions read ``gcloud config set account
+ACCOUNT``: run as written, every probe above answers "ACCOUNT", and the user's
+products went to ``derived_products/ACCOUNT/``. A value that isn't an address
+is passed over (and the reason kept for the account check), and two more
+places are asked before the metadata server: the one account gcloud holds
+credentials for, when there is exactly one, and the account the
+application-default credentials belong to.
+
+The account check
+-----------------
+``GET /api/identity/check`` answers what the status bar can't in one word:
+the account the Workbench names the user's folder after, the account the aa-*
+tools actually upload with (the application-default credentials, which can be
+a different one), and whether that account can read and write the chosen
+bucket (asked of GCS, nothing written). Each problem comes with the command
+that fixes it.
 """
 
 from __future__ import annotations
@@ -98,6 +116,9 @@ _METADATA_ROOT = "http://metadata.google.internal/computeMetadata/v1/"
 #: shell is painting its first frame, and a workstation with no metadata server
 #: and a slow DNS resolver would otherwise stall it.
 _PROBE_TIMEOUT = 2.0
+
+#: The account check runs on request, not at startup, and asks Google twice.
+_CHECK_TIMEOUT = 6.0
 
 
 class Capabilities(BaseModel):
@@ -236,6 +257,96 @@ def _from_config_file(key: str) -> str:
     return "" if value == "(unset)" else value
 
 
+def _is_address(value: str) -> bool:
+    """Whether ``value`` is an email address, which every Google account is."""
+    local, at, domain = (value or "").strip().partition("@")
+    return bool(
+        at
+        and local
+        and "." in domain.strip(".")
+        and not any(ch.isspace() for ch in value.strip())
+    )
+
+
+def _credentialed_accounts() -> list[str]:
+    """Every account gcloud holds credentials for (``gcloud auth list``), or []."""
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["gcloud", "auth", "list", "--format=value(account)"],
+            capture_output=True,
+            text=True,
+            timeout=_PROBE_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip() and line.strip() != "(unset)"
+    ]
+
+
+def _adc_identity() -> tuple[str, str, str]:
+    """Whose the application-default credentials are: (email, kind, problem).
+
+    These are what the aa-* tools (google-cloud-storage, gcsfs) upload with,
+    whatever gcloud's own account setting says. kind: "user", "service
+    account" or "workstation" (the VM's service account, from the metadata
+    server). problem: "none" (no credentials), "expired" (they can't be
+    refreshed), or a short reason the email couldn't be learned; "" if fine.
+    """
+    try:
+        import google.auth
+        import google.auth.exceptions
+        import google.auth.transport.requests
+    except ImportError:
+        return "", "", "google-auth is not installed in this environment"
+    try:
+        credentials, _project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+    except google.auth.exceptions.DefaultCredentialsError:
+        return "", "", "none"
+    module = type(credentials).__module__
+    kind = (
+        "workstation"
+        if "compute_engine" in module
+        else "service account"
+        if "service_account" in module
+        else "user"
+    )
+    try:
+        credentials.refresh(google.auth.transport.requests.Request())
+    except google.auth.exceptions.RefreshError as exc:
+        return "", kind, f"expired: {str(exc)[:160]}"
+    except Exception as exc:  # noqa: BLE001 - network, DNS: reported, not raised
+        return "", kind, f"Google couldn't be reached: {str(exc)[:160]}"
+    email = getattr(credentials, "service_account_email", "") or ""
+    if email and email != "default":
+        return email, kind, ""
+    try:
+        import requests
+
+        answer = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": credentials.token},
+            timeout=_CHECK_TIMEOUT,
+        )
+        email = (answer.json() or {}).get("email", "") if answer.ok else ""
+    except Exception as exc:  # noqa: BLE001
+        return "", kind, f"Google couldn't say whose they are: {str(exc)[:160]}"
+    if not email:
+        return "", kind, "Google didn't say whose they are"
+    return email, kind, ""
+
+
+def _from_adc() -> str:
+    """The user account the application-default credentials belong to, or ""."""
+    email, kind, problem = _adc_identity()
+    return email if kind == "user" and not problem and _is_address(email) else ""
+
+
 def _from_metadata(path: str = "instance/service-accounts/default/email") -> str:
     """Ask the metadata server, or "" when there isn't one."""
     request = urllib.request.Request(
@@ -250,6 +361,11 @@ def _from_metadata(path: str = "instance/service-accounts/default/email") -> str
 
 #: (principal, source), resolved once. Cleared by `?refresh=true`.
 _cached: tuple[str, str] | None = None
+
+#: Why candidates were passed over in the last detection, and how the one
+#: chosen was found when that needs saying; for the account check.
+_passed_over: list[str] = []
+_chosen_note: str = ""
 
 #: The project id, resolved once. Separate from `_cached` because it has its own
 #: sources and one can be known while the other is not.
@@ -279,39 +395,74 @@ def detect_principal(*, refresh: bool = False) -> tuple[str, str]:
     resolves the active configuration itself rather than us guessing at which
     file that is.
     """
-    global _cached
+    global _cached, _passed_over, _chosen_note
     if _cached is not None and not refresh:
+        return _cached
+    passed_over: list[str] = []
+    _passed_over, _chosen_note = passed_over, ""
+
+    def usable(value: str, where: str) -> bool:
+        value = (value or "").strip()
+        if not value or value == "(unset)":
+            return False
+        if _is_address(value):
+            return True
+        passed_over.append(f"{where} is “{value}”, which isn't an email address")
+        return False
+
+    def found(account: str, source: str, note: str = "") -> tuple[str, str]:
+        global _cached, _chosen_note
+        _cached, _chosen_note = (account.strip(), source), note
         return _cached
 
     override = os.getenv("AASI_PRINCIPAL", "").strip()
     if override:
-        _cached = (override, "env")
-        return _cached
+        return found(override, "env")
 
     # gcloud's own override. Honoured before probing gcloud, because that is
     # the precedence gcloud itself applies, and disagreeing with the SDK about
     # which account is active would put a name in the UI that no command run
     # from the terminal panel would use.
     override = os.getenv("CLOUDSDK_CORE_ACCOUNT", "").strip()
-    if override and override != "(unset)":
-        _cached = (override, "env")
-        return _cached
+    if usable(override, "CLOUDSDK_CORE_ACCOUNT"):
+        return found(override, "env")
 
-    for probe in (_from_gcloud, _from_gcloud_auth_list):
+    for probe, where in (
+        (_from_gcloud, "gcloud's account setting"),
+        (_from_gcloud_auth_list, "gcloud's active account"),
+    ):
         account = probe()
-        if account:
-            _cached = (account, "gcloud")
-            return _cached
+        if usable(account, where):
+            return found(account, "gcloud")
+
+    # The setting named no account (or a placeholder). When gcloud holds
+    # credentials for exactly one, that is who is signed in; with several,
+    # choosing one would be a guess.
+    if passed_over:
+        held = [a for a in _credentialed_accounts() if _is_address(a)]
+        if len(held) == 1:
+            return found(
+                held[0], "gcloud", "the one account gcloud holds credentials for"
+            )
+        if len(held) > 1:
+            passed_over.append(
+                f"gcloud holds credentials for {len(held)} accounts "
+                f"({', '.join(held)}) and none is selected"
+            )
 
     account = _from_config_file("account")
+    if usable(account, "gcloud's configuration file"):
+        return found(account, "gcloud")
+
+    account = _from_adc()
     if account:
-        _cached = (account, "gcloud")
-        return _cached
+        return found(
+            account, "adc", "the account of your application-default credentials"
+        )
 
     account = _from_metadata()
     if account:
-        _cached = (account, "metadata")
-        return _cached
+        return found(account, "metadata")
 
     _cached = ("", "unknown")
     return _cached
@@ -414,6 +565,11 @@ def _detail(principal: str, source: str, restricted: bool, member: bool) -> str:
             f"{prefix}Running as the service account {principal}. Bucket "
             f"permissions are the ones granted to it, not to you."
         )
+    if _passed_over:
+        return (
+            f"{prefix}Signed in as {principal} ({_chosen_note or 'found by gcloud'}). "
+            f"{_sentence(_passed_over[0])}: open the account check to fix it."
+        )
     return f"{prefix}Signed in as {principal}."
 
 
@@ -446,4 +602,302 @@ def get_identity(refresh: bool = Query(default=False)) -> Identity:
         capabilities=capabilities,
         enforced=False,
         detail=_detail(principal, source, restricted, member),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The account check
+# --------------------------------------------------------------------------- #
+
+#: What a Prepare run needs of the chosen bucket: read what is there (reuse),
+#: and write products.
+_BUCKET_PERMISSIONS = (
+    "storage.objects.list",
+    "storage.objects.get",
+    "storage.objects.create",
+)
+
+_ORDER = {"ok": 0, "unknown": 1, "warn": 2, "fail": 3}
+
+
+class Check(BaseModel):
+    id: str
+    label: str
+    #: ok | warn | fail | unknown (couldn't be answered, e.g. no network).
+    state: str
+    #: One or two sentences for a person, shown verbatim.
+    detail: str
+    #: The command that fixes it, to copy or run in the terminal; "" if none.
+    fix: str = ""
+    #: What running ``fix`` will do, in a few words.
+    fixNote: str = ""
+
+
+class AccountCheck(BaseModel):
+    #: The worst of the checks.
+    state: str
+    #: The account the Workbench names the folder after ("" if none).
+    principal: str
+    #: The account the aa-* tools upload with ("" if unknown).
+    uploader: str
+    #: Where Prepare puts products: gs://BUCKET/derived_products/NAME/ ("" if none).
+    folder: str
+    checks: list[Check]
+
+
+def _bucket_permissions(bucket: str) -> tuple[set[str] | None, str]:
+    """The permissions on ``bucket`` that the application-default credentials
+    hold, asked of GCS (testIamPermissions: nothing is read or written).
+    (None, reason) when it couldn't be asked."""
+    try:
+        import google.auth
+        import google.auth.transport.requests
+    except ImportError:
+        return None, "google-auth is not installed in this environment"
+    try:
+        credentials, _project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        session = google.auth.transport.requests.AuthorizedSession(credentials)
+        answer = session.get(
+            f"https://storage.googleapis.com/storage/v1/b/{bucket}/iam/testPermissions",
+            params=[("permissions", name) for name in _BUCKET_PERMISSIONS],
+            timeout=_CHECK_TIMEOUT,
+        )
+    except Exception as exc:  # noqa: BLE001 - no credentials, no network: reported
+        return None, str(exc)[:200]
+    if answer.status_code == 200:
+        return set((answer.json() or {}).get("permissions") or []), ""
+    if answer.status_code in (403, 404):
+        return set(), ""
+    return None, f"GCS answered {answer.status_code}"
+
+
+def _sentence(text: str) -> str:
+    """``text`` as a sentence: a capital first letter, unless it starts with a
+    lower-case name such as gcloud."""
+    if not text or text.startswith("gcloud"):
+        return text
+    return text[0].upper() + text[1:]
+
+
+def _account_check(principal: str, source: str) -> Check:
+    if not principal:
+        fix = ""
+        held = [a for a in _credentialed_accounts() if _is_address(a)]
+        if held:
+            fix = f"gcloud config set account {held[0]}"
+        return Check(
+            id="account",
+            label="Your Workbench account",
+            state="fail",
+            detail=(
+                "No Google account was found to name your folder after, so Prepare "
+                "won't run. "
+                + (" ".join(f"{_sentence(reason)}." for reason in _passed_over))
+            ).strip(),
+            fix=fix or "gcloud auth login",
+            fixNote="selects that account in gcloud"
+            if fix
+            else "signs you in to gcloud",
+        )
+    if source == "metadata":
+        return Check(
+            id="account",
+            label="Your Workbench account",
+            state="warn",
+            detail=(
+                f"Only this workstation's service account, {principal}, was found. "
+                "Your folder would be named after it, not you."
+            ),
+            fix="gcloud auth login",
+            fixNote="signs you in to gcloud as yourself",
+        )
+    if _passed_over:
+        reasons = " ".join(f"{_sentence(reason)}." for reason in _passed_over)
+        placeholder = any("“ACCOUNT”" in reason for reason in _passed_over)
+        return Check(
+            id="account",
+            label="Your Workbench account",
+            state="warn",
+            detail=(
+                f"{reasons} "
+                + (
+                    "(Google's instructions write `gcloud config set account ACCOUNT` "
+                    "with ACCOUNT standing for your address.) "
+                    if placeholder
+                    else ""
+                )
+                + f"The Workbench uses {principal}, "
+                f"{_chosen_note or 'found by gcloud'}."
+            ),
+            fix=f"gcloud config set account {principal}",
+            fixNote="makes gcloud's setting say so too",
+        )
+    how = {
+        "env": "set in this Workbench's environment",
+        "adc": "your application-default credentials' account",
+    }.get(source, "from gcloud")
+    return Check(
+        id="account",
+        label="Your Workbench account",
+        state="ok",
+        detail=f"{principal} ({how}).",
+    )
+
+
+def _upload_check(principal: str) -> tuple[Check, str]:
+    email, kind, problem = _adc_identity()
+    login = "gcloud auth application-default login"
+    if problem == "none":
+        return Check(
+            id="uploads",
+            label="The account uploads use",
+            state="fail",
+            detail=(
+                "There are no application-default credentials, so the aa-* tools "
+                "can't reach the bucket."
+            ),
+            fix=login,
+            fixNote="signs the aa-* tools in as you",
+        ), ""
+    if problem.startswith("expired"):
+        return Check(
+            id="uploads",
+            label="The account uploads use",
+            state="fail",
+            detail=(
+                "The application-default credentials can't be renewed (expired or "
+                f"revoked), so uploads will be refused. {problem[len('expired: ') :]}"
+            ).strip(),
+            fix=login,
+            fixNote="signs the aa-* tools in again",
+        ), ""
+    if problem:
+        return Check(
+            id="uploads",
+            label="The account uploads use",
+            state="unknown",
+            detail=(
+                "The aa-* tools upload with your application-default "
+                f"credentials; {problem}."
+            ),
+        ), ""
+    whose = {
+        "workstation": f"this workstation's service account, {email}",
+        "service account": f"the service account {email}",
+    }.get(kind, email)
+    if principal and email.lower() != principal.lower():
+        return Check(
+            id="uploads",
+            label="The account uploads use",
+            state="warn",
+            detail=(
+                f"Uploads are made as {whose}, but your folder is named after "
+                f"{principal}. Products land in {principal.split('@')[0]}'s folder "
+                f"with {email.split('@')[0]}'s permissions."
+            ),
+            fix=login,
+            fixNote=f"signs the aa-* tools in (choose {principal})",
+        ), email
+    return Check(
+        id="uploads",
+        label="The account uploads use",
+        state="ok",
+        detail=f"Uploads are made as {whose}.",
+    ), email
+
+
+def _bucket_check(bucket: str, uploader: str, uploads: Check | None = None) -> Check:
+    if not bucket:
+        return Check(
+            id="bucket",
+            label="The bucket",
+            state="warn",
+            detail=(
+                "No bucket is chosen yet: choose a GCP project and bucket (the project "
+                "in the status bar)."
+            ),
+        )
+    if uploads is not None and uploads.state == "fail":
+        return Check(
+            id="bucket",
+            label=f"gs://{bucket}",
+            state="unknown",
+            detail=(
+                "Can't be checked until the application-default credentials above "
+                "are set up."
+            ),
+        )
+    held, problem = _bucket_permissions(bucket)
+    who = uploader or "your application-default credentials"
+    if held is None:
+        return Check(
+            id="bucket",
+            label=f"gs://{bucket}",
+            state="unknown",
+            detail=f"Couldn't ask GCS what {who} may do there: {problem}",
+        )
+    can_read = {"storage.objects.list", "storage.objects.get"} <= held
+    if can_read and "storage.objects.create" in held:
+        return Check(
+            id="bucket",
+            label=f"gs://{bucket}",
+            state="ok",
+            detail=f"{who} can read and write it.",
+        )
+    if can_read:
+        return Check(
+            id="bucket",
+            label=f"gs://{bucket}",
+            state="warn",
+            detail=(
+                f"{who} can read it but not write to it, so Prepare can't publish "
+                "products. Ask the bucket's administrator for write access."
+            ),
+        )
+    return Check(
+        id="bucket",
+        label=f"gs://{bucket}",
+        state="fail",
+        detail=(
+            f"{who} has no access to it. Ask the bucket's administrator, or check "
+            "the account above is the right one."
+        ),
+    )
+
+
+@router.get("/check", response_model=AccountCheck)
+def get_account_check(refresh: bool = Query(default=True)) -> AccountCheck:
+    """Who the Workbench is, who uploads, and what the bucket allows — with fixes.
+
+    Read-only throughout: gcloud is asked, Google is asked whose the
+    application-default credentials are, and GCS is asked which permissions
+    they hold on the chosen bucket (testIamPermissions). Nothing is written.
+    """
+    principal, source = detect_principal(refresh=refresh)
+    from .baseline import _clean_segment, default_bucket
+
+    try:
+        bucket = default_bucket()
+    except Exception:  # noqa: BLE001 - no project chosen yet
+        bucket = ""
+    account = _account_check(principal, source)
+    uploads, uploader = _upload_check(principal)
+    checks = [account, uploads, _bucket_check(bucket, uploader, uploads)]
+    local = principal.split("@", 1)[0] if principal else ""
+    folder = (
+        f"gs://{bucket}/derived_products/{_clean_segment(local)}/"
+        if local and bucket
+        else ""
+    )
+    if folder:
+        account.detail += f" Your products go to {folder}"
+    state = max((check.state for check in checks), key=lambda s: _ORDER.get(s, 1))
+    return AccountCheck(
+        state=state,
+        principal=principal,
+        uploader=uploader,
+        folder=folder,
+        checks=checks,
     )

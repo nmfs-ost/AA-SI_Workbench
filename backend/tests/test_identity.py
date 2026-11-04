@@ -22,6 +22,8 @@ from aa_si_workbench.api import identity
 #: subprocess tests below need the genuine article; every other test needs it
 #: gone, and those two requirements cannot both be met through the fixture.
 _REAL_FROM_GCLOUD = identity._from_gcloud
+_REAL_ADC_IDENTITY = identity._adc_identity
+_REAL_BUCKET_PERMISSIONS = identity._bucket_permissions
 
 
 @pytest.fixture(autouse=True)
@@ -45,6 +47,8 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(identity, "_cached", None)
     monkeypatch.setattr(identity, "_cached_project", None)
+    monkeypatch.setattr(identity, "_passed_over", [])
+    monkeypatch.setattr(identity, "_chosen_note", "")
     # No probe may run in a test: gcloud might genuinely be installed on the
     # machine running this suite, the metadata server is a two-second timeout
     # on anything that isn't a GCE VM, and `_from_config_file` would read the
@@ -53,6 +57,10 @@ def clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(identity, "_from_gcloud_auth_list", lambda: "")
     monkeypatch.setattr(identity, "_from_config_file", lambda key: "")
     monkeypatch.setattr(identity, "_from_metadata", lambda path="": "")
+    monkeypatch.setattr(identity, "_credentialed_accounts", lambda: [])
+    monkeypatch.setattr(identity, "_from_adc", lambda: "")
+    monkeypatch.setattr(identity, "_adc_identity", lambda: ("", "", "none"))
+    monkeypatch.setattr(identity, "_bucket_permissions", lambda bucket: (set(), ""))
 
 
 # --------------------------------------------------------------------------- #
@@ -75,9 +83,11 @@ def test_falls_back_to_the_metadata_server(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         identity,
         "_from_metadata",
-        lambda path="": "svc@project.iam.gserviceaccount.com"
-        if "service-accounts" in path or not path
-        else "",
+        lambda path="": (
+            "svc@project.iam.gserviceaccount.com"
+            if "service-accounts" in path or not path
+            else ""
+        ),
     )
     principal, source = identity.detect_principal(refresh=True)
     assert source == "metadata"
@@ -111,9 +121,13 @@ def test_config_file_is_read_when_gcloud_is_not_on_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Both subprocess probes fail; the configuration file still answers."""
-    monkeypatch.setattr(identity, "_from_config_file", lambda key: {
-        "account": "ada@noaa.gov",
-    }.get(key, ""))
+    monkeypatch.setattr(
+        identity,
+        "_from_config_file",
+        lambda key: {
+            "account": "ada@noaa.gov",
+        }.get(key, ""),
+    )
     assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "gcloud")
 
 
@@ -347,9 +361,11 @@ def test_detail_explains_a_service_account(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(
         identity,
         "_from_metadata",
-        lambda path="": "svc@project.iam.gserviceaccount.com"
-        if "service-accounts" in path or not path
-        else "",
+        lambda path="": (
+            "svc@project.iam.gserviceaccount.com"
+            if "service-accounts" in path or not path
+            else ""
+        ),
     )
     detail = identity.get_identity(refresh=True).detail
     # The distinction that catches people out: the bucket grants are the
@@ -392,9 +408,13 @@ def test_project_reads_the_standard_variables(monkeypatch: pytest.MonkeyPatch) -
 def test_project_falls_back_to_the_gcloud_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(identity, "_from_config_file", lambda key: {
-        "project": "configured-project",
-    }.get(key, ""))
+    monkeypatch.setattr(
+        identity,
+        "_from_config_file",
+        lambda key: {
+            "project": "configured-project",
+        }.get(key, ""),
+    )
     assert identity.detect_project(refresh=True) == "configured-project"
 
 
@@ -431,3 +451,313 @@ def test_project_does_not_probe_metadata_off_a_vm(
         "metadata-project"
     )
     assert calls == ["project/project-id"]
+
+
+# --------------------------------------------------------------------------- #
+# Only an address is an account                                                #
+# --------------------------------------------------------------------------- #
+
+
+def test_an_address_is_an_account() -> None:
+    assert identity._is_address("ada@noaa.gov")
+    assert identity._is_address("svc@project.iam.gserviceaccount.com")
+    for value in (
+        "ACCOUNT",
+        "",
+        "(unset)",
+        "ada@",
+        "@noaa.gov",
+        "ada@noaa",
+        "a b@noaa.gov",
+    ):
+        assert not identity._is_address(value), value
+
+
+def test_the_placeholder_from_googles_instructions_is_not_an_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`gcloud config set account ACCOUNT`, run as written. The one account
+    gcloud holds credentials for is who is signed in."""
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ACCOUNT")
+    monkeypatch.setattr(identity, "_from_config_file", lambda key: "ACCOUNT")
+    monkeypatch.setattr(
+        identity, "_credentialed_accounts", lambda: ["colleague@noaa.gov"]
+    )
+    assert identity.detect_principal(refresh=True) == ("colleague@noaa.gov", "gcloud")
+    detail = identity.get_identity(refresh=True).detail
+    assert "colleague@noaa.gov" in detail and "“ACCOUNT”" in detail
+
+
+def test_with_several_accounts_and_a_placeholder_nobody_is_guessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ACCOUNT")
+    monkeypatch.setattr(
+        identity, "_credentialed_accounts", lambda: ["a@noaa.gov", "b@noaa.gov"]
+    )
+    assert identity.detect_principal(refresh=True) == ("", "unknown")
+    assert any("2 accounts" in reason for reason in identity._passed_over)
+
+
+def test_a_placeholder_in_the_environment_is_passed_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLOUDSDK_CORE_ACCOUNT", "ACCOUNT")
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "gcloud")
+
+
+def test_a_real_address_is_used_as_before(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing changes for anyone whose gcloud names a real account, even one
+    gcloud holds no credentials for: their folder stays where it is."""
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "michael.c.ryan@noaa.gov")
+    monkeypatch.setattr(identity, "_credentialed_accounts", lambda: ["other@noaa.gov"])
+    assert identity.detect_principal(refresh=True) == (
+        "michael.c.ryan@noaa.gov",
+        "gcloud",
+    )
+    assert identity._passed_over == []
+
+
+def test_application_default_credentials_name_the_account_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(identity, "_from_adc", lambda: "ada@noaa.gov")
+    monkeypatch.setattr(
+        identity, "_from_metadata", lambda path="": "svc@p.iam.gserviceaccount.com"
+    )
+    assert identity.detect_principal(refresh=True) == ("ada@noaa.gov", "adc")
+
+
+# --------------------------------------------------------------------------- #
+# The account check                                                             #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def bucket(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setenv("AASI_BASELINE_BUCKET", "ggn-nmfs-aa-prod-1-data")
+    return "ggn-nmfs-aa-prod-1-data"
+
+
+ALL = {"storage.objects.list", "storage.objects.get", "storage.objects.create"}
+
+
+def _checks(result: identity.AccountCheck) -> dict[str, identity.Check]:
+    return {check.id: check for check in result.checks}
+
+
+def test_everything_in_order(monkeypatch: pytest.MonkeyPatch, bucket: str) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "michael.c.ryan@noaa.gov")
+    monkeypatch.setattr(
+        identity, "_adc_identity", lambda: ("michael.c.ryan@noaa.gov", "user", "")
+    )
+    monkeypatch.setattr(identity, "_bucket_permissions", lambda b: (ALL, ""))
+    result = identity.get_account_check(refresh=True)
+    assert result.state == "ok"
+    assert result.folder == f"gs://{bucket}/derived_products/michael.c.ryan/"
+    assert all(check.state == "ok" and not check.fix for check in result.checks)
+
+
+def test_the_placeholder_case_names_the_cause_and_the_fix(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    """gcloud's setting is the placeholder; uploads are his own credentials."""
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ACCOUNT")
+    monkeypatch.setattr(
+        identity, "_credentialed_accounts", lambda: ["colleague@noaa.gov"]
+    )
+    monkeypatch.setattr(
+        identity, "_adc_identity", lambda: ("colleague@noaa.gov", "user", "")
+    )
+    monkeypatch.setattr(identity, "_bucket_permissions", lambda b: (ALL, ""))
+    result = identity.get_account_check(refresh=True)
+    checks = _checks(result)
+    assert result.principal == "colleague@noaa.gov"
+    assert result.folder.endswith("/derived_products/colleague/")
+    assert checks["account"].state == "warn"
+    assert "ACCOUNT" in checks["account"].detail
+    assert checks["account"].fix == "gcloud config set account colleague@noaa.gov"
+    assert checks["uploads"].state == "ok" and checks["bucket"].state == "ok"
+
+
+def test_no_account_fails_and_says_how_to_sign_in(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    result = identity.get_account_check(refresh=True)
+    checks = _checks(result)
+    assert result.state == "fail" and result.folder == ""
+    assert checks["account"].state == "fail"
+    assert checks["account"].fix == "gcloud auth login"
+    assert checks["uploads"].fix == "gcloud auth application-default login"
+    # Without credentials the bucket can't be asked about: said so, not an error.
+    assert checks["bucket"].state == "unknown"
+    assert "Can't be checked until" in checks["bucket"].detail
+
+
+def test_uploads_as_someone_else_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    monkeypatch.setattr(
+        identity,
+        "_adc_identity",
+        lambda: ("123-compute@developer.gserviceaccount.com", "workstation", ""),
+    )
+    monkeypatch.setattr(identity, "_bucket_permissions", lambda b: (ALL, ""))
+    uploads = _checks(identity.get_account_check(refresh=True))["uploads"]
+    assert uploads.state == "warn"
+    assert "workstation's service account" in uploads.detail
+    assert uploads.fix == "gcloud auth application-default login"
+
+
+def test_expired_credentials_fail(monkeypatch: pytest.MonkeyPatch, bucket: str) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    monkeypatch.setattr(
+        identity, "_adc_identity", lambda: ("", "user", "expired: invalid_grant")
+    )
+    uploads = _checks(identity.get_account_check(refresh=True))["uploads"]
+    assert uploads.state == "fail" and "invalid_grant" in uploads.detail
+
+
+def test_a_bucket_that_can_only_be_read(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    monkeypatch.setattr(identity, "_adc_identity", lambda: ("ada@noaa.gov", "user", ""))
+    monkeypatch.setattr(
+        identity,
+        "_bucket_permissions",
+        lambda b: ({"storage.objects.list", "storage.objects.get"}, ""),
+    )
+    result = identity.get_account_check(refresh=True)
+    assert result.state == "warn"
+    assert "can't publish" in _checks(result)["bucket"].detail
+
+
+def test_a_bucket_nobody_could_ask_about_is_unknown_not_failed(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    monkeypatch.setattr(identity, "_adc_identity", lambda: ("ada@noaa.gov", "user", ""))
+    monkeypatch.setattr(identity, "_bucket_permissions", lambda b: (None, "no network"))
+    result = identity.get_account_check(refresh=True)
+    assert _checks(result)["bucket"].state == "unknown"
+    assert result.state == "unknown"
+
+
+def test_the_check_reads_the_route(
+    monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from aa_si_workbench.api.main import create_app
+
+    monkeypatch.setattr(identity, "_from_gcloud", lambda: "ada@noaa.gov")
+    got = TestClient(create_app()).get("/api/identity/check").json()
+    assert got["principal"] == "ada@noaa.gov"
+    assert [c["id"] for c in got["checks"]] == ["account", "uploads", "bucket"]
+
+
+# --------------------------------------------------------------------------- #
+# Asking Google (with fake credentials: no network)                            #
+# --------------------------------------------------------------------------- #
+
+
+def _fake_default(monkeypatch: pytest.MonkeyPatch, credentials: object) -> None:
+    import google.auth
+
+    monkeypatch.setattr(google.auth, "default", lambda scopes=None: (credentials, "p"))
+
+
+def test_a_workstation_service_account_is_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Credentials:  # what google.auth.compute_engine gives on a workstation
+        __module__ = "google.auth.compute_engine.credentials"
+        service_account_email = "default"
+        token = "t"
+
+        def refresh(self, request: object) -> None:
+            self.service_account_email = "123-compute@developer.gserviceaccount.com"
+
+    _fake_default(monkeypatch, Credentials())
+    assert _REAL_ADC_IDENTITY() == (
+        "123-compute@developer.gserviceaccount.com",
+        "workstation",
+        "",
+    )
+
+
+def test_a_user_s_credentials_are_named_by_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import requests
+
+    class Credentials:
+        __module__ = "google.oauth2.credentials"
+        token = "t"
+
+        def refresh(self, request: object) -> None:
+            pass
+
+    class Answer:
+        ok = True
+
+        def json(self) -> dict:
+            return {"email": "ada@noaa.gov"}
+
+    _fake_default(monkeypatch, Credentials())
+    monkeypatch.setattr(requests, "get", lambda url, params, timeout: Answer())
+    assert _REAL_ADC_IDENTITY() == ("ada@noaa.gov", "user", "")
+
+
+def test_no_and_expired_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    import google.auth
+    import google.auth.exceptions
+
+    def none(scopes: object = None) -> None:
+        raise google.auth.exceptions.DefaultCredentialsError("nothing")
+
+    monkeypatch.setattr(google.auth, "default", none)
+    assert _REAL_ADC_IDENTITY() == ("", "", "none")
+
+    class Credentials:
+        __module__ = "google.oauth2.credentials"
+
+        def refresh(self, request: object) -> None:
+            raise google.auth.exceptions.RefreshError("invalid_grant")
+
+    _fake_default(monkeypatch, Credentials())
+    email, kind, problem = _REAL_ADC_IDENTITY()
+    assert (email, kind) == ("", "user") and problem.startswith("expired")
+
+
+def test_bucket_permissions_are_asked_not_tried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """testIamPermissions: GCS says what the caller holds; nothing is written."""
+    import google.auth.transport.requests as transport
+
+    asked: dict = {}
+
+    class Answer:
+        status_code = 200
+
+        def json(self) -> dict:
+            return {"permissions": ["storage.objects.list", "storage.objects.get"]}
+
+    class Session:
+        def __init__(self, credentials: object) -> None:
+            pass
+
+        def get(self, url: str, params: list, timeout: float) -> Answer:
+            asked.update(url=url, params=params)
+            return Answer()
+
+    _fake_default(monkeypatch, object())
+    monkeypatch.setattr(transport, "AuthorizedSession", Session)
+    held, problem = _REAL_BUCKET_PERMISSIONS("bkt")
+    assert held == {"storage.objects.list", "storage.objects.get"} and problem == ""
+    assert asked["url"].endswith("/b/bkt/iam/testPermissions")
+    assert ("permissions", "storage.objects.create") in asked["params"]

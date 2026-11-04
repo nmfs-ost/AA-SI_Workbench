@@ -8,6 +8,7 @@
  */
 export type DialogId =
   | 'about'
+  | 'account'
   | 'address'
   | 'environment'
   | 'feedback'

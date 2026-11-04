@@ -2,6 +2,7 @@ import type { FunctionComponent } from 'react';
 
 import type { DialogId } from '../../types';
 import { AboutDialog } from './AboutDialog';
+import { AccountDialog } from './AccountDialog';
 import { AddressDialog } from './AddressDialog';
 import { EnvironmentDialog } from './EnvironmentDialog';
 import { FeedbackDialog } from './FeedbackDialog';
@@ -30,6 +31,7 @@ export interface DialogDefinition {
 
 export const dialogDefinitions: readonly DialogDefinition[] = [
   { id: 'about', component: AboutDialog },
+  { id: 'account', component: AccountDialog },
   { id: 'address', component: AddressDialog },
   { id: 'environment', component: EnvironmentDialog },
   { id: 'feedback', component: FeedbackDialog },
